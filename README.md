@@ -2,7 +2,7 @@
 
 Central de monitoramento em Next.js. O browser fala só com o BFF. O Zabbix é a telemetria, a API corporativa é o login, e o PostgreSQL do Pulse guarda só configuração de tela.
 
-A branch de construção é a **`develop`**. Tags saem dela. Push de commit não gera imagem.
+A branch de desenvolvimento é a **`develop`**. A de produção é a **`main`**. Push de commit não gera imagem. A tag é que gera.
 
 ## Iniciar em local
 
@@ -18,27 +18,25 @@ npm run dev
 
 ## Versão e tag
 
-Versão [SemVer](https://semver.org/lang/pt-BR/), sempre a partir da `develop` atualizada.
+Versão [SemVer](https://semver.org/lang/pt-BR/). A tag sem sufixo é produção. A tag com `-dev` é desenvolvimento.
 
-| Tag | Imagem no GHCR |
-|---|---|
-| `v1.2.3` | `1.2.3`, `1.2`, `1` e `latest` |
-| `v1.2.3-dev` | `1.2.3-dev` e `dev` |
-| `v1.2.3-beta` | `1.2.3-beta` e `dev` |
-| `v1.2.3-rc.1` | `1.2.3-rc.1` e `dev` |
+| Tag | Branch | Imagem | Ambiente |
+|---|---|---|---|
+| `v1.2.3` | `main` | `1.2.3`, `1.2`, `1` e `latest` | https://pulse.hostsoftcom.cloud |
+| `v1.2.3-dev` | `develop` | `1.2.3-dev` e `dev` | https://dev-pulse.hostsoftcom.cloud |
 
 A action só dispara no push da tag, em `linux/amd64` e `linux/arm64`. Ela publica a imagem. Não faz deploy.
 
-Release:
+Produção, a partir da `main`:
 
 ```powershell
-git checkout develop
+git checkout main
 git pull
 git tag v1.2.3
 git push origin v1.2.3
 ```
 
-Pré-release:
+Desenvolvimento, a partir da `develop`:
 
 ```powershell
 git checkout develop

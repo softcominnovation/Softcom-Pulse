@@ -37,7 +37,7 @@ for (const dev of [false, true]) {
     const c = YAML.parse(read(".github/workflows/deploy-" + (dev ? "dev" : "prod") + ".yml"));
     assert.deepEqual(Object.keys(c.on), ["push"]);
     assert.deepEqual(Object.keys(c.on.push), ["tags"]);
-    assert.deepEqual(c.on.push.tags, dev ? ["v*.*.*-dev"] : ["v*.*.*", "!*-*", "!*+*"]);
+    assert.deepEqual(c.on.push.tags, dev ? ["v*.*.*-dev"] : ["v*.*.*", "!*-*", "!*\\+*"]);
     assert.deepEqual(c.permissions, { contents: "read", packages: "write" });
     const steps = c.jobs.publish.steps;
     assert.ok(steps.find(step => step.run?.includes("validate-release.mjs " + (dev ? "development" : "production"))));

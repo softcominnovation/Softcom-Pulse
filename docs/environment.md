@@ -117,6 +117,16 @@ A validação local de YAML, tags e artefato standalone não substitui a execuç
 
 `npm run check`: lint, typecheck, testes unitários e build.
 
+Ao alterar workflows, validar também a gramática específica do GitHub Actions com `actionlint` (versão usada na correção de 02/10/2026: 1.7.12). O parse YAML e os testes de contrato não substituem essa verificação. Com a ferramenta instalada, executar:
+
+```text
+actionlint -shellcheck= -pyflakes= .github/workflows/deploy-prod.yml .github/workflows/deploy-dev.yml
+```
+
+Esse comando valida os workflows sem exigir os analisadores opcionais de shell/Python. No Windows desta revisão, o executável está em `.cache/tools/actionlint.exe`, ignorado no Git. A ferramenta é de verificação, não uma dependência do aplicativo.
+
+No filtro de tags, o `+` literal deve ser escapado: `'!*\+*'` no YAML com aspas simples. `!*+*` é inválido porque `+` tem significado de repetição na gramática de filtros. O GitHub pode registrar a falha de validação no push da branch antes de criar jobs; isso não equivale à execução de uma publicação por branch. Ver [sintaxe oficial dos filtros](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#filter-pattern-cheat-sheet).
+
 Com PostgreSQL/Redis locais configurados:
 
 ```powershell

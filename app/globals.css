@@ -1,0 +1,117 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  color-scheme: dark;
+  --pulse-bg: #0c1116;
+  --pulse-surface: #121a21;
+  --pulse-raised: #18232c;
+  --pulse-line: #29343d;
+  --pulse-text: #eef3f5;
+  --pulse-muted: #9daeb9;
+  --pulse-faint: #82949f;
+  --pulse-green: #64d6b0;
+  --pulse-amber: #f2c275;
+  --pulse-red: #ff8585;
+  --pulse-blue: #80bdf2;
+  --pulse-topbar: #0e151b;
+  --pulse-service: #151f27;
+  --pulse-hover: #1b2a32;
+  --pulse-hover-border: #657984;
+  --pulse-active: #15332b;
+  --pulse-selected: #1c302b;
+  --pulse-selected-border: #37564a;
+  --pulse-range-border: #416c5a;
+  --pulse-good-bg: #1b3029;
+  --pulse-warn-bg: #3a2f20;
+  --pulse-bad-bg: #3b262a;
+  --pulse-unknown-bg: #27323a;
+  --pulse-banner-warn: #241f18;
+  --pulse-banner-warn-border: #635132;
+  --pulse-banner-warn-text: #c0b7a7;
+  --pulse-banner-good: #13251e;
+  --pulse-banner-good-border: #315c4d;
+  --pulse-banner-bad: #2a1b1e;
+  --pulse-banner-bad-border: #774343;
+  --pulse-banner-unknown: #1b252c;
+  --pulse-banner-unknown-border: #536470;
+  --pulse-dialog: #152029;
+  --pulse-dialog-border: #43545e;
+  --pulse-dialog-note: #202c35;
+  --pulse-backdrop: #03070ac9;
+  --pulse-meter-track: #29353c;
+  --pulse-chart-grid: #2a3943;
+  --pulse-table-heading: #152028;
+  --pulse-row-selected: #192c29;
+  --background: var(--pulse-bg);
+  --foreground: var(--pulse-text);
+  --card: var(--pulse-surface);
+  --card-foreground: var(--pulse-text);
+  --popover: var(--pulse-dialog);
+  --popover-foreground: var(--pulse-text);
+  --primary: var(--pulse-green);
+  --primary-foreground: var(--pulse-bg);
+  --secondary: var(--pulse-raised);
+  --secondary-foreground: var(--pulse-text);
+  --muted: var(--pulse-raised);
+  --muted-foreground: var(--pulse-muted);
+  --accent: var(--pulse-hover);
+  --accent-foreground: var(--pulse-text);
+  --destructive: var(--pulse-red);
+  --border: var(--pulse-line);
+  --input: var(--pulse-line);
+  --ring: var(--pulse-green);
+  --radius: 14px;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-numeric: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --font-sans: var(--font-ui);
+  --font-mono: var(--font-numeric);
+  --radius-panel: 14px;
+  --radius-control: 7px;
+  --radius-dialog: 16px;
+  --radius-badge: 5px;
+}
+
+@layer base {
+  * { border-color: var(--border); box-sizing: border-box; }
+  body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+  button, input, select, textarea { font: inherit; }
+  button:not(:disabled), [role="button"]:not([aria-disabled="true"]) { cursor: pointer; }
+  .font-mono { font-variant-numeric: tabular-nums; }
+  ::selection { background: var(--pulse-selected); color: var(--pulse-green); }
+}
+
+.pulse-toast { background: var(--pulse-raised) !important; color: var(--pulse-text) !important; border: 1px solid var(--pulse-line) !important; border-radius: 8px !important; font-family: var(--font-ui) !important; font-size: 13px !important; }
+
+@media (pointer: coarse) {
+  button, [role="button"], input, select { min-height: 44px; }
+  button, [role="button"] { min-width: 44px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

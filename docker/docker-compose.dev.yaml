@@ -1,0 +1,161 @@
+version: "3.8"
+
+services:
+  pulse-dev:
+    image: ghcr.io/softcominnovation/softcom-pulse:dev
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Defina a URL PostgreSQL desta stack}
+      REDIS_URL: ${REDIS_URL:-redis://pulse_redis_dev:6379}
+      CORPORATE_API_URL: https://api.softcom.cloud
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+      ZABBIX_API_URL: ${ZABBIX_API_URL:-}
+      ZABBIX_API_TOKEN: ${ZABBIX_API_TOKEN:-}
+      COLLECTOR_INTERVAL_MS: ${COLLECTOR_INTERVAL_MS:-20000}
+      SNAPSHOT_TTL_SECONDS: ${SNAPSHOT_TTL_SECONDS:-300}
+      SNAPSHOT_STALE_AFTER_MS: ${SNAPSHOT_STALE_AFTER_MS:-60000}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-Softcom Pulse}
+      NEXT_PUBLIC_SOFTCOM_URL: ${NEXT_PUBLIC_SOFTCOM_URL:-https://www.softcomtecnologia.com.br}
+    networks: [network_public]
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits: {cpus: ".5", memory: 512M}
+        reservations: {cpus: ".1", memory: 128M}
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=network_public
+        - traefik.http.routers.pulse-dev.rule=Host(`dev-pulse.hostsoftcom.cloud`)
+        - traefik.http.routers.pulse-dev.entrypoints=websecure
+        - traefik.http.routers.pulse-dev.tls=true
+        - traefik.http.routers.pulse-dev.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.pulse-dev.service=pulse-dev
+        - traefik.http.services.pulse-dev.loadbalancer.server.port=3000
+        - traefik.http.services.pulse-dev.loadbalancer.passHostHeader=true
+
+  pulse-dev-collector:
+    image: ghcr.io/softcominnovation/softcom-pulse:dev
+    command: [node, collector/index.mjs]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Defina a URL PostgreSQL desta stack}
+      REDIS_URL: ${REDIS_URL:-redis://pulse_redis_dev:6379}
+      CORPORATE_API_URL: https://api.softcom.cloud
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+      ZABBIX_API_URL: ${ZABBIX_API_URL:-}
+      ZABBIX_API_TOKEN: ${ZABBIX_API_TOKEN:-}
+      COLLECTOR_INTERVAL_MS: ${COLLECTOR_INTERVAL_MS:-20000}
+      SNAPSHOT_TTL_SECONDS: ${SNAPSHOT_TTL_SECONDS:-300}
+      SNAPSHOT_STALE_AFTER_MS: ${SNAPSHOT_STALE_AFTER_MS:-60000}
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-Softcom Pulse}
+      NEXT_PUBLIC_SOFTCOM_URL: ${NEXT_PUBLIC_SOFTCOM_URL:-https://www.softcomtecnologia.com.br}
+    networks: [network_public]
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits: {cpus: ".25", memory: 128M}
+        reservations: {cpus: ".05", memory: 32M}
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: stop-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+
+  pulse_postgres_dev:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-pulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD_DEV:?Defina a senha PostgreSQL deste ambiente}
+    volumes: [pulse_postgres_dev_data:/var/lib/postgresql/data]
+    networks: [network_public]
+    stop_grace_period: 60s
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits: {cpus: ".5", memory: 512M}
+        reservations: {cpus: ".1", memory: 128M}
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: stop-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+
+  pulse_redis_dev:
+    image: redis:8-alpine
+    command: [redis-server, --appendonly, "yes"]
+    volumes: [pulse_redis_dev_data:/data]
+    networks: [network_public]
+    stop_grace_period: 30s
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits: {cpus: ".25", memory: 128M}
+        reservations: {cpus: ".05", memory: 32M}
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: stop-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+
+volumes:
+  pulse_postgres_dev_data:
+    name: pulse_postgres_dev_data
+  pulse_redis_dev_data:
+    name: pulse_redis_dev_data
+
+networks:
+  network_public:
+    external: true
+    name: network_public

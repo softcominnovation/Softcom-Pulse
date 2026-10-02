@@ -6,15 +6,20 @@ A branch de desenvolvimento é a **`develop`**. A de produção é a **`main`**.
 
 ## Iniciar em local
 
-Windows, direto no host, sem Docker. PostgreSQL na porta `5432` e Redis na porta `6379`. Copie `.env.example` para `.env` e preencha aí. Não commite `.env`.
+Windows com Node 24 LTS, direto no host, sem Docker. PostgreSQL na porta `5432` e Redis na porta `6379`. Copie `.env.example` para `.env` se ainda não existir e preencha `DATABASE_URL` e `REDIS_URL`. Não commite `.env`.
 
-Quando o aplicativo estiver nesta pasta:
+Na pasta do aplicativo:
 
 ```powershell
 npm install
+npm run db:prepare
 npx prisma migrate dev
 npm run dev
 ```
+
+Abra http://127.0.0.1:3000. A base inicial tem a página de presença e `GET /api/health`; autenticação e monitoramento entram nas próximas etapas. O schema inicial não tem tabela de negócio: `migrate dev` apenas confirma o baseline, sem migration fictícia.
+
+`npm run check` valida lint, tipos, testes e build. Variáveis, versões, stacks, migrations e testes adicionais: [docs/environment.md](docs/environment.md).
 
 ## Versão e tag
 

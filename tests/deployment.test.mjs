@@ -45,6 +45,12 @@ for (const dev of [false, true]) {
     assert.equal(build.with.platforms, "linux/amd64,linux/arm64");
     assert.equal(build.with.push, true);
     assert.equal(build.with["build-args"], undefined);
+    const verification = steps.find(step => step.name === "Verify platforms and packaged runtime").run;
+    assert.ok(verification.includes('docker buildx imagetools inspect "$image" --raw > manifest.json'));
+    assert.ok(verification.includes('for arch in amd64 arm64; do'));
+    assert.ok(verification.includes('platform_digest=$(node scripts/platform-digest.mjs manifest.json "$arch")'));
+    assert.ok(verification.includes('--entrypoint node "$IMAGE@$platform_digest"'));
+    assert.ok(!verification.includes('--entrypoint node "$image"'));
     const tags = steps.find(step => step.uses?.startsWith("docker/metadata-action@")).with.tags;
     assert.equal(tags.includes("value=latest"), !dev);
     assert.equal(tags.includes("value=dev\n"), dev);

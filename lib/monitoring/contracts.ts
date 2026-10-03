@@ -1,0 +1,75 @@
+import { z } from "zod";
+import { hostKeySchema, historyRangeSchema, type ResourceConfig } from "../config/resources.ts";
+import type { BlockType } from "../config/presentation.ts";
+
+export const isoSchema = z.iso.datetime({ offset: true });
+const name = z.string().min(1).max(512);
+const opaqueId = z.string().min(1).max(256);
+export const metricSchema = z.object({
+  value: z.number().finite().nullable(), unit: z.enum(["percent", "bytes", "bytes/s", "bits/s", "seconds", "count"]),
+  observedAt: isoSchema.nullable(), quality: z.enum(["fresh", "stale", "missing", "unsupported"]),
+}).refine(metric => metric.value === null || (metric.observedAt !== null && ["fresh", "stale"].includes(metric.quality)));
+export const metricsSchema = z.object({
+  cpuUsagePercent: metricSchema.optional(), memoryUsedBytes: metricSchema.optional(), memoryTotalBytes: metricSchema.optional(),
+  memoryUsagePercent: metricSchema.optional(), diskUsedBytes: metricSchema.optional(), diskTotalBytes: metricSchema.optional(),
+  diskUsagePercent: metricSchema.optional(), diskReadBytesPerSecond: metricSchema.optional(), diskWriteBytesPerSecond: metricSchema.optional(),
+  networkReceiveBitsPerSecond: metricSchema.optional(), networkTransmitBitsPerSecond: metricSchema.optional(), uptimeSeconds: metricSchema.optional(),
+});
+const evidenceSchema = z.object({ source: z.literal("zabbix"), observedAt: isoSchema.nullable(), basis: z.enum(["item", "discovery", "configuration", "unknown"]) });
+const observedAvailability = z.enum(["reachable", "unreachable", "unknown"]);
+export const vmSchema = z.object({
+  vmKey: opaqueId, vmId: z.string().max(64).nullable(), name, parentHostKey: hostKeySchema,
+  state: z.enum(["running", "stopped", "paused", "unknown"]), metrics: metricsSchema,
+  linuxHostKey: hostKeySchema.nullable(), evidence: evidenceSchema,
+});
+const deviceSchema = z.object({ key: opaqueId, name, metrics: metricsSchema });
+export const hostSchema = z.object({
+  hostKey: hostKeySchema, name, role: z.enum(["hypervisor", "linux", "unknown"]), availability: observedAvailability,
+  metrics: metricsSchema, storages: z.array(deviceSchema), filesystems: z.array(deviceSchema), interfaces: z.array(deviceSchema),
+  vms: z.array(vmSchema), evidence: evidenceSchema,
+});
+export const containerSchema = z.object({
+  reference: opaqueId, hostKey: hostKeySchema, name, image: z.string().max(1024).nullable(),
+  status: z.enum(["running", "stopped", "paused", "restarting", "created", "removing", "dead", "unknown"]),
+  health: z.enum(["healthy", "unhealthy", "starting", "not_configured", "unknown"]),
+  metrics: metricsSchema, evidence: evidenceSchema,
+});
+export const resourceReferenceSchema = z.object({
+  type: z.enum(["host", "vm", "docker_container", "configured_resource"]),
+  hostKey: hostKeySchema, reference: opaqueId.nullable(),
+});
+export const problemSchema = z.object({
+  id: opaqueId, resource: resourceReferenceSchema, description: z.string().max(4096),
+  severity: z.number().int().min(0).max(5), visualState: z.enum(["info", "warning", "critical", "unknown"]), startedAt: isoSchema,
+});
+const count = z.number().int().nonnegative().nullable();
+export const summarySchema = z.object({ hostsKnown: count, hostsReachable: count, vms: count, containersRunning: count, containersStopped: count, problems: count, criticalAffected: count });
+export const asgardSummarySchema = z.object({ host: hostSchema.nullable(), vms: z.array(vmSchema) });
+export const overviewSnapshotSchema = z.object({ summary: summarySchema, asgardSummary: asgardSummarySchema });
+export const historySchema = z.object({
+  resource: resourceReferenceSchema, window: historyRangeSchema, source: z.enum(["history", "trends"]),
+  series: z.array(z.object({ key: name, unit: metricSchema.shape.unit, points: z.array(z.object({ timestamp: isoSchema, value: z.number().finite().nullable() })) })),
+});
+export type Metric = z.infer<typeof metricSchema>;
+export type Metrics = z.infer<typeof metricsSchema>;
+export type Host = z.infer<typeof hostSchema>;
+export type VirtualMachine = z.infer<typeof vmSchema>;
+export type Container = z.infer<typeof containerSchema>;
+export type Problem = z.infer<typeof problemSchema>;
+export type Summary = z.infer<typeof summarySchema>;
+export type AsgardSummary = z.infer<typeof asgardSummarySchema>;
+export type History = z.infer<typeof historySchema>;
+export type Availability = "ready" | "no_data" | "unavailable";
+export type ReadResult<T> = { data: T; availability: Availability; stale: boolean; lastUpdated: string | null; refreshAfterMs: number };
+export type ConfiguredResource = {
+  id: string; config: ResourceConfig; resolved: boolean; resolution: "resolved" | "missing" | "ambiguous";
+  resource: Host | Container | null; metrics: Metrics;
+};
+export type OverviewBlock = Omit<ReadResult<Summary | AsgardSummary | ConfiguredResource | ConfiguredResource[] | Problem[] | Host[] | Container[] | null>, "refreshAfterMs"> & { blockId: string; type: BlockType };
+export type Overview = {
+  summary: Summary; highlightedResources: ConfiguredResource[]; problems: Problem[]; asgardSummary: AsgardSummary;
+  screenId: string; presentationRevision: number; blocks: OverviewBlock[];
+};
+export function emptySummary(): Summary {
+  return { hostsKnown: null, hostsReachable: null, vms: null, containersRunning: null, containersStopped: null, problems: null, criticalAffected: null };
+}

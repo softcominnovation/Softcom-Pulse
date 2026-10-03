@@ -25,12 +25,12 @@ export async function getCache(): Promise<CacheClient> {
   return connecting;
 }
 
-export async function pingCache() {
+export async function cacheOperation<T>(operation: (client: CacheClient) => Promise<T>): Promise<T> {
   const client = await getCache();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
-      client.ping(),
+      operation(client),
       new Promise<never>((_, reject) => { timer = setTimeout(() => {
         if (client.isOpen) client.destroy();
         if (globalCache.pulseCache === client) globalCache.pulseCache = undefined;
@@ -38,4 +38,8 @@ export async function pingCache() {
       }, 2000); }),
     ]);
   } finally { clearTimeout(timer); }
+}
+
+export async function pingCache() {
+  return cacheOperation(client => client.ping());
 }

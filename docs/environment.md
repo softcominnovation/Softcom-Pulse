@@ -24,7 +24,7 @@ PostgreSQL e Redis rodam diretamente no host, nas portas 5432 e 6379. Não há D
 4. Executar `npm run db:validate` e `npm run db:migrate`.
 5. Executar `npm run dev` e acessar http://127.0.0.1:3000.
 
-Na base inicial não há modelo nem tabela de negócio. `prisma migrate dev` confirma que não há alterações; não é necessário inventar SQL para criar uma migration vazia. `prisma migrate deploy` também funciona sem migration funcional. A primeira modelagem e a geração do cliente Prisma pertencem à implementação das configurações humanas. O health atual executa `SELECT 1` com o driver PostgreSQL `pg`, também usado na conexão dedicada da trava de migrations. O adapter Prisma/pg já está instalado.
+O schema contém as tabelas de configuração humana `monitored_resource_config` e `pulse_settings`, na migration `20261003010322_human_configuration`. Ela inclui índices únicos parciais e CHECKs, inclusive para impedir hosts duplicados com seletores NULL. `npm run db:migrate` aplica migrations localmente; o entrypoint continua usando `prisma migrate deploy`, sem reset. O cliente Prisma usa o adapter pg sobre o mesmo pool do health. `dev`, `typecheck` e `build` geram o cliente antes de executar o Next; `npm run db:generate` permite geração explícita. A geração não conecta ao banco nem exige credenciais no build; operação e migrations exigem DATABASE_URL. Contratos e limites: [BFF](bff.md).
 
 `npm run collector` mantém o processo base ativo e encerra em SIGINT/SIGTERM. Nesta etapa ele não faz coleta nem acessa Zabbix.
 
@@ -32,25 +32,27 @@ A configuração local usa URLs completas. Os campos antigos `POSTGRES_HOST`, `P
 
 ## Variáveis
 
-Web e collector recebem o mesmo contrato de ambiente, embora o collector inicial apenas aguarde. Autenticação já utiliza a URL corporativa e a chave de cifra. Somente as variáveis de telemetria permanecem reservadas.
+Web e collector recebem o mesmo contrato de ambiente, embora o collector inicial apenas aguarde. Autenticação já utiliza a URL corporativa e a chave de cifra. O BFF já usa banco, Redis e os intervalos de freshness. Endereço/token Zabbix continuam reservados ao Collector e histórico posteriores.
 
 | Variável | Leitor/uso | Browser | Compose |
 |---|---|---|---|
-| `DATABASE_URL` | Web/health, Prisma, inicialização de web e collector; configuração humana futura | Não | Mesmo nome nos dois serviços da stack. Obrigatória, banco `pulse`; host `pulse_postgres` em produção ou `pulse_postgres_dev` em dev |
-| `REDIS_URL` | Web/health; snapshots do web e collector posteriormente | Não | Mesmo nome nos dois serviços; default `redis://pulse_redis:6379` ou `redis://pulse_redis_dev:6379` |
+| `DATABASE_URL` | Web/health, Prisma, configuração humana e inicialização de web/collector | Não | Mesmo nome nos dois serviços da stack. Obrigatória, banco `pulse`; host `pulse_postgres` em produção ou `pulse_postgres_dev` em dev |
+| `REDIS_URL` | Web/health e leitura/publicação de envelopes; produtor Collector posteriormente | Não | Mesmo nome nos dois serviços; default `redis://pulse_redis:6379` ou `redis://pulse_redis_dev:6379` |
 | `API_BASE_URL` | BFF de login, refresh e logout | Não | `https://api.softcom.cloud` nos dois ambientes; sem chave de serviço |
 | `TOKEN_ENCRYPTION_KEY` | AES-256-GCM dos envelopes de sessão | Não | Obrigatória: 32 bytes aleatórios em base64, segredo próprio por ambiente e igual entre réplicas do mesmo ambiente |
 | `ZABBIX_API_URL` | Collector e BFF de histórico, reservado | Não | Mesmo nome nos dois ambientes |
 | `ZABBIX_API_TOKEN` | Collector e BFF de histórico, reservado | Não | Mesmo nome nos dois ambientes |
-| `COLLECTOR_INTERVAL_MS` | Collector futuro | Não | Mesmo nome, default `20000` |
-| `SNAPSHOT_TTL_SECONDS` | Web e collector futuros: retenção do snapshot | Não | Mesmo nome, default `300` |
-| `SNAPSHOT_STALE_AFTER_MS` | Web e collector futuros: limite de freshness | Não | Mesmo nome, default `60000` |
+| `COLLECTOR_INTERVAL_MS` | BFF/refreshAfterMs e Collector futuro | Não | Mesmo nome, default `20000` |
+| `SNAPSHOT_TTL_SECONDS` | Helpers de snapshot: retenção por TTL | Não | Mesmo nome, default `300` |
+| `SNAPSHOT_STALE_AFTER_MS` | BFF/helpers de snapshot: limite de freshness | Não | Mesmo nome, default `60000` |
 | `POSTGRES_USER` | Container PostgreSQL | Não | Mesmo nome, default `postgres`; deve coincidir com o usuário da URL |
 | `POSTGRES_PASSWORD` | PostgreSQL de produção | Não | Variável da stack de produção → `POSTGRES_PASSWORD` do container; obrigatória |
 | `POSTGRES_PASSWORD_DEV` | PostgreSQL de desenvolvimento | Não | Variável da stack de dev → `POSTGRES_PASSWORD` do container; obrigatória e independente de produção |
 | `POSTGRES_DB` | Container PostgreSQL | Não | Mesmo nome, default `pulse`; deve coincidir com o banco da URL |
 | `NEXT_PUBLIC_APP_NAME` | Servidor → provider e interface | Sim, apenas o valor público | Mesmo nome, default `Softcom Pulse` |
 | `NEXT_PUBLIC_SOFTCOM_URL` | Servidor → provider e link institucional | Sim, apenas o valor público | Mesmo nome, default `https://www.softcomtecnologia.com.br` |
+
+COLLECTOR_INTERVAL_MS aceita 15000–30000ms. SNAPSHOT_STALE_AFTER_MS deve ser pelo menos o dobro desse intervalo e menor que SNAPSHOT_TTL_SECONDS × 1000. Valores inválidos impedem a leitura de monitoramento com 503; não produzem estado saudável. O TTL não substitui a avaliação de idade. Estas variáveis já constam no exemplo e nos dois composes.
 
 `PORT=3000`, `HOSTNAME=0.0.0.0`, `NODE_ENV=production` e `NEXT_TELEMETRY_DISABLED=1` são controles técnicos da imagem, não variáveis de produto que precisem ser preenchidas no Portainer. O comando local restringe o servidor a `127.0.0.1`.
 
@@ -107,7 +109,7 @@ Os workflows publicam imagem no GHCR com `GITHUB_TOKEN`, sem webhook ou deploy d
 - Push de branch, pull request e disparo manual não são gatilhos. Não se aceitam beta, rc, sufixos adicionais ou zeros à esquerda.
 - O script valida formato e ancestralidade antes de autenticar/publicar no registry. Checkout completo e apenas leitura do Git.
 - CI executa lint, tipos, testes unitários, build, migrations, runtime, componentes e interface. PostgreSQL/Redis temporários do runner usam credenciais de teste descartáveis, sem segredo externo. O uso de containers no runner não altera o desenvolvimento local no host.
-- Buildx/QEMU publica `linux/amd64` e `linux/arm64`. Depois confere o manifest e executa um smoke test de presença dos arquivos/dependências e UID sem root em cada arquitetura.
+- Buildx/QEMU publica `linux/amd64` e `linux/arm64`. Depois inspeciona o índice publicado e executa um smoke test de presença dos arquivos/dependências e UID sem root em cada arquitetura. `scripts/platform-digest.mjs` seleciona exatamente um manifesto Linux por arquitetura, exclui atestações e exige digest sha256 válido. Cada `docker run` usa esse digest próprio; o digest do índice é usado somente na inspeção. Isso evita `cannot overwrite digest` no daemon do runner.
 - Permissões do workflow: `contents: read` e `packages: write`. Não há build-args de conexão ou segredo. O repositório deve permitir Actions e a publicação do pacote no GHCR.
 - Após uma release, o operador atualiza a stack pelo Portainer. Produção e desenvolvimento têm variáveis e volumes independentes.
 
@@ -140,8 +142,8 @@ npm run test:runtime
 
 `test:runtime` requer build prévio. Os testes de autenticação utilizam um upstream simulado local; não precisam de conta corporativa ou chave de serviço. `test:ui` usa portas 3100/3102 e cache próprio em `.cache/next-e2e`, preservando o servidor de desenvolvimento da porta 3000. `PULSE_E2E=1` é controle interno do harness, não env de produto ou de stack. Os testes usam portas locais próprias, encerram seus processos e salvam evidências ignoradas em `.cache/screenshots`. Componentes são montados no harness de testes; não há rota de demonstração incluída no aplicativo.
 
-Os testes de integração criam um banco temporário com prefixo `pulse_phase01_test_`, restrito a PostgreSQL local, e removem somente esse banco ao terminar. Validam dois processos reais de migration, falha do subprocesso, perda da sessão, timeout de conexão e de trava. Não usam dados de negócio.
+Os testes de integração criam bancos temporários com prefixos `pulse_phase01_test_` e `pulse_phase03_test_`, restritos a PostgreSQL local, e removem somente seus bancos ao terminar. A suíte de configuração exige Redis DB 15 vazio, adquire uma trava de teste e remove somente chaves próprias; não executa FLUSHDB. A suíte de runtime cria `pulse_runtime03_test_` e usa Redis DB 14 vazio somente para leitura. Nenhuma fixture entra no banco pulse ou no Redis DB 0 do desenvolvimento. Validam processos reais de migration, falha do subprocesso, perda da sessão, timeouts, CRUD, constraints, concorrência de revisão, referências, seletores, snapshots e erros. Não usam dados de negócio.
 
 Interface validada em Chromium: 320/360/390px, tablet retrato/paisagem, desktop e reflow equivalente a 200% (viewport CSS de 640px para tela de 1280px). Cores/fontes computadas, logo/favicon, labels, foco, Escape, clique fora, cancelamento, repetição da confirmação, erro/retry, texto longo, toast e alvos de toque são exercitados. Isso não equivale a homologação em todos os aparelhos físicos ou navegadores.
 
-Autenticação e shell protegido estão implementados. O dashboard contém título/texto; telemetria e tabelas de configuração permanecem para as etapas correspondentes. Ver [autenticação](authentication.md).
+Autenticação, shell protegido, configuração PostgreSQL e contratos BFF estão implementados. O dashboard visual mantém título/texto; ainda não há Collector real nem editor administrativo. Ver [autenticação](authentication.md) e [BFF](bff.md).

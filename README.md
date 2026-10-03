@@ -17,7 +17,7 @@ npx prisma migrate dev
 npm run dev
 ```
 
-Abra http://127.0.0.1:3000/login e entre com o e-mail e a senha de colaborador. O login abre `/`, já protegida; o monitoramento será incorporado nessa página. `GET /api/health` verifica banco e cache. Fluxo, sessão e requisitos de navegador: [docs/authentication.md](docs/authentication.md). O schema inicial não tem tabela de negócio: `migrate dev` apenas confirma o baseline, sem migration fictícia.
+Abra http://127.0.0.1:3000/login e entre com o e-mail e a senha de colaborador. O login abre `/`, já protegida; o monitoramento será incorporado nessa página. `GET /api/health` verifica banco e cache. Fluxo, sessão e requisitos de navegador: [docs/authentication.md](docs/authentication.md). O schema já contém as duas tabelas de configuração humana. `migrate dev` aplica a migration; os scripts de dev/build geram o cliente Prisma automaticamente. Apresentação compartilhada, CRUD, snapshots e leituras autenticadas: [docs/bff.md](docs/bff.md). Sem Collector, o BFF retorna estados sem dados.
 
 `npm run check` valida lint, tipos, testes e build. Variáveis, versões, stacks, migrations e testes adicionais: [docs/environment.md](docs/environment.md).
 

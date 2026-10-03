@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { startAuthUpstream } from "../fixtures/auth-upstream.mjs";
 import { before, test } from "node:test";
 import assert from "node:assert/strict";
@@ -7,6 +7,8 @@ import { cp, mkdir, readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
+import pg from "pg";
+import { createClient } from "redis";
 
 const root = new URL("../../", import.meta.url);
 const standalone = new URL(".next/standalone/", root);
@@ -145,4 +147,70 @@ test("standalone serves packaged login assets and authenticates through the BFF"
       await page.close();
     });
   } finally { await browser.close(); await upstream.close(); }
+});
+
+test("standalone persists configuration across restarts and serves every protected BFF route", { timeout: 60000 }, async () => {
+  const dbName = "pulse_runtime03_test_" + process.pid + "_" + Date.now();
+  const db = new URL(process.env.DATABASE_URL), redisUrl = new URL(process.env.REDIS_URL);
+  for (const url of [db, redisUrl]) assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(url.hostname));
+  db.pathname = "/postgres";
+  const admin = new pg.Client({ connectionString: db.href });
+  const upstream = await startAuthUpstream();
+  let created = false, saved, auth, resourceId;
+  try {
+    await admin.connect(); await admin.query('CREATE DATABASE "' + dbName + '"'); created = true;
+    db.pathname = "/" + dbName;
+    redisUrl.pathname = "/14";
+    const cache = createClient({ url: redisUrl.href }); cache.on("error", () => {});
+    try { await cache.connect(); assert.equal(await cache.dbSize(), 0, "Redis DB 14 must be empty for read-only runtime tests"); }
+    finally { if (cache.isOpen) await cache.quit(); }
+    await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [fileURLToPath(new URL("node_modules/prisma/build/index.js", root)), "migrate", "deploy"], {
+        cwd: fileURLToPath(root), env: { ...process.env, DATABASE_URL: db.href }, stdio: "ignore", windowsHide: true,
+      });
+      child.on("error", reject); child.on("exit", code => code === 0 ? resolve() : reject(new Error("Runtime test migration failed")));
+    });
+    const environment = { DATABASE_URL: db.href, REDIS_URL: redisUrl.href, API_BASE_URL: upstream.url };
+    await withServer(environment, async base => {
+      const login = await fetch(base + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "bff-runtime@example.test", senha: "test-password" }) });
+      assert.equal(login.status, 200); auth = { Authorization: "Bearer " + (await login.json()).accessToken, "Content-Type": "application/json" };
+      const uuid = randomUUID();
+      for (const path of ["/settings/presentation", "/dashboard/overview", "/monitoring/hosts", "/monitoring/hosts/asgard", "/monitoring/hosts/asgard/history", "/monitoring/hosts/asgard/containers", "/monitoring/hosts/asgard/vms/101/history", "/monitoring/containers", "/monitoring/problems", "/monitoring/services", "/monitoring/services/" + uuid, "/monitoring/services/" + uuid + "/history"]) {
+        assert.equal((await fetch(base + "/api" + path)).status, 401, path);
+      }
+      const initial = await fetch(base + "/api/settings/presentation", { headers: auth }); assert.equal(initial.status, 200);
+      const { data: first } = await initial.json();
+      const { revision, ...settings } = first;
+      settings.screens[0].name = "Apresentação compartilhada"; settings.rotation.intervalSeconds = 35;
+      const put = await fetch(base + "/api/settings/presentation", { method: "PUT", headers: auth, body: JSON.stringify({ expectedRevision: revision, settings }) });
+      assert.equal(put.status, 200); saved = await put.json();
+      assert.equal((await fetch(base + "/api/settings/presentation", { method: "PUT", headers: auth, body: JSON.stringify({ expectedRevision: revision, settings }) })).status, 409);
+      const post = await fetch(base + "/api/monitoring/services", { method: "POST", headers: auth, body: JSON.stringify({ resourceType: "host", zabbixHostKey: "runtime-host", displayName: "Runtime" }) });
+      assert.equal(post.status, 201); resourceId = (await post.json()).data.id;
+      const edit = await fetch(base + "/api/monitoring/services/" + resourceId, { method: "PATCH", headers: auth, body: JSON.stringify({ displayName: "Persistido" }) }); assert.equal(edit.status, 200);
+      for (const path of ["/monitoring/hosts", "/monitoring/containers", "/monitoring/problems", "/monitoring/services", "/monitoring/services/" + resourceId, "/monitoring/services/" + resourceId + "/history"]) {
+        const response = await fetch(base + "/api" + path, { headers: auth }); assert.equal(response.status, 200, path);
+        assert.equal((await response.json()).availability, "no_data");
+      }
+      const overview = await fetch(base + "/api/dashboard/overview?screenId=" + first.screens[0].id, { headers: auth });
+      assert.equal(overview.status, 200); assert.equal((await overview.json()).data.blocks.length, 4);
+      assert.equal((await fetch(base + "/api/monitoring/hosts/missing/history", { headers: auth })).status, 404);
+    });
+    await withServer(environment, async base => {
+      assert.deepEqual(await (await fetch(base + "/api/settings/presentation", { headers: { ...auth, "User-Agent": "second-device" } })).json(), saved);
+      const resource = await (await fetch(base + "/api/monitoring/services/" + resourceId, { headers: auth })).json(); assert.equal(resource.data.config.displayName, "Persistido");
+      assert.equal((await fetch(base + "/api/monitoring/services/" + resourceId, { method: "DELETE", headers: auth })).status, 204);
+      assert.equal((await fetch(base + "/api/monitoring/services/" + resourceId, { headers: auth })).status, 404);
+    });
+    const broken = new URL(db.href); broken.port = "1";
+    await withServer({ ...environment, DATABASE_URL: broken.href }, async base => {
+      const response = await fetch(base + "/api/settings/presentation", { headers: auth }); assert.equal(response.status, 503);
+      assert.deepEqual(await response.json(), { error: { code: "database_unavailable" } });
+    });
+  } finally {
+    await upstream.close();
+    assert.match(dbName, /^pulse_runtime03_test_\d+_\d+$/);
+    if (created) await admin.query('DROP DATABASE "' + dbName + '" WITH (FORCE)');
+    await admin.end();
+  }
 });

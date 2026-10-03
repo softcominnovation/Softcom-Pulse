@@ -6,7 +6,7 @@ A branch de desenvolvimento é a **`develop`**. A de produção é a **`main`**.
 
 ## Iniciar em local
 
-Windows com Node 24 LTS, direto no host, sem Docker. PostgreSQL na porta `5432` e Redis na porta `6379`. Copie `.env.example` para `.env` se ainda não existir e preencha `DATABASE_URL` e `REDIS_URL`. Não commite `.env`.
+Windows com Node 24 LTS, direto no host, sem Docker. PostgreSQL na porta `5432` e Redis na porta `6379`. Copie `.env.example` para `.env` se ainda não existir e preencha `DATABASE_URL`, `REDIS_URL`, `API_BASE_URL` e `TOKEN_ENCRYPTION_KEY` (32 bytes aleatórios em base64, somente no servidor). Não commite `.env`.
 
 Na pasta do aplicativo:
 
@@ -17,7 +17,7 @@ npx prisma migrate dev
 npm run dev
 ```
 
-Abra http://127.0.0.1:3000. A base inicial tem a página de presença e `GET /api/health`; autenticação e monitoramento entram nas próximas etapas. O schema inicial não tem tabela de negócio: `migrate dev` apenas confirma o baseline, sem migration fictícia.
+Abra http://127.0.0.1:3000/login e entre com o e-mail e a senha de colaborador. O login abre `/`, já protegida; o monitoramento será incorporado nessa página. `GET /api/health` verifica banco e cache. Fluxo, sessão e requisitos de navegador: [docs/authentication.md](docs/authentication.md). O schema inicial não tem tabela de negócio: `migrate dev` apenas confirma o baseline, sem migration fictícia.
 
 `npm run check` valida lint, tipos, testes e build. Variáveis, versões, stacks, migrations e testes adicionais: [docs/environment.md](docs/environment.md).
 

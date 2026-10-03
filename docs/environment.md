@@ -19,7 +19,7 @@ O Next gera `AGENTS.md` e `CLAUDE.md` locais ao detectar uma sessão assistida e
 PostgreSQL e Redis rodam diretamente no host, nas portas 5432 e 6379. Não há Docker no fluxo local.
 
 1. Instalar as dependências com `npm install`.
-2. Copiar `.env.example` para `.env` somente se o arquivo local ainda não existir. Preencher `DATABASE_URL` e `REDIS_URL`.
+2. Copiar `.env.example` para `.env` somente se o arquivo local ainda não existir. Preencher `DATABASE_URL`, `REDIS_URL`, `API_BASE_URL` e `TOKEN_ENCRYPTION_KEY`, conforme a tabela abaixo.
 3. Executar `npm run db:prepare`. O script verifica/cria exclusivamente o banco `pulse` em PostgreSQL local. O usuário precisa de permissão para criar esse banco. Não recria um banco existente.
 4. Executar `npm run db:validate` e `npm run db:migrate`.
 5. Executar `npm run dev` e acessar http://127.0.0.1:3000.
@@ -32,14 +32,14 @@ A configuração local usa URLs completas. Os campos antigos `POSTGRES_HOST`, `P
 
 ## Variáveis
 
-Web e collector recebem o mesmo contrato de ambiente, embora o collector inicial apenas aguarde. Variáveis de autenticação e telemetria ficam reservadas para suas implementações e podem estar vazias nesta base.
+Web e collector recebem o mesmo contrato de ambiente, embora o collector inicial apenas aguarde. Autenticação já utiliza a URL corporativa e a chave de cifra. Somente as variáveis de telemetria permanecem reservadas.
 
 | Variável | Leitor/uso | Browser | Compose |
 |---|---|---|---|
 | `DATABASE_URL` | Web/health, Prisma, inicialização de web e collector; configuração humana futura | Não | Mesmo nome nos dois serviços da stack. Obrigatória, banco `pulse`; host `pulse_postgres` em produção ou `pulse_postgres_dev` em dev |
 | `REDIS_URL` | Web/health; snapshots do web e collector posteriormente | Não | Mesmo nome nos dois serviços; default `redis://pulse_redis:6379` ou `redis://pulse_redis_dev:6379` |
-| `CORPORATE_API_URL` | BFF de autenticação, reservado | Não | Mesmo nome; `https://api.softcom.cloud` nos dois ambientes |
-| `TOKEN_ENCRYPTION_KEY` | BFF de autenticação, reservado | Não | Mesmo nome nos dois ambientes; configurar segredo próprio por ambiente antes da autenticação |
+| `API_BASE_URL` | BFF de login, refresh e logout | Não | `https://api.softcom.cloud` nos dois ambientes; sem chave de serviço |
+| `TOKEN_ENCRYPTION_KEY` | AES-256-GCM dos envelopes de sessão | Não | Obrigatória: 32 bytes aleatórios em base64, segredo próprio por ambiente e igual entre réplicas do mesmo ambiente |
 | `ZABBIX_API_URL` | Collector e BFF de histórico, reservado | Não | Mesmo nome nos dois ambientes |
 | `ZABBIX_API_TOKEN` | Collector e BFF de histórico, reservado | Não | Mesmo nome nos dois ambientes |
 | `COLLECTOR_INTERVAL_MS` | Collector futuro | Não | Mesmo nome, default `20000` |
@@ -138,10 +138,10 @@ npm run test:ui
 npm run test:runtime
 ```
 
-`test:runtime` requer build prévio. Os testes usam portas locais próprias, encerram seus processos e salvam evidências ignoradas em `.cache/screenshots`. Componentes são montados no harness de testes; não há rota de demonstração incluída no aplicativo.
+`test:runtime` requer build prévio. Os testes de autenticação utilizam um upstream simulado local; não precisam de conta corporativa ou chave de serviço. `test:ui` usa portas 3100/3102 e cache próprio em `.cache/next-e2e`, preservando o servidor de desenvolvimento da porta 3000. `PULSE_E2E=1` é controle interno do harness, não env de produto ou de stack. Os testes usam portas locais próprias, encerram seus processos e salvam evidências ignoradas em `.cache/screenshots`. Componentes são montados no harness de testes; não há rota de demonstração incluída no aplicativo.
 
 Os testes de integração criam um banco temporário com prefixo `pulse_phase01_test_`, restrito a PostgreSQL local, e removem somente esse banco ao terminar. Validam dois processos reais de migration, falha do subprocesso, perda da sessão, timeout de conexão e de trava. Não usam dados de negócio.
 
 Interface validada em Chromium: 320/360/390px, tablet retrato/paisagem, desktop e reflow equivalente a 200% (viewport CSS de 640px para tela de 1280px). Cores/fontes computadas, logo/favicon, labels, foco, Escape, clique fora, cancelamento, repetição da confirmação, erro/retry, texto longo, toast e alvos de toque são exercitados. Isso não equivale a homologação em todos os aparelhos físicos ou navegadores.
 
-A base não implementa login, dashboard, telemetria ou tabelas de configuração; esses contratos entram nas etapas correspondentes.
+Autenticação e shell protegido estão implementados. O dashboard contém título/texto; telemetria e tabelas de configuração permanecem para as etapas correspondentes. Ver [autenticação](authentication.md).

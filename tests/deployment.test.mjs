@@ -23,7 +23,7 @@ for (const dev of [false, true]) {
     }
     const app = c.services[web];
     assert.match(app.image, dev ? /:dev$/ : /:latest$/);
-    assert.equal(app.environment.CORPORATE_API_URL, "https://api.softcom.cloud");
+    assert.equal(app.environment.API_BASE_URL, "https://api.softcom.cloud");
     assert.ok(app.environment.REDIS_URL.includes(cache));
     assert.equal(c.services[web + "-collector"].deploy.update_config.order, "stop-first");
     assert.deepEqual(c.services[cache].command, ["redis-server", "--appendonly", "yes"]);

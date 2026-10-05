@@ -17,7 +17,9 @@ npx prisma migrate dev
 npm run dev
 ```
 
-Abra http://127.0.0.1:3000/login e entre com o e-mail e a senha de colaborador. O login abre `/`, já protegida; o monitoramento será incorporado nessa página. `GET /api/health` verifica banco e cache. Fluxo, sessão e requisitos de navegador: [docs/authentication.md](docs/authentication.md). O schema já contém as duas tabelas de configuração humana. `migrate dev` aplica a migration; os scripts de dev/build geram o cliente Prisma automaticamente. Apresentação compartilhada, CRUD, snapshots e leituras autenticadas: [docs/bff.md](docs/bff.md). Sem Collector, o BFF retorna estados sem dados.
+Abra http://127.0.0.1:3000/login e entre com o e-mail e a senha de colaborador. O login abre `/`, já protegida; o dashboard visual será incorporado nessa página. `GET /api/health` verifica banco e cache. Fluxo, sessão e requisitos de navegador: [docs/authentication.md](docs/authentication.md). O schema já contém as duas tabelas de configuração humana. `migrate dev` aplica a migration; os scripts de dev/build geram o cliente Prisma automaticamente. Apresentação compartilhada, CRUD, snapshots e leituras autenticadas: [docs/bff.md](docs/bff.md).
+
+Para alimentar o monitoramento, preencha `ZABBIX_API_URL` e `ZABBIX_API_TOKEN`, confirme o escopo e execute `npm run collector` em outro terminal. `npm run collector:once` coleta uma única vez. O processo não abre porta HTTP. Configuração de escopo, mapeamento, históricos e limites: [docs/zabbix.md](docs/zabbix.md). Sem coleta válida, o BFF informa ausência ou desatualização dos dados.
 
 `npm run check` valida lint, tipos, testes e build. Variáveis, versões, stacks, migrations e testes adicionais: [docs/environment.md](docs/environment.md).
 

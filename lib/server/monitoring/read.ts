@@ -12,12 +12,14 @@ import { getPresentation, getResource, listResources } from "../config/repositor
 import { readSnapshotBatch, readResult, snapshotData, snapshotKeys } from "../cache/snapshots.ts";
 
 import { freshness, readInventory } from "./inventory.ts";
+import { sourceBindingsSchema, sourceKey } from "../zabbix/bindings.ts";
+import { queryHistory } from "../zabbix/history.ts";
 
-function configuredResource(config: ResourceConfig, inventory: { hosts: Host[]; containers: Container[] }): ConfiguredResource {
+export function configuredResource(config: ResourceConfig, inventory: { hosts: Host[]; containers: Container[] }): ConfiguredResource {
   const resolution = resolveResource(config, inventory);
   return { id: config.id, config, resolved: resolution.resolved, resolution: resolution.resolution, resource: resolution.target, metrics: resolution.target?.metrics ?? {} };
 }
-function cardResource(resource: ConfiguredResource): ConfiguredResource {
+export function cardResource(resource: ConfiguredResource): ConfiguredResource {
   const p = resource.config.presentation;
   const visibleMetrics = (metrics: Metrics): Metrics => Object.fromEntries(Object.entries(metrics).filter(([key]) => {
     if (key.startsWith("cpu")) return p.showCpu;
@@ -45,7 +47,7 @@ function resourceKeys(config: ResourceConfig) {
 }
 export async function readHosts() {
   const batch = await readSnapshotBatch([snapshotKeys.hosts]);
-  return readResult(freshness(snapshotData(batch, snapshotKeys.hosts, z.array(hostSchema), []), batch.sync?.status === "failed"), batch, [snapshotKeys.hosts]);
+  return readResult(freshness(snapshotData(batch, snapshotKeys.hosts, z.array(hostSchema), []), readResult(null, batch, [snapshotKeys.hosts]).stale), batch, [snapshotKeys.hosts]);
 }
 export async function readHost(hostKey: string) {
   const key = snapshotKeys.host(hostKey);
@@ -54,7 +56,7 @@ export async function readHost(hostKey: string) {
   if (detailed && detailed.hostKey !== hostKey) throw new BffError(503, "snapshot_invalid");
   const host = detailed ?? hosts.find(item => item.hostKey === hostKey);
   if (!host) throw new BffError(404, "host_not_found");
-  return readResult(freshness(host, batch.sync?.status === "failed"), batch, [key, snapshotKeys.hosts]);
+  return readResult(freshness(host, readResult(null, batch, [key, snapshotKeys.hosts]).stale), batch, [key, snapshotKeys.hosts]);
 }
 export async function readContainers(hostKey?: string) {
   const { hosts, containers, batch, keys } = await readInventory(hostKey ? [hostKey] : "all");
@@ -84,7 +86,7 @@ export async function readOverview(screenId?: string) {
   const current = await readInventory(containerHosts, [snapshotKeys.overview, snapshotKeys.problems]);
   const base = freshness(snapshotData(current.batch, snapshotKeys.overview, overviewSnapshotSchema, {
     summary: emptySummary(), asgardSummary: { host: null, vms: [] },
-  }), current.batch.sync?.status === "failed");
+  }), readResult(null, current.batch, current.keys).stale);
   const resources = configs.map(config => cardResource(configuredResource(config, current)));
   const problems = snapshotData(current.batch, snapshotKeys.problems, z.array(problemSchema), []);
   const blocks: OverviewBlock[] = screen.blocks.filter(block => block.enabled).map(block => {
@@ -104,13 +106,22 @@ export async function readOverview(screenId?: string) {
   const data: Overview = { ...base, highlightedResources: resources, problems, screenId: screen.id, presentationRevision: presentation.data.revision, blocks };
   return readResult(data, current.batch, current.keys);
 }
-export async function readHistory(resource: History["resource"], window: History["window"] = "1h") {
-  if (resource.type === "configured_resource") await getResource(resource.reference!);
-  else {
+export async function readHistory(resource: History["resource"], window: History["window"] = "1h", signal?: AbortSignal) {
+  let target = resource;
+  let generation: string | null = null;
+  if (resource.type === "configured_resource") {
+    const config = await getResource(resource.reference!);
+    const inventory = await readInventory(config.resourceType === "docker_container" ? [config.zabbixHostKey] : [], [snapshotKeys.bindings]);
+    generation = inventory.batch.generation;
+    const resolution = resolveResource(config, inventory);
+    if (!resolution.resolved || !resolution.target) return queryHistory(resource, window, undefined, { signal, stale: readResult(null, inventory.batch, inventory.keys).stale });
+    target = { type: config.resourceType, hostKey: config.zabbixHostKey, reference: "reference" in resolution.target ? resolution.target.reference : null };
+  } else {
     const host = (await readHost(resource.hostKey)).data;
     if (resource.type === "vm" && !host.vms.some(vm => vm.vmKey === resource.reference)) throw new BffError(404, "vm_not_found");
   }
-  const batch = await readSnapshotBatch([]);
-  const result = readResult<History>({ resource, window, source: window === "7d" ? "trends" : "history", series: [] }, batch, []);
-  return { ...result, availability: "no_data" as const, lastUpdated: null, stale: false };
+  const batch = await readSnapshotBatch([snapshotKeys.bindings]);
+  if (generation && batch.generation !== generation) throw new BffError(503, "snapshot_inconsistent");
+  const bindings = snapshotData(batch, snapshotKeys.bindings, sourceBindingsSchema, {});
+  return queryHistory(resource, window, bindings[sourceKey(target.type, target.hostKey, target.reference)], { signal, stale: readResult(null, batch, [snapshotKeys.bindings]).stale });
 }

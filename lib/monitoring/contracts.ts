@@ -8,14 +8,16 @@ const opaqueId = z.string().min(1).max(256);
 export const metricSchema = z.object({
   value: z.number().finite().nullable(), unit: z.enum(["percent", "bytes", "bytes/s", "bits/s", "seconds", "count"]),
   observedAt: isoSchema.nullable(), quality: z.enum(["fresh", "stale", "missing", "unsupported"]),
+  validUntil: isoSchema.nullable().optional(),
 }).refine(metric => metric.value === null || (metric.observedAt !== null && ["fresh", "stale"].includes(metric.quality)));
 export const metricsSchema = z.object({
   cpuUsagePercent: metricSchema.optional(), memoryUsedBytes: metricSchema.optional(), memoryTotalBytes: metricSchema.optional(),
   memoryUsagePercent: metricSchema.optional(), diskUsedBytes: metricSchema.optional(), diskTotalBytes: metricSchema.optional(),
   diskUsagePercent: metricSchema.optional(), diskReadBytesPerSecond: metricSchema.optional(), diskWriteBytesPerSecond: metricSchema.optional(),
   networkReceiveBitsPerSecond: metricSchema.optional(), networkTransmitBitsPerSecond: metricSchema.optional(), uptimeSeconds: metricSchema.optional(),
+  restartCount: metricSchema.optional(),
 });
-const evidenceSchema = z.object({ source: z.literal("zabbix"), observedAt: isoSchema.nullable(), basis: z.enum(["item", "discovery", "configuration", "unknown"]) });
+const evidenceSchema = z.object({ source: z.literal("zabbix"), observedAt: isoSchema.nullable(), basis: z.enum(["item", "discovery", "configuration", "unknown"]), validUntil: isoSchema.nullable().optional() });
 const observedAvailability = z.enum(["reachable", "unreachable", "unknown"]);
 export const vmSchema = z.object({
   vmKey: opaqueId, vmId: z.string().max(64).nullable(), name, parentHostKey: hostKeySchema,
@@ -32,6 +34,8 @@ export const containerSchema = z.object({
   reference: opaqueId, hostKey: hostKeySchema, name, image: z.string().max(1024).nullable(),
   status: z.enum(["running", "stopped", "paused", "restarting", "created", "removing", "dead", "unknown"]),
   health: z.enum(["healthy", "unhealthy", "starting", "not_configured", "unknown"]),
+  healthReason: z.enum(["observed", "missing", "unsupported", "stale", "unrecognized"]).optional(),
+  healthObservedAt: isoSchema.nullable().optional(), healthValidUntil: isoSchema.nullable().optional(),
   metrics: metricsSchema, evidence: evidenceSchema,
 });
 export const resourceReferenceSchema = z.object({
@@ -43,12 +47,16 @@ export const problemSchema = z.object({
   severity: z.number().int().min(0).max(5), visualState: z.enum(["info", "warning", "critical", "unknown"]), startedAt: isoSchema,
 });
 const count = z.number().int().nonnegative().nullable();
-export const summarySchema = z.object({ hostsKnown: count, hostsReachable: count, vms: count, containersRunning: count, containersStopped: count, problems: count, criticalAffected: count });
+export const summarySchema = z.object({ hostsKnown: count, hostsReachable: count, vms: count, containersRunning: count, containersStopped: count, containersTotal: count.optional(), problems: count, criticalAffected: count });
 export const asgardSummarySchema = z.object({ host: hostSchema.nullable(), vms: z.array(vmSchema) });
 export const overviewSnapshotSchema = z.object({ summary: summarySchema, asgardSummary: asgardSummarySchema });
 export const historySchema = z.object({
   resource: resourceReferenceSchema, window: historyRangeSchema, source: z.enum(["history", "trends"]),
-  series: z.array(z.object({ key: name, unit: metricSchema.shape.unit, points: z.array(z.object({ timestamp: isoSchema, value: z.number().finite().nullable() })) })),
+  technicalReference: opaqueId.optional(), coverageLimited: z.boolean().optional(),
+  series: z.array(z.object({ key: name, unit: metricSchema.shape.unit, aggregation: z.enum(["last_min_max", "hourly_average"]).optional(),
+    points: z.array(z.object({ timestamp: isoSchema, value: z.number().finite().nullable(), min: z.number().finite().nullable().optional(), max: z.number().finite().nullable().optional() })).max(1000) })),
+  states: z.array(z.object({ key: z.enum(["health", "status"]), aggregation: z.literal("worst_state"), coverageLimited: z.boolean(),
+    segments: z.array(z.object({ from: isoSchema, to: isoSchema, state: name, observedAt: isoSchema.nullable() })).max(1000) })).optional(),
 });
 export type Metric = z.infer<typeof metricSchema>;
 export type Metrics = z.infer<typeof metricsSchema>;

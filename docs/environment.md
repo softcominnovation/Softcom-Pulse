@@ -26,23 +26,23 @@ PostgreSQL e Redis rodam diretamente no host, nas portas 5432 e 6379. Não há D
 
 O schema contém as tabelas de configuração humana `monitored_resource_config` e `pulse_settings`, na migration `20261003010322_human_configuration`. Ela inclui índices únicos parciais e CHECKs, inclusive para impedir hosts duplicados com seletores NULL. `npm run db:migrate` aplica migrations localmente; o entrypoint continua usando `prisma migrate deploy`, sem reset. O cliente Prisma usa o adapter pg sobre o mesmo pool do health. `dev`, `typecheck` e `build` geram o cliente antes de executar o Next; `npm run db:generate` permite geração explícita. A geração não conecta ao banco nem exige credenciais no build; operação e migrations exigem DATABASE_URL. Contratos e limites: [BFF](bff.md).
 
-`npm run collector` mantém o processo base ativo e encerra em SIGINT/SIGTERM. Nesta etapa ele não faz coleta nem acessa Zabbix.
+`npm run collector` executa a coleta real do Zabbix em loop; `npm run collector:once` faz um ciclo e termina. Os dois geram snapshots no Redis e não abrem HTTP. SIGINT/SIGTERM interrompem a espera/requests e aguardam o ciclo para encerrar. Configurar ZABBIX_API_URL/TOKEN e o escopo humano conforme [Zabbix](zabbix.md); `npm run collector:scope -- CAMINHO_JSON` salva apenas as escolhas de escopo/vínculo no banco. Não inicia a UI do dashboard.
 
 A configuração local usa URLs completas. Os campos antigos `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_PASSWORD`, `REDIS_HOST`, `REDIS_PORT` e `REDIS_PASSWORD`, se existirem num `.env` anterior, não substituem `DATABASE_URL` e `REDIS_URL`. Não imprimir credenciais em logs. `.env`, variações locais e artefatos de teste estão ignorados no Git; o contexto Docker exclui `.env*`.
 
 ## Variáveis
 
-Web e collector recebem o mesmo contrato de ambiente, embora o collector inicial apenas aguarde. Autenticação já utiliza a URL corporativa e a chave de cifra. O BFF já usa banco, Redis e os intervalos de freshness. Endereço/token Zabbix continuam reservados ao Collector e histórico posteriores.
+Web e collector recebem o mesmo contrato de ambiente. Autenticação utiliza a URL corporativa e a chave de cifra. O BFF usa banco, Redis e os intervalos de freshness; Collector e histórico sob demanda usam endereço/token Zabbix somente no servidor. O Collector não envia credenciais corporativas ao Zabbix.
 
 | Variável | Leitor/uso | Browser | Compose |
 |---|---|---|---|
 | `DATABASE_URL` | Web/health, Prisma, configuração humana e inicialização de web/collector | Não | Mesmo nome nos dois serviços da stack. Obrigatória, banco `pulse`; host `pulse_postgres` em produção ou `pulse_postgres_dev` em dev |
-| `REDIS_URL` | Web/health e leitura/publicação de envelopes; produtor Collector posteriormente | Não | Mesmo nome nos dois serviços; default `redis://pulse_redis:6379` ou `redis://pulse_redis_dev:6379` |
+| `REDIS_URL` | Web/health e leitura/publicação de envelopes pelo Collector | Não | Mesmo nome nos dois serviços; default `redis://pulse_redis:6379` ou `redis://pulse_redis_dev:6379` |
 | `API_BASE_URL` | BFF de login, refresh e logout | Não | `https://api.softcom.cloud` nos dois ambientes; sem chave de serviço |
 | `TOKEN_ENCRYPTION_KEY` | AES-256-GCM dos envelopes de sessão | Não | Obrigatória: 32 bytes aleatórios em base64, segredo próprio por ambiente e igual entre réplicas do mesmo ambiente |
-| `ZABBIX_API_URL` | Collector e BFF de histórico, reservado | Não | Mesmo nome nos dois ambientes |
-| `ZABBIX_API_TOKEN` | Collector e BFF de histórico, reservado | Não | Mesmo nome nos dois ambientes |
-| `COLLECTOR_INTERVAL_MS` | BFF/refreshAfterMs e Collector futuro | Não | Mesmo nome, default `20000` |
+| `ZABBIX_API_URL` | Collector e BFF de histórico | Não | Mesmo nome nos dois ambientes; endpoint JSON-RPC do Server |
+| `ZABBIX_API_TOKEN` | Collector e BFF de histórico | Não | Mesmo nome nos dois ambientes; somente consultas de leitura |
+| `COLLECTOR_INTERVAL_MS` | BFF/refreshAfterMs e Collector | Não | Mesmo nome, default `20000` |
 | `SNAPSHOT_TTL_SECONDS` | Helpers de snapshot: retenção por TTL | Não | Mesmo nome, default `300` |
 | `SNAPSHOT_STALE_AFTER_MS` | BFF/helpers de snapshot: limite de freshness | Não | Mesmo nome, default `60000` |
 | `POSTGRES_USER` | Container PostgreSQL | Não | Mesmo nome, default `postgres`; deve coincidir com o usuário da URL |
@@ -94,7 +94,7 @@ Update: uma tarefa por vez, intervalo de 10s, rollback em falha. Web usa `start-
 
 ### Inicialização e imagem
 
-Dockerfile multi-stage com Node 24, OpenSSL e certificados, build standalone e processo `node` sem root. Copia explicitamente dependências de produção, CLI/engines Prisma, schema, diretório de migrations, configuração Prisma e collector. Compõe a imagem a partir de `app_pulse`; composes, testes, documentação, Git, caches e envs locais não entram.
+Dockerfile multi-stage com Node 24, OpenSSL e certificados, build standalone e processo `node` sem root. Copia explicitamente dependências de produção, CLI/engines Prisma, schema, diretório de migrations, configuração Prisma e collector. O build executa `scripts/package-collector.mjs`, que inclui fontes compartilhados, cliente Prisma gerado e dependências transitivas do worker no standalone; não depende só do tracing das rotas Next. Compõe a imagem a partir de `app_pulse`; composes, testes, documentação, Git, caches e envs locais não entram. O comando do Collector é `node --conditions=react-server collector/index.mjs`; preserva a barreira server-only dos módulos compartilhados.
 
 `docker/entrypoint.sh` usa LF e permissão executável. Chama `docker/migrate.mjs`, que aguarda PostgreSQL e obtém advisory lock de sessão na chave exclusiva `734021001`, usando conexão dedicada. A conexão fica aberta enquanto `prisma migrate deploy` executa. Só depois do sucesso a trava é liberada e o shell usa `exec` para iniciar web/collector. Perda da conexão, timeout, sinal de encerramento ou erro do subprocesso abortam a inicialização; não executa reset nem `db push`. O encerramento alcança o subprocesso e sua árvore. Ver [locks do PostgreSQL](https://www.postgresql.org/docs/current/explicit-locking.html).
 
@@ -109,7 +109,7 @@ Os workflows publicam imagem no GHCR com `GITHUB_TOKEN`, sem webhook ou deploy d
 - Push de branch, pull request e disparo manual não são gatilhos. Não se aceitam beta, rc, sufixos adicionais ou zeros à esquerda.
 - O script valida formato e ancestralidade antes de autenticar/publicar no registry. Checkout completo e apenas leitura do Git.
 - CI executa lint, tipos, testes unitários, build, migrations, runtime, componentes e interface. PostgreSQL/Redis temporários do runner usam credenciais de teste descartáveis, sem segredo externo. O uso de containers no runner não altera o desenvolvimento local no host.
-- Buildx/QEMU publica `linux/amd64` e `linux/arm64`. Depois inspeciona o índice publicado e executa um smoke test de presença dos arquivos/dependências e UID sem root em cada arquitetura. `scripts/platform-digest.mjs` seleciona exatamente um manifesto Linux por arquitetura, exclui atestações e exige digest sha256 válido. Cada `docker run` usa esse digest próprio; o digest do índice é usado somente na inspeção. Isso evita `cannot overwrite digest` no daemon do runner.
+- Buildx/QEMU publica `linux/amd64` e `linux/arm64`. Depois inspeciona o índice publicado e executa um smoke test de arquivos/dependências, UID sem root e importação do Collector com `--check` em cada arquitetura, sem conexão externa. `scripts/platform-digest.mjs` seleciona exatamente um manifesto Linux por arquitetura, exclui atestações e exige digest sha256 válido. Cada `docker run` usa esse digest próprio; o digest do índice é usado somente na inspeção. Isso evita `cannot overwrite digest` no daemon do runner.
 - Permissões do workflow: `contents: read` e `packages: write`. Não há build-args de conexão ou segredo. O repositório deve permitir Actions e a publicação do pacote no GHCR.
 - Após uma release, o operador atualiza a stack pelo Portainer. Produção e desenvolvimento têm variáveis e volumes independentes.
 
@@ -146,4 +146,6 @@ Os testes de integração criam bancos temporários com prefixos `pulse_phase01_
 
 Interface validada em Chromium: 320/360/390px, tablet retrato/paisagem, desktop e reflow equivalente a 200% (viewport CSS de 640px para tela de 1280px). Cores/fontes computadas, logo/favicon, labels, foco, Escape, clique fora, cancelamento, repetição da confirmação, erro/retry, texto longo, toast e alvos de toque são exercitados. Isso não equivale a homologação em todos os aparelhos físicos ou navegadores.
 
-Autenticação, shell protegido, configuração PostgreSQL e contratos BFF estão implementados. O dashboard visual mantém título/texto; ainda não há Collector real nem editor administrativo. Ver [autenticação](authentication.md) e [BFF](bff.md).
+Autenticação, shell protegido, configuração PostgreSQL, BFF e Collector Zabbix estão implementados. A fase 04 também testa PostgreSQL temporário `pulse_phase04_test_`/`pulse_runtime04_test_` e Redis DB 13/12 vazio com trava; remove somente suas próprias chaves. O runtime exercita o processo empacotado, coleta, histórico autenticado, falha, exclusão entre workers e encerramento. Fixtures não usam o Redis DB 0 nem persistem telemetria no banco pulse.
+
+O dashboard visual ainda mantém título/texto; o editor administrativo é posterior. Ver [autenticação](authentication.md), [BFF](bff.md) e [integração Zabbix](zabbix.md). A implantação mantém `replicas: 1` e `stop-first`; adicionalmente, a chave PostgreSQL `734021004` impede coletores concorrentes no mesmo banco.

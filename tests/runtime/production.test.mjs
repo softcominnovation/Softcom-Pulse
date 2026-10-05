@@ -3,9 +3,11 @@ import { startAuthUpstream } from "../fixtures/auth-upstream.mjs";
 import { before, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { cp, mkdir, readFile, readdir } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, writeFile, unlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
+import { zabbixFixture } from "../fixtures/zabbix.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import pg from "pg";
 import { createClient } from "redis";
@@ -52,6 +54,76 @@ async function withServer(environment, run) {
     await exited;
   }
 }
+test("packaged collector publishes real Redis contracts, serves history and excludes concurrent workers", { timeout: 90000 }, async () => {
+  const f = zabbixFixture(), databaseName = "pulse_runtime04_test_" + process.pid + "_" + Date.now();
+  const scopeFile = new URL(".cache/" + databaseName + "-scope.json", root);
+  const db = new URL(process.env.DATABASE_URL), redisUrl = new URL(process.env.REDIS_URL);
+  for (const url of [db, redisUrl]) assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(url.hostname));
+  db.pathname = "/postgres"; redisUrl.pathname = "/12";
+  const admin = new pg.Client({ connectionString: db.href }), cache = createClient({ url: redisUrl.href }); cache.on("error", () => {});
+  const upstream = await startAuthUpstream(); let fail = false, created = false, owned = false;
+  const leaseKey = "pulse:test:runtime04:lease", lease = randomUUID();
+  const touched = new Set(); const children = new Set();
+  const server = createHttpServer(async (request, response) => {
+    try {
+      const chunks = []; for await (const chunk of request) chunks.push(chunk);
+      const { method, params, id } = JSON.parse(Buffer.concat(chunks));
+      if (method !== "apiinfo.version") assert.equal(request.headers.authorization, "Bearer test-zabbix-only");
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify(fail ? { jsonrpc: "2.0", id, error: { code: -1, data: "private upstream" } } : { jsonrpc: "2.0", id, result: await f.rpc(method, params) }));
+    } catch { response.writeHead(500); response.end(); }
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const worker = (args, environment) => {
+    let output = "";
+    const child = spawn(process.execPath, args, { cwd: fileURLToPath(standalone), env: { ...process.env, ...environment }, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }); children.add(child);
+    child.stdout.on("data", data => { output += data; }); child.stderr.on("data", data => { output += data; });
+    const done = new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", code => { children.delete(child); resolve({ code, output }); }); });
+    return { child, done, output: () => output };
+  };
+  try {
+    await admin.connect(); await admin.query('CREATE DATABASE "' + databaseName + '"'); created = true; db.pathname = "/" + databaseName;
+    await cache.connect(); assert.equal(await cache.set(leaseKey, lease, { NX: true, EX: 600 }), "OK"); owned = true; assert.equal(await cache.dbSize(), 1, "Redis DB 12 must be empty");
+    await new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [fileURLToPath(new URL("node_modules/prisma/build/index.js", root)), "migrate", "deploy"], { cwd: fileURLToPath(root), env: { ...process.env, DATABASE_URL: db.href }, stdio: "ignore", windowsHide: true });
+      child.once("error", reject); child.once("exit", code => code === 0 ? resolve() : reject(new Error("Migration failed")));
+    });
+    const environment = { DATABASE_URL: db.href, REDIS_URL: redisUrl.href, API_BASE_URL: upstream.url, ZABBIX_API_URL: `http://127.0.0.1:${server.address().port}/api_jsonrpc.php`, ZABBIX_API_TOKEN: "test-zabbix-only" };
+    await writeFile(scopeFile, JSON.stringify(f.scope));
+    const scope = await worker(["--conditions=react-server", "collector/configure-scope.mjs", fileURLToPath(scopeFile)], environment).done; assert.equal(scope.code, 0, scope.output);
+    const check = await worker(["--conditions=react-server", "collector/index.mjs", "--check"], { ...environment, DATABASE_URL: "", REDIS_URL: "", ZABBIX_API_URL: "", ZABBIX_API_TOKEN: "" }).done;
+    assert.equal(check.code, 0, check.output);
+    const first = await worker(["--conditions=react-server", "collector/index.mjs", "--once"], environment).done; assert.equal(first.code, 0, first.output);
+    const sync = JSON.parse(await cache.get("pulse:sync:last")); sync.data.keys.forEach(key => touched.add(key)); touched.add("pulse:sync:last");
+    await withServer(environment, async base => {
+      const login = await fetch(base + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "collector@example.test", senha: "test-password" }) });
+      assert.equal(login.status, 200); const auth = { Authorization: "Bearer " + (await login.json()).accessToken };
+      const overview = await fetch(base + "/api/dashboard/overview", { headers: auth }); assert.equal(overview.status, 200); assert.equal((await overview.json()).data.summary.containersStopped, 4);
+      const hosts = await (await fetch(base + "/api/monitoring/hosts", { headers: auth })).json(); const vmKey = hosts.data[0].vms[0].vmKey;
+      for (const path of ["/api/monitoring/hosts/ASGARD/history?range=7d", "/api/monitoring/hosts/ASGARD/vms/" + vmKey + "/history?range=1h"]) {
+        const response = await fetch(base + path, { headers: auth }); assert.equal(response.status, 200, path); const history = await response.json(); assert.equal(history.availability, "ready"); assert.ok(!JSON.stringify(history).includes('"itemid"'));
+      }
+      const before = await cache.get("pulse:inventory:hosts"); fail = true;
+      const failed = await worker(["--conditions=react-server", "collector/index.mjs", "--once"], environment).done; assert.equal(failed.code, 1); assert.ok(!failed.output.includes("private upstream")); assert.equal(await cache.get("pulse:inventory:hosts"), before);
+      assert.equal((await (await fetch(base + "/api/dashboard/overview", { headers: auth })).json()).stale, true);
+      fail = false;
+    });
+    const held = worker(["--conditions=react-server", "--input-type=module", "-e", 'import {runCollector} from "./collector/worker.ts"; const timer=setTimeout(()=>process.emit("SIGTERM"),3000); await runCollector(); clearTimeout(timer);'], environment);
+    for (let i = 0; i < 100 && !held.output().includes("collector_cycle"); i++) await delay(20);
+    assert.ok(held.output().includes("collector_cycle"));
+    const duplicate = await worker(["--conditions=react-server", "collector/index.mjs", "--once"], environment).done;
+    assert.equal(duplicate.code, 1); assert.ok(duplicate.output.includes("collector_already_running"));
+    const stopped = await held.done; assert.equal(stopped.code, 0, stopped.output);
+    const resumed = await worker(["--conditions=react-server", "collector/index.mjs", "--once"], environment).done; assert.equal(resumed.code, 0, resumed.output);
+  } finally {
+    for (const child of children) child.kill();
+    await upstream.close(); await new Promise(resolve => server.close(resolve));
+    if (cache.isReady) { if (owned && await cache.get(leaseKey) === lease) { if (touched.size) await cache.del([...touched]); await cache.del(leaseKey); } await cache.quit(); }
+    assert.match(databaseName, /^pulse_runtime04_test_\d+_\d+$/); if (created) await admin.query('DROP DATABASE "' + databaseName + '" WITH (FORCE)'); await admin.end();
+    await unlink(scopeFile).catch(() => {});
+  }
+});
+
 test("one standalone build accepts different public runtime settings", { timeout: 60000 }, async () => {
   const browser = await chromium.launch();
   try {
@@ -104,7 +176,7 @@ test("real HTTP health failure distinguishes database and cache without leaking 
   }
 });
 test("browser bundles do not contain private environment values", async () => {
-  const privateValues = [privateCanary, authKey, process.env.TOKEN_ENCRYPTION_KEY, process.env.API_BASE_URL, process.env.CORPORATE_API_URL, process.env.DATABASE_URL, process.env.REDIS_URL, process.env.ZABBIX_API_TOKEN].filter(value => value && value.length > 8);
+  const privateValues = [privateCanary, authKey, process.env.TOKEN_ENCRYPTION_KEY, process.env.API_BASE_URL, process.env.CORPORATE_API_URL, process.env.DATABASE_URL, process.env.REDIS_URL, process.env.ZABBIX_API_URL, process.env.ZABBIX_API_TOKEN, "ZABBIX_API_URL", "ZABBIX_API_TOKEN"].filter(value => value && value.length > 8);
   async function inspect(directory) {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const path = new URL(entry.name + (entry.isDirectory() ? "/" : ""), directory);

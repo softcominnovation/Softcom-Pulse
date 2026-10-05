@@ -1,6 +1,7 @@
-const keepAlive = setInterval(() => {}, 60000);
-console.log("Pulse collector is waiting; Zabbix collection is not enabled in this phase.");
-for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => {
-  clearInterval(keepAlive);
-  process.exitCode = 0;
+import { runCollector } from "./worker.ts";
+
+if (process.argv.includes("--check")) console.log("Pulse collector runtime is available.");
+else await runCollector(process.argv.includes("--once")).catch(() => {
+  console.error(JSON.stringify({ event: "collector_stopped", error: "collector_initialization_failed" }));
+  process.exitCode = 1;
 });

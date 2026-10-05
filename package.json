@@ -27,7 +27,7 @@
   },
   "scripts": {
     "dev": "prisma generate && next dev --hostname 127.0.0.1",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && next build && node scripts/package-collector.mjs",
     "start": "next start --hostname 127.0.0.1",
     "lint": "eslint .",
     "typecheck": "prisma generate && next typegen && tsc --noEmit",
@@ -40,7 +40,9 @@
     "db:validate": "prisma validate",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "collector": "node --env-file-if-exists=.env collector/index.mjs",
+    "collector": "node --conditions=react-server --env-file-if-exists=.env collector/index.mjs",
+    "collector:once": "node --conditions=react-server --env-file-if-exists=.env collector/index.mjs --once",
+    "collector:scope": "node --conditions=react-server --env-file-if-exists=.env collector/configure-scope.mjs",
     "check": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {

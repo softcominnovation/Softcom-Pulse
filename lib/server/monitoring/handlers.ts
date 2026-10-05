@@ -49,18 +49,18 @@ export function serviceDelete(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return deleteResource(uuidSchema.parse((await context.params).id)); }, 204);
 }
 export function hostHistoryGet(request: Request, context: Params<"hostKey">) {
-  return protectedResponse(request, async () => readHistory({ type: "host", hostKey: hostKeySchema.parse((await context.params).hostKey), reference: null }, queryParams(request, historyQuery).range));
+  return protectedResponse(request, async () => readHistory({ type: "host", hostKey: hostKeySchema.parse((await context.params).hostKey), reference: null }, queryParams(request, historyQuery).range, request.signal));
 }
 export function vmHistoryGet(request: Request, context: Params<"hostKey" | "vmKey">) {
   return protectedResponse(request, async () => {
     const params = await context.params;
-    return readHistory({ type: "vm", hostKey: hostKeySchema.parse(params.hostKey), reference: hostKeySchema.parse(params.vmKey) }, queryParams(request, historyQuery).range);
+    return readHistory({ type: "vm", hostKey: hostKeySchema.parse(params.hostKey), reference: hostKeySchema.parse(params.vmKey) }, queryParams(request, historyQuery).range, request.signal);
   });
 }
 export function serviceHistoryGet(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => {
     const { range } = queryParams(request, historyQuery);
     const config = await getResource(uuidSchema.parse((await context.params).id));
-    return readHistory({ type: "configured_resource", hostKey: config.zabbixHostKey, reference: config.id }, range);
+    return readHistory({ type: "configured_resource", hostKey: config.zabbixHostKey, reference: config.id }, range, request.signal);
   });
 }

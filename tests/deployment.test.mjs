@@ -26,6 +26,7 @@ for (const dev of [false, true]) {
     assert.equal(app.environment.API_BASE_URL, "https://api.softcom.cloud");
     assert.ok(app.environment.REDIS_URL.includes(cache));
     assert.equal(c.services[web + "-collector"].deploy.update_config.order, "stop-first");
+    assert.deepEqual(c.services[web + "-collector"].command, ["node", "--conditions=react-server", "collector/index.mjs"]);
     assert.deepEqual(c.services[cache].command, ["redis-server", "--appendonly", "yes"]);
     assert.ok(c.services[db].environment.POSTGRES_PASSWORD.includes(dev ? "POSTGRES_PASSWORD_DEV:" : "POSTGRES_PASSWORD:"));
     assert.ok(app.deploy.labels.includes("traefik.http.routers." + web + ".tls.certresolver=letsencryptresolver"));
@@ -50,6 +51,7 @@ for (const dev of [false, true]) {
     assert.ok(verification.includes('for arch in amd64 arm64; do'));
     assert.ok(verification.includes('platform_digest=$(node scripts/platform-digest.mjs manifest.json "$arch")'));
     assert.ok(verification.includes('--entrypoint node "$IMAGE@$platform_digest"'));
+    assert.ok(verification.includes('["--conditions=react-server","collector/index.mjs","--check"]'));
     assert.ok(!verification.includes('--entrypoint node "$image"'));
     const tags = steps.find(step => step.uses?.startsWith("docker/metadata-action@")).with.tags;
     assert.equal(tags.includes("value=latest"), !dev);

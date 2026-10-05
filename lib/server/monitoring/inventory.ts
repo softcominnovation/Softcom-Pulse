@@ -4,16 +4,24 @@ import { hostSchema, containerSchema } from "../../monitoring/contracts.ts";
 import { resolveResource } from "../../monitoring/selectors.ts";
 import type { ResourceInput } from "../../config/resources.ts";
 import { BffError } from "../bff.ts";
-import { readSnapshotBatch, snapshotData, snapshotKeys, snapshotTiming } from "../cache/snapshots.ts";
+import { readSnapshotBatch, readResult, snapshotData, snapshotKeys, snapshotTiming } from "../cache/snapshots.ts";
 
 export function freshness<T>(data: T, failed: boolean, now = Date.now()): T {
   if (Array.isArray(data)) return data.map(item => freshness(item, failed, now)) as T;
   if (!data || typeof data !== "object") return data;
   const value = data as Record<string, unknown>;
-  if (value.quality === "fresh" && (failed || typeof value.observedAt !== "string" || now - Date.parse(value.observedAt) > snapshotTiming().staleAfter)) {
+  if (value.quality === "fresh" && (failed || ("validUntil" in value ? typeof value.validUntil !== "string" || now > Date.parse(value.validUntil) : typeof value.observedAt !== "string" || now - Date.parse(value.observedAt) > snapshotTiming().staleAfter))) {
     return { ...value, quality: "stale" } as T;
   }
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, freshness(item, failed, now)])) as T;
+  const result = Object.fromEntries(Object.entries(value).map(([key, item]) => [key, freshness(item, failed, now)]));
+  if (typeof result.health === "string" && (failed || ("healthValidUntil" in value && (typeof value.healthValidUntil !== "string" || now > Date.parse(value.healthValidUntil))))) { result.health = "unknown"; result.healthReason = "stale"; }
+  const evidence = value.evidence as { validUntil?: string | null } | undefined;
+  if (failed || (evidence && "validUntil" in evidence && (!evidence.validUntil || now > Date.parse(evidence.validUntil)))) {
+    if ("availability" in result) result.availability = "unknown";
+    if ("status" in result) result.status = "unknown";
+    if ("state" in result) result.state = "unknown";
+  }
+  return result as T;
 }
 
 export async function readInventory(containerHosts: string[] | "all" = [], extraKeys: string[] = []) {
@@ -24,7 +32,7 @@ export async function readInventory(containerHosts: string[] | "all" = [], extra
     const keys = [...new Set([snapshotKeys.hosts, ...selectedHosts.map(snapshotKeys.containers), ...extraKeys])];
     const batch = await readSnapshotBatch(keys);
     if (first.generation !== batch.generation) continue;
-    const failed = batch.sync?.status === "failed";
+    const failed = readResult(null, batch, keys).stale;
     const containers = selectedHosts.flatMap(hostKey => {
       const items = snapshotData(batch, snapshotKeys.containers(hostKey), z.array(containerSchema), []);
       if (items.some(item => item.hostKey !== hostKey)) throw new BffError(503, "snapshot_invalid");

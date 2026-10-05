@@ -7,13 +7,14 @@ import { cacheOperation } from "../cache.ts";
 
 export const snapshotKeys = {
   overview: "pulse:snapshot:overview", hosts: "pulse:inventory:hosts", problems: "pulse:problems:current", sync: "pulse:sync:last",
+  bindings: "pulse:source:bindings",
   containers: (hostKey: string) => "pulse:inventory:containers:" + encodeURIComponent(hostKey),
   host: (hostKey: string) => "pulse:snapshot:host:" + encodeURIComponent(hostKey),
   service: (id: string) => "pulse:snapshot:service:" + id,
 };
-const keySchema = z.string().max(2048).refine(key => /^pulse:(?:snapshot:(?:overview|host:.+|service:.+)|inventory:(?:hosts|containers:.+)|problems:current)$/.test(key));
+const keySchema = z.string().max(2048).refine(key => /^pulse:(?:snapshot:(?:overview|host:.+|service:.+)|inventory:(?:hosts|containers:.+)|problems:current|source:bindings)$/.test(key));
 const envelopeSchema = z.object({ data: z.unknown(), updatedAt: isoSchema, source: z.literal("zabbix"), generation: z.uuid() });
-const syncSchema = z.object({ status: z.enum(["ok", "failed"]), lastSuccessfulAt: isoSchema.nullable(), keys: z.array(keySchema).max(50000) });
+const syncSchema = z.object({ status: z.enum(["ok", "failed"]), lastSuccessfulAt: isoSchema.nullable(), lastAttemptAt: isoSchema.optional(), error: z.string().max(80).nullable().optional(), keys: z.array(keySchema).max(50000) });
 export type SnapshotEnvelope = z.infer<typeof envelopeSchema>;
 export type SnapshotBatch = { snapshots: Map<string, SnapshotEnvelope | null>; sync: z.infer<typeof syncSchema> | null; generation: string | null };
 
@@ -50,7 +51,7 @@ export async function readSnapshotBatch(keys: string[]): Promise<SnapshotBatch> 
   }
 }
 
-export async function publishSnapshots(entries: Record<string, unknown>, updatedAt = new Date().toISOString()) {
+export async function publishSnapshots(entries: Record<string, unknown>, updatedAt = new Date().toISOString(), lastAttemptAt = updatedAt) {
   const { ttl } = snapshotTiming();
   isoSchema.parse(updatedAt);
   const keys = Object.keys(entries);
@@ -61,7 +62,7 @@ export async function publishSnapshots(entries: Record<string, unknown>, updated
     await cacheOperation(client => {
       const tx = client.multi();
       for (const [key, value] of Object.entries(entries)) tx.set(key, wrap(value), { EX: ttl });
-      tx.set(snapshotKeys.sync, wrap({ status: "ok", lastSuccessfulAt: updatedAt, keys }), { EX: ttl });
+      tx.set(snapshotKeys.sync, wrap({ status: "ok", lastSuccessfulAt: updatedAt, lastAttemptAt: isoSchema.parse(lastAttemptAt), error: null, keys }), { EX: ttl });
       return tx.exec();
     });
   } catch { throw new BffError(503, "cache_unavailable"); }
@@ -76,13 +77,15 @@ export function readResult<T>(data: T, batch: SnapshotBatch, keys: string[], now
   return { data, availability: snapshots.length ? "ready" : "no_data", stale, lastUpdated, refreshAfterMs: interval };
 }
 
-export async function markSyncFailure() {
+export async function markSyncFailure(errorCode = "collection_failed", lastAttemptAt = new Date().toISOString()) {
   const { ttl } = snapshotTiming();
-  const fallback = JSON.stringify({ data: { status: "failed", lastSuccessfulAt: null, keys: [] }, updatedAt: new Date().toISOString(), source: "zabbix", generation: randomUUID() });
+  isoSchema.parse(lastAttemptAt);
+  const error = /^[a-z_]{1,80}$/.test(errorCode) ? errorCode : "collection_failed";
+  const fallback = JSON.stringify({ data: { status: "failed", lastSuccessfulAt: null, lastAttemptAt, error, keys: [] }, updatedAt: lastAttemptAt, source: "zabbix", generation: randomUUID() });
   try {
     await cacheOperation(client => client.eval(
-      "local raw=redis.call('GET',KEYS[1]); if raw then local v=cjson.decode(raw); v.data.status='failed'; redis.call('SET',KEYS[1],cjson.encode(v),'KEEPTTL'); else redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2]); end; return 1",
-      { keys: [snapshotKeys.sync], arguments: [fallback, String(ttl)] },
+      "local raw=redis.call('GET',KEYS[1]); if raw then local v=cjson.decode(raw); v.data.status='failed'; v.data.lastAttemptAt=ARGV[3]; v.data.error=ARGV[4]; redis.call('SET',KEYS[1],cjson.encode(v),'KEEPTTL'); else redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2]); end; return 1",
+      { keys: [snapshotKeys.sync], arguments: [fallback, String(ttl), lastAttemptAt, error] },
     ));
   } catch { throw new BffError(503, "cache_unavailable"); }
 }

@@ -2,7 +2,7 @@
 
 O browser chama somente `/api` no Pulse, usando o cliente axios autenticado. As rotas abaixo exigem `Authorization: Bearer <access cifrado>` e validam a sessão no servidor antes de acessar as dependências. Qualquer colaborador autenticado pode utilizá-las. Não há permissão adicional nem tabela de usuários. [Contrato de autenticação](authentication.md).
 
-Todas as respostas usam `Cache-Control: no-store`. `/api/health` permanece público. O Collector ainda não publica telemetria; as rotas já têm persistência e leitura de cache, mas não fazem chamadas ao Zabbix ou ao Proxmox. Históricos permanecem vazios nesta entrega.
+Todas as respostas usam `Cache-Control: no-store`. `/api/health` permanece público. O Collector publica gerações completas no Redis; as leituras correntes usam esse cache. Somente históricos solicitados ao BFF consultam o Zabbix. Mapeamento e operação: [integração Zabbix](zabbix.md). Não há cliente Proxmox direto.
 
 ## Persistência humana
 
@@ -26,7 +26,7 @@ Prisma gerencia `monitored_resource_config` e `pulse_settings`. Campos físicos 
 | `POST /api/monitoring/services` | JSON da configuração, sem id/timestamps; 201 `{data: ResourceConfig}` |
 | `PATCH /api/monitoring/services/:id` | JSON parcial não vazio; 200 `{data: ResourceConfig}` |
 | `DELETE /api/monitoring/services/:id` | 204 sem corpo; remove somente a configuração Pulse e seus vínculos de apresentação |
-| `GET /api/monitoring/services/:id/history?range=1h` | Envelope com histórico vazio do recurso configurado |
+| `GET /api/monitoring/services/:id/history?range=1h` | Histórico sob demanda do alvo técnico atual; configuração sem alvo resolvido retorna no_data |
 
 PATCH preserva campos omitidos. Se `presentation` for enviado, substitui o objeto inteiro, aplicando defaults aos campos omitidos dentro dele. Alteração de tipo deve fornecer os seletores e a apresentação compatíveis. Campos desconhecidos, telemetria, UUIDs inválidos e JSON inválido retornam 400. Conflito de unicidade retorna 409. Ordenação: `displayOrder`, depois UUID.
 
@@ -36,7 +36,7 @@ A resolução usa host + seletor: um candidato é `resolved`, zero é `missing`,
 
 ## Apresentação compartilhada
 
-`pulse_settings` recebe somente `dashboardPresentation` por estas rotas. Não há endpoint genérico de escrita de settings. A inicialização cria a chave ausente com revisão 1, modo TV/início automático false, intervalo 20s e uma tela “Visão geral”, layout overview, com summary, highlighted_resources, problems e asgard_summary. IDs UUID são gerados uma vez; acesso posterior e reinício não sobrescrevem o documento. Não há seed de hosts ou métricas.
+`pulse_settings` recebe somente `dashboardPresentation` pelas rotas de apresentação. A seleção operacional de `monitoringScope` e `asgardHostKey` é feita pelo comando documentado em [Zabbix](zabbix.md), sem endpoint genérico de escrita. A inicialização cria a apresentação ausente com revisão 1, modo TV/início automático false, intervalo 20s e uma tela “Visão geral”, layout overview, com summary, highlighted_resources, problems e asgard_summary. IDs UUID são gerados uma vez; acesso posterior e reinício não sobrescrevem o documento. Não há seed de hosts ou métricas.
 
 | Rota | Contrato |
 |---|---|
@@ -77,10 +77,14 @@ Envelope público: `{data, availability, stale, lastUpdated, refreshAfterMs}`. A
 | `/api/monitoring/hosts/:hostKey/containers` | Container[]; host ausente: 404 |
 | `/api/monitoring/containers?hostKey=<chave>` | Container[] geral ou filtrado por host, agrupável pelo campo hostKey |
 | `/api/monitoring/problems` | Problem[] |
-| `/api/monitoring/hosts/:hostKey/history?range=1h` | History, vazio nesta entrega; host ausente: 404 |
+| `/api/monitoring/hosts/:hostKey/history?range=1h` | History sob demanda; host ausente: 404 |
 | `/api/monitoring/hosts/:hostKey/vms/:vmKey/history?range=1h` | History; host/VM ausente: 404 |
 
-Componentes de caminho e query devem usar URL encoding. Históricos aceitam range `1h|24h|7d`, default 1h; source é history para 1h/24h e trends para 7d. Não carregam séries nem consultam a origem nesta entrega. Serviços são configuração humana resolvida, não sinônimo da lista de containers.
+Componentes de caminho e query devem usar URL encoding. Históricos aceitam range `1h|24h|7d`, default 1h. O servidor resolve somente os itens mapeados para o recurso, sem aceitar itemid do browser. source descreve as séries numéricas: history para 1h/24h e trends para 7d; estados discretos usam history em qualquer janela. Serviços são configuração humana resolvida, não sinônimo da lista de containers.
+
+History acrescenta `technicalReference`, `coverageLimited` e `states`. Séries numéricas têm `aggregation: last_min_max|hourly_average` e até 1000 pontos `{timestamp,value,min,max}`. Resampling curto conserva o último valor e extremos do bucket; só mantém um valor entre amostras dentro da cadência suportada. Janela de 7d usa média horária do Zabbix, com mínimo/máximo preservados. Null explicita lacuna. States contêm key `status|health`, aggregation `worst_state`, coverageLimited e até 1000 segmentos `{from,to,state,observedAt}`. Não se calcula média de códigos de health. Estado anterior só é carregado dentro da validade sustentada; itens por evento usam evidência de coleta do mesmo mestre quando disponível. Sem evidência, lacuna unknown. O limite de leitura ou uma lacuna sinalizam coverageLimited.
+
+Histórico tem timeout total de 25s, fila global limitada, no máximo três chamadas simultâneas por processo e refreshAfterMs de 60000. Não é pré-carregado nem persistido no Redis/PostgreSQL. A identidade opaca muda no redeploy do container. A futura UI deverá cancelar a seleção anterior e descartar respostas tardias; o BFF já propaga o sinal de cancelamento HTTP.
 
 Overview mantém `summary`, `highlightedResources`, `problems`, `asgardSummary`, além de `screenId`, `presentationRevision` e `blocks`. Cada bloco habilitado: `{blockId, type, data, availability, stale, lastUpdated}`. UUID de tela inválido retorna 400; tela ausente/desabilitada, 404. Os recursos destacados retornados correspondem aos blocos da tela selecionada. Só seus inventários Docker são lidos; outra tela não dispara leitura de seus cards/históricos. Resumo e problemas permanecem no envelope tradicional. Configurações gerais são buscadas separadamente.
 
@@ -90,18 +94,18 @@ Schemas e tipos compartilhados em `lib/monitoring/contracts.ts` filtram campos i
 
 | Tipo | Campos |
 |---|---|
-| Metric | `value: number|null`, `unit`, `observedAt: ISO|null`, `quality: fresh|stale|missing|unsupported` |
-| Metrics | CPU percent; memória usada/total/percent; disco usado/total/percent/leitura/escrita; rede recebida/transmitida; uptime, todos opcionais e tipados |
+| Metric | `value: number|null`, `unit`, `observedAt: ISO|null`, `quality: fresh|stale|missing|unsupported`, `validUntil: ISO|null` quando a cadência foi avaliada |
+| Metrics | CPU percent; memória usada/total/percent; disco usado/total/percent/leitura/escrita; rede recebida/transmitida; uptime; restartCount, todos opcionais e tipados |
 | Host | hostKey, name, role `hypervisor|linux|unknown`, availability `reachable|unreachable|unknown`, metrics, storages, filesystems, interfaces, vms, evidence |
 | VM | vmKey, vmId anulável, name, parentHostKey, state `running|stopped|paused|unknown`, metrics, linuxHostKey anulável, evidence |
-| Container | reference opaca, hostKey, name atual, image anulável, status, health, metrics, evidence |
+| Container | reference opaca, hostKey, name atual sem `/` inicial do Docker, image anulável, status, health, healthReason, healthObservedAt, healthValidUntil, metrics, evidence |
 | ConfiguredResource | id, config (ResourceConfig), resolved, resolution `resolved|missing|ambiguous`, resource (Host/Container/null), metrics |
 | Problem | id opaco, resource, description, severity original 0–5, visualState `info|warning|critical|unknown`, startedAt |
-| History | resource, window, source `history|trends`, series `[{key, unit, points:[{timestamp,value}]}]`; null representa lacuna |
-| Summary | hostsKnown, hostsReachable, vms, containersRunning, containersStopped, problems, criticalAffected; inteiros ou null |
+| History | resource, window, source, technicalReference, coverageLimited, series e states conforme contrato acima |
+| Summary | hostsKnown, hostsReachable, vms, containersRunning, containersStopped, containersTotal, problems, criticalAffected; inteiros ou null |
 | AsgardSummary | host: Host/null e vms: VM[] |
 
-Evidence contém source zabbix, observedAt e basis `item|discovery|configuration|unknown`. Dispositivos de host contêm key, name e metrics. Resource de problema/histórico contém type `host|vm|docker_container|configured_resource`, hostKey e reference anulável. VM sem Agent mantém linuxHostKey null; nunca se fabrica um host Linux.
+Evidence contém source zabbix, observedAt, validUntil quando avaliado e basis `item|discovery|configuration|unknown`. Dispositivos de host contêm key, name e metrics. Resource de problema/histórico contém type `host|vm|docker_container|configured_resource`, hostKey e reference anulável. VM sem Agent mantém linuxHostKey null; nunca se fabrica um host Linux. HealthReason distingue observed, missing, unsupported, stale e unrecognized. Campos de capacidade opcionais ausentes não indicam zero.
 
 Unidades: percent, bytes, bytes/s, bits/s, seconds e count. Uso e capacidade são campos separados, assim como taxas e acumulados. Campos indisponíveis não viram zero. Status Docker (`running|stopped|paused|restarting|created|removing|dead|unknown`) e health (`healthy|unhealthy|starting|not_configured|unknown`) são separados. Sem HEALTHCHECK não significa healthy.
 
@@ -117,17 +121,18 @@ Envelope interno: `{data, updatedAt: ISO, source: "zabbix", generation: UUID}`. 
 | `pulse:inventory:hosts` | Host[] com detalhes atuais normalizados |
 | `pulse:inventory:containers:<host-key>` | Container[] daquele host |
 | `pulse:snapshot:host:<host-key>` | Host detalhado, opcional; leitura usa inventário como fallback |
-| `pulse:snapshot:service:<pulse-config-id>` | reservada; leituras atuais resolvem inventário + configuração PostgreSQL vigente |
+| `pulse:snapshot:service:<pulse-config-id>` | recurso destacado normalizado, métricas de presentation e status resolved/missing/ambiguous; leituras aplicam inventário + configuração PostgreSQL vigente |
 | `pulse:problems:current` | Problem[] |
-| `pulse:sync:last` | `{status: ok|failed, lastSuccessfulAt: ISO|null, keys: string[]}` |
+| `pulse:source:bindings` | mapa privado de recurso opaco para itens históricos, tipos, unidades, transformações e evidência; nunca retornado pelo BFF |
+| `pulse:sync:last` | `{status: ok|failed, lastSuccessfulAt: ISO|null, lastAttemptAt: ISO, error: código|null, keys: string[]}` |
 
-Sufixos host-key usam encodeURIComponent. `publishSnapshots` recebe o conjunto completo do ciclo e grava snapshots + manifesto sync por MULTI/EXEC, com uma geração única e TTL comum. O futuro Collector deve fornecer todos os snapshots válidos do ciclo. Chaves omitidas da nova geração deixam de ser lidas, mesmo enquanto seu valor antigo ainda existe no Redis; expiram normalmente. Nunca publicar pequenos fragmentos independentes com esse helper.
+Sufixos host-key usam encodeURIComponent. `publishSnapshots` recebe o conjunto completo do ciclo e grava snapshots + manifesto sync por MULTI/EXEC, com uma geração única e TTL comum. O Collector fornece todos os snapshots válidos do ciclo. Chaves omitidas da nova geração deixam de ser lidas, mesmo enquanto seu valor antigo ainda existe no Redis; expiram normalmente. Nunca publicar pequenos fragmentos independentes com esse helper.
 
 Leituras usam MGET incluindo sync. Só aceitam chaves declaradas no manifesto e com geração correspondente. Inventário que determina outras chaves usa dois lotes e confere a geração entre eles, repetindo no máximo três vezes; não mistura ciclos. Valores inválidos/inconsistentes retornam 503 normalizado. Exclusão/desativação de configuração também é aplicada no BFF, impedindo cards antigos de reaparecer por snapshot atrasado.
 
-`markSyncFailure` muda o status atomicamente, preservando última geração/dados/TTL. Sem snapshot cria somente indicação de falha, com lastSuccessfulAt null. Não persiste erro bruto nem credencial. Nenhum desses helpers é acionado por um produtor real nesta entrega.
+`markSyncFailure` muda o status atomicamente, preservando última geração/dados/TTL; registra lastAttemptAt e um código curto permitido. Sem snapshot cria somente indicação de falha, com lastSuccessfulAt null. Não persiste erro bruto nem credencial. LastSuccessfulAt é o nome canônico desde a fase 03; não há propriedade paralela lastSuccessAt.
 
-Retenção: SNAPSHOT_TTL_SECONDS default 300s. Freshness: SNAPSHOT_STALE_AFTER_MS default 60000ms, ao menos duas vezes COLLECTOR_INTERVAL_MS (15000–30000, default 20000), e estritamente menor que o TTL. Configuração inválida retorna 503. Stale considera falha OU idade do ciclo, mesmo se o Collector morreu sem registrar erro. Qualidade de métrica também considera observedAt. Redis inacessível retorna 503, nunca lista vazia “saudável”. Após expirar toda a retenção, não há evidência em cache para recuperar lastUpdated. Perder cache não remove configurações PostgreSQL. [Variáveis e operação](environment.md).
+Retenção: SNAPSHOT_TTL_SECONDS default 300s. Freshness do ciclo: SNAPSHOT_STALE_AFTER_MS default 60000ms, ao menos duas vezes COLLECTOR_INTERVAL_MS (15000–30000, default 20000), e estritamente menor que o TTL. Configuração inválida retorna 503. Stale considera falha OU idade do ciclo, mesmo se o Collector morreu sem registrar erro. Métricas consideram observedAt e validUntil calculado da cadência/heartbeat/evidência; o limite global de 60s não é aplicado cegamente a itens por evento. Ciclo vencido ou falho invalida a confiança em estado/health; último valor numérico pode permanecer com quality stale. Redis inacessível retorna 503. Após expirar toda a retenção, não há evidência em cache para recuperar lastUpdated. Perder cache não remove configurações PostgreSQL. [Variáveis e operação](environment.md).
 
 ## Erros e verificação
 

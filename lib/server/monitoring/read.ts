@@ -14,6 +14,7 @@ import { readSnapshotBatch, readResult, snapshotData, snapshotKeys } from "../ca
 import { freshness, readInventory } from "./inventory.ts";
 import { sourceBindingsSchema, sourceKey } from "../zabbix/bindings.ts";
 import { queryHistory } from "../zabbix/history.ts";
+import { isVmTemplate, operationalHost, operationalProblems } from "./virtual-machines.ts";
 
 export function configuredResource(config: ResourceConfig, inventory: { hosts: Host[]; containers: Container[] }): ConfiguredResource {
   const resolution = resolveResource(config, inventory);
@@ -47,7 +48,7 @@ function resourceKeys(config: ResourceConfig) {
 }
 export async function readHosts() {
   const batch = await readSnapshotBatch([snapshotKeys.hosts]);
-  return readResult(freshness(snapshotData(batch, snapshotKeys.hosts, z.array(hostSchema), []), readResult(null, batch, [snapshotKeys.hosts]).stale), batch, [snapshotKeys.hosts]);
+  return readResult(freshness(snapshotData(batch, snapshotKeys.hosts, z.array(hostSchema), []).map(operationalHost), readResult(null, batch, [snapshotKeys.hosts]).stale), batch, [snapshotKeys.hosts]);
 }
 export async function readHost(hostKey: string) {
   const key = snapshotKeys.host(hostKey);
@@ -56,7 +57,7 @@ export async function readHost(hostKey: string) {
   if (detailed && detailed.hostKey !== hostKey) throw new BffError(503, "snapshot_invalid");
   const host = detailed ?? hosts.find(item => item.hostKey === hostKey);
   if (!host) throw new BffError(404, "host_not_found");
-  return readResult(freshness(host, readResult(null, batch, [key, snapshotKeys.hosts]).stale), batch, [key, snapshotKeys.hosts]);
+  return readResult(freshness(operationalHost(host), readResult(null, batch, [key, snapshotKeys.hosts]).stale), batch, [key, snapshotKeys.hosts]);
 }
 export async function readContainers(hostKey?: string) {
   const { hosts, containers, batch, keys } = await readInventory(hostKey ? [hostKey] : "all");
@@ -64,14 +65,15 @@ export async function readContainers(hostKey?: string) {
   return readResult(containers, batch, keys.filter(key => key !== snapshotKeys.hosts));
 }
 export async function readProblems() {
-  const batch = await readSnapshotBatch([snapshotKeys.problems]);
-  return readResult(snapshotData(batch, snapshotKeys.problems, z.array(problemSchema), []), batch, [snapshotKeys.problems]);
+  const batch = await readSnapshotBatch([snapshotKeys.hosts, snapshotKeys.problems]);
+  const hosts = snapshotData(batch, snapshotKeys.hosts, z.array(hostSchema), []);
+  return readResult(operationalProblems(snapshotData(batch, snapshotKeys.problems, z.array(problemSchema), []), hosts), batch, [snapshotKeys.problems]);
 }
 export async function readServices(id?: string) {
   const configs = id ? [await getResource(id)] : await listResources();
   const containerHosts = [...new Set(configs.filter(config => config.resourceType === "docker_container").map(config => config.zabbixHostKey))];
   const current = await readInventory(containerHosts);
-  const resources = configs.map(config => configuredResource(config, current));
+  const resources = configs.map(config => configuredResource(config, { ...current, hosts: current.hosts.map(operationalHost) }));
   return readResult(id ? resources[0] : resources, current.batch, configs.flatMap(resourceKeys));
 }
 export async function readOverview(screenId?: string) {
@@ -88,7 +90,10 @@ export async function readOverview(screenId?: string) {
     summary: emptySummary(), asgardSummary: { host: null, vms: [] },
   }), readResult(null, current.batch, current.keys).stale);
   const resources = configs.map(config => cardResource(configuredResource(config, current)));
-  const problems = snapshotData(current.batch, snapshotKeys.problems, z.array(problemSchema), []);
+  const problems = operationalProblems(snapshotData(current.batch, snapshotKeys.problems, z.array(problemSchema), []), current.hosts);
+  base.asgardSummary = { host: base.asgardSummary.host ? operationalHost(base.asgardSummary.host) : null, vms: base.asgardSummary.vms.filter(vm => !isVmTemplate(vm)) };
+  if (base.summary.vms !== null) base.summary.vms = current.batch.snapshots.get(snapshotKeys.hosts) ? current.hosts.reduce((n, host) => n + operationalHost(host).vms.length, 0) : null;
+  if (base.summary.problems !== null) base.summary.problems = current.batch.snapshots.get(snapshotKeys.problems) ? problems.length : null;
   const blocks: OverviewBlock[] = screen.blocks.filter(block => block.enabled).map(block => {
     let data: OverviewBlock["data"] = null;
     let keys: string[] = [];

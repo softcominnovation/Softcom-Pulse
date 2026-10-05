@@ -138,7 +138,9 @@ Health/status nunca passam por trends. A amostra anterior pode sustentar o iníc
 
 ## Limites conhecidos e testes
 
-As 33 entidades QEMU vêm dos itens descobertos. Os itens selecionados não forneceram flag de template Proxmox; nomes com prefixo `tpl-` não são classificados por suposição. A exibição futura deve apresentar essa perspectiva como inventário do hipervisor. Sem Agent correlacionado, métricas internas estão ausentes, mantendo as externas disponíveis. Discovery Docker pode ter contagem de parados sem nomes individualizados, e a cadência da descoberta difere da coleta de métricas.
+As 33 entidades QEMU observadas vêm dos itens descobertos; o Collector mantém todas no Redis. Na correção da fase 05, o responsável definiu explicitamente nomes iniciados por `tpl` como templates. O BFF aplica essa convenção às listas/contadores de VMs e aos problemas comprovadamente vinculados, preservando métricas e storages gerais do ASGARD. Consulta separada encontrou 9 templates (4 Workers/5 Managers), memória disponível e ausência de fonte confiável para vCPUs, capacidade de disco ou SO/versão; detalhes em [Templates](templates.md). Não confundir templates de criação de VM com os templates de coleta do Zabbix citados no mapa de itens.
+
+Sem Agent correlacionado, métricas internas estão ausentes, mantendo as externas disponíveis. Discovery Docker pode ter contagem de parados sem nomes individualizados, e a cadência da descoberta difere da coleta de métricas.
 
 Testes sanitizados cobrem Proxmox/Agent/Docker, VM sem Agent, nomes divergentes, saúde ausente/unsupported, unidades, zero/null, contagens agregadas divergentes da LLD, desaparecimento, redeploy, paginação/limites de saída e intervalos discretos com falha. Integração usa PostgreSQL temporário e Redis DB 13 vazio com trava; runtime usa PostgreSQL temporário e DB 12 vazio com trava. Removem apenas dados próprios. Não escrevem no Zabbix.
 

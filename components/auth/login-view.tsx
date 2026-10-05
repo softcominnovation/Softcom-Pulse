@@ -2,10 +2,10 @@
 
 import Image, { getImageProps } from "next/image";
 import { useRouter } from "next/navigation";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { LoaderCircle } from "lucide-react";
+import { Eye, EyeOff, LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 import { usePublicConfig } from "@/app/providers";
 import { loginSchema, type LoginInput } from "@/lib/auth/contracts";
@@ -33,11 +33,13 @@ const art = getImageProps({ src: "/images/login-image.png", alt: "", width: 320,
 export function LoginView() {
   const router = useRouter();
   const submitting = useRef(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const { issue } = useAuthStore();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<LoginInput>({ resolver: zodResolver(loginSchema), defaultValues: { email: "", senha: "" } });
   async function submit(data: LoginInput) {
     if (submitting.current) return;
     submitting.current = true;
+    setPasswordVisible(false);
     try {
       await getAuthController().login(data);
       router.replace("/");
@@ -78,7 +80,12 @@ export function LoginView() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="senha" className="text-[13px] font-semibold">Senha</Label>
-                  <Input id="senha" type="password" autoComplete="current-password" aria-invalid={!!errors.senha} aria-describedby={errors.senha ? "senha-error" : undefined} className="min-h-11 px-3 py-2.5 text-sm leading-5" {...register("senha")} />
+                  <div className="relative">
+                    <Input id="senha" type={passwordVisible ? "text" : "password"} autoComplete="current-password" aria-invalid={!!errors.senha} aria-describedby={errors.senha ? "senha-error" : undefined} className="min-h-11 py-2.5 pl-3 pr-12 text-sm leading-5" {...register("senha")} />
+                    <button type="button" aria-label={passwordVisible ? "Ocultar senha" : "Mostrar senha"} title={passwordVisible ? "Ocultar senha" : "Mostrar senha"} aria-pressed={passwordVisible} aria-controls="senha" disabled={isSubmitting} onClick={() => setPasswordVisible(value => !value)} className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-control text-foreground hover:text-primary aria-pressed:text-primary disabled:opacity-50">
+                      {passwordVisible ? <EyeOff className="pointer-events-none size-5 shrink-0" aria-hidden="true" /> : <Eye className="pointer-events-none size-5 shrink-0" aria-hidden="true" />}
+                    </button>
+                  </div>
                   {errors.senha && <p id="senha-error" role="alert" className="text-xs text-destructive">{errors.senha.message}</p>}
                 </div>
                 {issue && !isSubmitting && <p role="alert" className="text-sm text-destructive">{issue}</p>}

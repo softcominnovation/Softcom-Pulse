@@ -16,7 +16,8 @@ test("cancel, Escape, backdrop and focus never execute the action", async ({ mou
   await page.getByRole("button", { name: "Cancelar", exact: true }).click();
   await expect(trigger).toBeFocused();
   await trigger.click();
-  await page.mouse.click(3, 3);
+  await expect(page.getByRole("button", { name: "Cancelar", exact: true })).toBeFocused();
+  await page.locator('.fixed.inset-0[data-state="open"]').click({ position: { x: 3, y: 3 } });
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByTestId("calls")).toHaveText("0");
   await trigger.focus();

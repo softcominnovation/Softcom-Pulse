@@ -88,5 +88,5 @@ test("disabled or deleted configuration is immediately excluded, and a disappear
   await deleteResource(config.id); assert.equal((await readOverview()).data.highlightedResources.length, 0);
   const next = (await collectSnapshots({ rpc: absent.rpc })).entries; await publish(next);
   assert.equal((await readSnapshotBatch([keys.service(config.id)])).snapshots.get(keys.service(config.id)), null);
-  const tables = await getDatabase().query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"); assert.deepEqual(tables.rows.map(r => r.table_name), ["_prisma_migrations", "monitored_resource_config", "pulse_settings"]);
+  const tables = await getDatabase().query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"); assert.deepEqual(tables.rows.map(r => r.table_name), ["_prisma_migrations", "monitored_resource_config", "pulse_settings", "vm_template_config"]);
 });

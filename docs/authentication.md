@@ -80,6 +80,8 @@ Logout limpa a interface imediatamente e tenta a revogação remota. Se a API fa
 
 `/login` apresenta a composição de duas metades a partir de 1024px e coluna única abaixo disso. Ilustração padrão PNG, proporção 4:3, limite 320×240; assinatura institucional preserva suas cores. A arte decorativa não é baixada no mobile. Fonte de sistema, fundo `#0c1116`, superfície `#121a21`, inputs `#18232c`, botão `#64d6b0`, raio 7px e controles com pelo menos 44px.
 
-`/` usa shell protegido com marca, relógio de Fortaleza e saída, seguido de título/texto. Não há métricas, sidebar, TV, fullscreen ou rotas administrativas nesta etapa.
+O campo de senha possui controle Mostrar senha/Ocultar senha integrado à sua direita, com a mesma altura e alvo de 44px. Eye/EyeOff de 20px, cor de texto principal e realce verde quando revelada, com tooltip da ação. Botão type=button, aria-label, aria-pressed e aria-controls; funciona por clique, toque, Enter e Espaço sem enviar o formulário. Envio válido volta a ocultar a senha e desabilita o controle enquanto aguarda. Valor e autofill são preservados.
+
+`/` e `/asgard` usam o shell protegido com marca, relógio e saída. O dashboard adiciona TV/fullscreen e player conforme [Interface](ui.md). A proteção do BFF permanece independente da interface.
 
 Testes de contrato usam respostas corporativas simuladas e exercitam os handlers reais. Testes de navegador e standalone iniciam um upstream HTTP exclusivo em loopback, nunca uma conta real. Incluem duas abas reais, refresh rotativo, ausência de tokens originais no storage, erros, logout, assets e responsividade. O teste com credenciais reais deve ser feito separadamente pelo responsável; a suíte local não o comprova.

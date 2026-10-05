@@ -36,9 +36,16 @@ export type PresentationDocument = z.infer<typeof presentationDocumentSchema>;
 export type PresentationBlock = z.infer<typeof blockSchema>;
 export type PresentationResult = { data: PresentationDocument; updatedAt: string };
 
+export const defaultDashboardBlocks = [
+  { type: "summary", width: "full" },
+  { type: "highlighted_resources", width: "full" },
+  { type: "asgard_summary", width: "wide" },
+  { type: "problems", width: "wide" },
+] as const;
+
 export function initialPresentation(newId: () => string): PresentationDocument {
   return { schemaVersion: 1, revision: 1, defaultTvMode: false, rotation: { autoStart: false, intervalSeconds: 20 }, screens: [{
     id: newId(), name: "Visão geral", enabled: true, layout: "overview",
-    blocks: (["summary", "highlighted_resources", "problems", "asgard_summary"] as const).map(type => ({ id: newId(), type, enabled: true, width: "full" })),
+    blocks: defaultDashboardBlocks.map(block => ({ id: newId(), ...block, enabled: true })),
   }] };
 }

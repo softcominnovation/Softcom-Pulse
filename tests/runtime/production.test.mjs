@@ -74,9 +74,9 @@ test("packaged collector publishes real Redis contracts, serves history and excl
     } catch { response.writeHead(500); response.end(); }
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-  const worker = (args, environment) => {
+  const worker = (args, environment, ipc = false) => {
     let output = "";
-    const child = spawn(process.execPath, args, { cwd: fileURLToPath(standalone), env: { ...process.env, ...environment }, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }); children.add(child);
+    const child = spawn(process.execPath, args, { cwd: fileURLToPath(standalone), env: { ...process.env, ...environment }, windowsHide: true, stdio: ["ignore", "pipe", "pipe", ...(ipc ? ["ipc"] : [])] }); children.add(child);
     child.stdout.on("data", data => { output += data; }); child.stderr.on("data", data => { output += data; });
     const done = new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", code => { children.delete(child); resolve({ code, output }); }); });
     return { child, done, output: () => output };
@@ -108,11 +108,12 @@ test("packaged collector publishes real Redis contracts, serves history and excl
       assert.equal((await (await fetch(base + "/api/dashboard/overview", { headers: auth })).json()).stale, true);
       fail = false;
     });
-    const held = worker(["--conditions=react-server", "--input-type=module", "-e", 'import {runCollector} from "./collector/worker.ts"; const timer=setTimeout(()=>process.emit("SIGTERM"),3000); await runCollector(); clearTimeout(timer);'], environment);
-    for (let i = 0; i < 100 && !held.output().includes("collector_cycle"); i++) await delay(20);
+    const held = worker(["--conditions=react-server", "--input-type=module", "-e", 'import {runCollector} from "./collector/worker.ts"; process.once("message",()=>process.emit("SIGTERM")); await runCollector(); process.disconnect();'], environment, true);
+    for (let i = 0; i < 500 && !held.output().includes("collector_cycle"); i++) await delay(20);
     assert.ok(held.output().includes("collector_cycle"));
     const duplicate = await worker(["--conditions=react-server", "collector/index.mjs", "--once"], environment).done;
     assert.equal(duplicate.code, 1); assert.ok(duplicate.output.includes("collector_already_running"));
+    held.child.send("stop");
     const stopped = await held.done; assert.equal(stopped.code, 0, stopped.output);
     const resumed = await worker(["--conditions=react-server", "collector/index.mjs", "--once"], environment).done; assert.equal(resumed.code, 0, resumed.output);
   } finally {
@@ -247,7 +248,8 @@ test("standalone persists configuration across restarts and serves every protect
       const login = await fetch(base + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "bff-runtime@example.test", senha: "test-password" }) });
       assert.equal(login.status, 200); auth = { Authorization: "Bearer " + (await login.json()).accessToken, "Content-Type": "application/json" };
       const uuid = randomUUID();
-      for (const path of ["/settings/presentation", "/dashboard/overview", "/monitoring/hosts", "/monitoring/hosts/asgard", "/monitoring/hosts/asgard/history", "/monitoring/hosts/asgard/containers", "/monitoring/hosts/asgard/vms/101/history", "/monitoring/containers", "/monitoring/problems", "/monitoring/services", "/monitoring/services/" + uuid, "/monitoring/services/" + uuid + "/history"]) {
+      const templateKey = "vm-" + "0".repeat(32);
+      for (const path of ["/settings/templates", "/monitoring/templates", "/monitoring/templates/" + templateKey, "/settings/presentation", "/dashboard/overview", "/monitoring/hosts", "/monitoring/hosts/asgard", "/monitoring/hosts/asgard/history", "/monitoring/hosts/asgard/containers", "/monitoring/hosts/asgard/vms/101/history", "/monitoring/containers", "/monitoring/problems", "/monitoring/services", "/monitoring/services/" + uuid, "/monitoring/services/" + uuid + "/history"]) {
         assert.equal((await fetch(base + "/api" + path)).status, 401, path);
       }
       const initial = await fetch(base + "/api/settings/presentation", { headers: auth }); assert.equal(initial.status, 200);
@@ -260,10 +262,17 @@ test("standalone persists configuration across restarts and serves every protect
       const post = await fetch(base + "/api/monitoring/services", { method: "POST", headers: auth, body: JSON.stringify({ resourceType: "host", zabbixHostKey: "runtime-host", displayName: "Runtime" }) });
       assert.equal(post.status, 201); resourceId = (await post.json()).data.id;
       const edit = await fetch(base + "/api/monitoring/services/" + resourceId, { method: "PATCH", headers: auth, body: JSON.stringify({ displayName: "Persistido" }) }); assert.equal(edit.status, 200);
-      for (const path of ["/monitoring/hosts", "/monitoring/containers", "/monitoring/problems", "/monitoring/services", "/monitoring/services/" + resourceId, "/monitoring/services/" + resourceId + "/history"]) {
+      for (const path of ["/monitoring/templates", "/monitoring/hosts", "/monitoring/containers", "/monitoring/problems", "/monitoring/services", "/monitoring/services/" + resourceId, "/monitoring/services/" + resourceId + "/history"]) {
         const response = await fetch(base + "/api" + path, { headers: auth }); assert.equal(response.status, 200, path);
         assert.equal((await response.json()).availability, "no_data");
       }
+      const metadata = await fetch(base + "/api/settings/templates", { headers: auth });
+      assert.equal(metadata.status, 200); assert.deepEqual((await metadata.json()).data, []);
+      const templateWrite = { method: "PUT", body: JSON.stringify({ expectedRevision: 0, displayName: "Template de teste", roleOverride: null }) };
+      assert.equal((await fetch(base + "/api/settings/templates/" + templateKey, templateWrite)).status, 401);
+      const undiscovered = await fetch(base + "/api/settings/templates/" + templateKey, { ...templateWrite, headers: auth });
+      assert.equal(undiscovered.status, 409); assert.deepEqual(await undiscovered.json(), { error: { code: "template_inventory_unavailable" } });
+      assert.equal((await fetch(base + "/api/monitoring/templates/" + templateKey, { headers: auth })).status, 404);
       const overview = await fetch(base + "/api/dashboard/overview?screenId=" + first.screens[0].id, { headers: auth });
       assert.equal(overview.status, 200); assert.equal((await overview.json()).data.blocks.length, 4);
       assert.equal((await fetch(base + "/api/monitoring/hosts/missing/history", { headers: auth })).status, 404);

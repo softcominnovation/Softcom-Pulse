@@ -35,3 +35,19 @@ model PulseSetting {
 
   @@map("pulse_settings")
 }
+
+model VmTemplateConfig {
+  templateKey        String   @id @map("template_key") @db.VarChar(35)
+  hostKey            String   @map("host_key") @db.VarChar(256)
+  templateId         String   @map("template_id") @db.VarChar(64)
+  virtualizationType String   @map("virtualization_type") @db.VarChar(8)
+  originalName       String   @map("original_name") @db.VarChar(512)
+  displayName        String?  @map("display_name") @db.VarChar(120)
+  roleOverride       String?  @map("role_override") @db.VarChar(16)
+  revision           Int      @default(1)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([hostKey, virtualizationType, templateId])
+  @@map("vm_template_config")
+}

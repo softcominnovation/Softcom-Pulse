@@ -28,6 +28,19 @@ for (const [width, height] of sizes) {
     for (const control of [button, page.getByLabel("E-mail", { exact: true }), page.getByLabel("Senha", { exact: true })]) {
       expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     }
+    const reveal = page.getByRole("button", { name: "Mostrar senha", exact: true });
+    await expect(reveal).toBeVisible();
+    await expect(reveal.locator("svg")).toBeVisible();
+    const inputBox = (await page.getByLabel("Senha", { exact: true }).boundingBox())!;
+    const revealBox = (await reveal.boundingBox())!, iconBox = (await reveal.locator("svg").boundingBox())!;
+    expect(revealBox.width).toBeGreaterThanOrEqual(44);
+    expect(revealBox.height).toBeGreaterThanOrEqual(44);
+    expect(revealBox.x).toBeGreaterThan(inputBox.x);
+    expect(revealBox.x + revealBox.width).toBeLessThanOrEqual(inputBox.x + inputBox.width);
+    expect(revealBox.y).toBe(inputBox.y);
+    expect(revealBox.height).toBe(inputBox.height);
+    expect(iconBox.width).toBeGreaterThanOrEqual(20);
+    expect(Math.abs(iconBox.y + iconBox.height / 2 - inputBox.y - inputBox.height / 2)).toBeLessThan(1);
     const copyright = page.getByText(/© .*Softcom Tecnologia\. Todos os direitos reservados\./).filter({ visible: true });
     await expect(copyright).toHaveCount(1);
     await expect(page.getByRole("link", { name: "Softcom Tecnologia" })).toBeVisible();
@@ -59,12 +72,43 @@ test("form validation, keyboard, error messages and loading prevent duplicate su
   await expect(page.getByLabel("Senha", { exact: true })).toBeFocused();
   await page.keyboard.type("test-password");
   await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "Mostrar senha", exact: true })).toBeFocused();
+  await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Entrar", exact: true })).toBeFocused();
   await expect(page.getByRole("button", { name: "Entrar", exact: true })).toHaveCSS("outline-style", "solid");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Entrando…" })).toBeDisabled();
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   expect(await (await page.request.get("http://127.0.0.1:3102/test-state?email=slow-ui@example.test")).json()).toMatchObject({ logins: 1 });
+});
+test("password visibility stays inside the input, supports keyboard and never submits the form", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/login");
+  const password = page.getByLabel("Senha", { exact: true });
+  await password.fill("test-secret-only");
+  await expect(password).toHaveAttribute("type", "password");
+  const before = (await password.boundingBox())!;
+  const show = page.getByRole("button", { name: "Mostrar senha", exact: true });
+  const button = (await show.boundingBox())!;
+  expect(button.height).toBeGreaterThanOrEqual(44); expect(button.width).toBeGreaterThanOrEqual(44);
+  expect(button.x).toBeGreaterThan(before.x); expect(button.x + button.width).toBeLessThanOrEqual(before.x + before.width);
+  await password.focus(); await page.keyboard.press("Tab"); await expect(show).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(password).toHaveAttribute("type", "text");
+  const hide = page.getByRole("button", { name: "Ocultar senha", exact: true });
+  await expect(hide).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Informe um e-mail válido.")).toHaveCount(0);
+  await page.keyboard.press("Space");
+  await expect(password).toHaveAttribute("type", "password");
+  await expect(password).toHaveValue("test-secret-only");
+  expect((await password.boundingBox())!.height).toBe(before.height);
+  await show.click();
+  await expect(password).toHaveAttribute("type", "text");
+  await page.getByRole("button", { name: "Ocultar senha", exact: true }).click();
+  await expect(password).toHaveAttribute("type", "password");
+  await expect(page.getByText("Informe um e-mail válido.")).toHaveCount(0);
+  await password.fill("");
+  await page.screenshot({ path: ".cache/screenshots/login-password-toggle.png", fullPage: true });
 });
 test("rejected credentials remain in login without exposing the upstream error", async ({ page }) => {
   await page.goto("/login");
@@ -92,7 +136,7 @@ test("BFF login, reload, protected shell and logout work without direct corporat
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await page.goto("/login");
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByText("FORTALEZA · UTC−3")).toBeVisible();
+  await expect(page.getByText("FORTALEZA · UTC−3", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 320, height: 640 });
   await expect(page.getByRole("button", { name: "Sair", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

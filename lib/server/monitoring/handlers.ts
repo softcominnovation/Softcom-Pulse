@@ -4,10 +4,26 @@ import { hostKeySchema, uuidSchema, historyRangeSchema } from "../../config/reso
 import { createResource, updateResource, deleteResource, getPresentation, savePresentation, getResource } from "../config/repository.ts";
 import { jsonBody, protectedResponse, queryParams } from "../bff.ts";
 import { readHosts, readHost, readContainers, readProblems, readServices, readOverview, readHistory } from "./read.ts";
+import { templateKeySchema } from "../../config/templates.ts";
+import { listTemplateConfigs, saveTemplateConfig } from "../config/templates.ts";
+import { readTemplates } from "./templates.ts";
 
 type Params<K extends string> = { params: Promise<Record<K, string>> };
 const emptyQuery = z.strictObject({});
 const historyQuery = z.strictObject({ range: historyRangeSchema.default("1h") });
+
+export function templatesGet(request: Request) {
+  return protectedResponse(request, async () => readTemplates(queryParams(request, z.strictObject({ hostKey: hostKeySchema.optional() }))));
+}
+export function templateGet(request: Request, context: Params<"templateKey">) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readTemplates({ templateKey: templateKeySchema.parse((await context.params).templateKey) }); });
+}
+export function templateConfigsGet(request: Request) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listTemplateConfigs() }; });
+}
+export function templateConfigPut(request: Request, context: Params<"templateKey">) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await saveTemplateConfig(templateKeySchema.parse((await context.params).templateKey), await jsonBody(request)) }; });
+}
 
 export function presentationGet(request: Request) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return getPresentation(); });

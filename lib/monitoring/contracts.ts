@@ -43,7 +43,7 @@ export const resourceReferenceSchema = z.object({
   hostKey: hostKeySchema, reference: opaqueId.nullable(),
 });
 export const problemSchema = z.object({
-  id: opaqueId, resource: resourceReferenceSchema, description: z.string().max(4096),
+  id: opaqueId, resource: resourceReferenceSchema, description: z.string().max(4096), displayDescription: z.string().max(4096).optional(),
   severity: z.number().int().min(0).max(5), visualState: z.enum(["info", "warning", "critical", "unknown"]), startedAt: isoSchema,
 });
 const count = z.number().int().nonnegative().nullable();

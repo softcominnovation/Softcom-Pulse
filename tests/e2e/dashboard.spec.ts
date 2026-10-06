@@ -214,7 +214,7 @@ test("container cards respect preferences and distinguish running, health, missi
   state.transform = body => {
     const item = body.data.highlightedResources[0];
     item.config.resourceType = "docker_container";
-    const preferences = { ...item.config.presentation, showHealth: true, showHealthTimeline: false, healthTimelineRange: "1h", showNetwork: true };
+    const preferences = { ...item.config.presentation, showHealth: true, showHealthTimeline: false, healthTimelineRange: "1h" as const, showNetwork: true };
     item.config.presentation = preferences;
     item.metrics.cpuUsagePercent!.value = 125.5;
     item.metrics.networkReceiveBitsPerSecond = { value: null, unit: "bits/s", observedAt: null, quality: "unsupported" };
@@ -233,7 +233,7 @@ test("container cards respect preferences and distinguish running, health, missi
   await expect(card.getByText("Disco utilizado", { exact: true })).toHaveCount(0);
   health = "unknown";
   await page.getByRole("button", { name: "Atualizar monitoramento" }).click();
-  await expect(card.getByText("Desconhecido", { exact: true })).toBeVisible();
+  await expect(card.getByText("Health desconhecido", { exact: true })).toBeVisible();
   await expect(card.getByText("Healthcheck não informado pela origem", { exact: true })).toBeVisible();
 });
 test("three screens rotate, manual choice and reading pause, resume gets a complete interval", async ({ page }) => {

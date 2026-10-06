@@ -57,9 +57,9 @@ Bloco: `{id, type, enabled, width, resourceConfigId?}`. Largura `standard|wide|f
 | asgard_summary | disponível | fase 05 |
 | resource_card | disponível | fase 05 |
 | host_inventory | disponível; Host[] operacional | fase 06 implementada |
-| container_inventory | reconhecido; nova seleção recusada | fase 07 |
+| container_inventory | disponível; Container[] agregado dos hosts do escopo | fase 07 implementada |
 
-Disponibilidade aqui significa contrato do bloco no BFF. O dashboard já renderiza summary, highlighted_resources, problems, asgard_summary, resource_card e host_inventory; comportamento em [Interface](ui.md) e [Infraestrutura](infrastructure.md). O editor administrativo permanece previsto para a fase 08. As próximas interfaces usam o mesmo catálogo e só habilitam os renderers implementados. Um bloco reconhecido indisponível já armazenado retorna `data: null, availability: "unavailable"` no overview.
+Disponibilidade aqui significa contrato do bloco no BFF. O dashboard renderiza os sete tipos acima; comportamento em [Interface](ui.md) e [Infraestrutura](infrastructure.md). O editor administrativo permanece previsto para a fase 08. O novo renderer não adiciona telas nem altera composições salvas.
 
 `intervalSeconds` inteiro de 5 a 300, default 20. AutoStart exige duas telas habilitadas com bloco habilitado disponível; ausência de telemetria não desabilita uma tela. A reprodução revalida essa condição. Tela atual, pausa, contador, formato temporário e fullscreen não são gravados neste documento.
 
@@ -77,6 +77,7 @@ Envelope público: `{data, availability, stale, lastUpdated, refreshAfterMs}`. A
 | `/api/monitoring/hosts` | Host[] |
 | `/api/monitoring/hosts/:hostKey` | Host; ausente: 404 |
 | `/api/monitoring/hosts/:hostKey/containers` | Container[]; host ausente: 404 |
+| `/api/monitoring/hosts/:hostKey/vms/:vmKey/containers` | VmWorkloads; pai e VM operacional validados; sem query |
 | `/api/monitoring/containers?hostKey=<chave>` | Container[] geral ou filtrado por host, agrupável pelo campo hostKey |
 | `/api/monitoring/problems` | Problem[] |
 | `/api/monitoring/templates?hostKey=<chave>` | Template[] descobertos, combinados com metadados humanos |
@@ -94,7 +95,38 @@ History acrescenta `technicalReference`, `coverageLimited` e `states`. Séries n
 
 Histórico tem timeout total de 25s, fila global limitada, no máximo três chamadas simultâneas por processo e refreshAfterMs de 60000. Não é pré-carregado nem persistido no Redis/PostgreSQL. A identidade opaca muda no redeploy do container. A UI de infraestrutura cancela a seleção anterior e descarta respostas de outra identidade/janela; o BFF propaga o sinal de cancelamento HTTP. O cache de página e o orçamento por perspectiva estão em [Infraestrutura](infrastructure.md).
 
-Overview mantém `summary`, `highlightedResources`, `problems`, `asgardSummary`, além de `screenId`, `presentationRevision` e `blocks`. Cada bloco habilitado: `{blockId, type, data, availability, stale, lastUpdated}`. UUID de tela inválido retorna 400; tela ausente/desabilitada, 404. Os recursos destacados retornados correspondem aos blocos da tela selecionada. Só seus inventários Docker são lidos; outra tela não dispara leitura de seus cards/históricos. Resumo e problemas permanecem no envelope tradicional. Configurações gerais são buscadas separadamente.
+Overview mantém `summary`, `highlightedResources`, `problems`, `asgardSummary`, além de `screenId`, `presentationRevision` e `blocks`. Cada bloco habilitado: `{blockId, type, data, availability, stale, lastUpdated}`. UUID de tela inválido retorna 400; tela ausente/desabilitada, 404. Os recursos destacados retornados correspondem aos blocos da tela selecionada. Só seus inventários Docker são lidos, exceto quando essa tela contém `container_inventory`: nesse caso, a leitura agrega o inventário de todos os hosts do escopo. Outra tela não dispara leitura de cards/históricos. Resumo e problemas permanecem no envelope tradicional. Configurações gerais são buscadas separadamente.
+
+## Serviços e containers de uma VM
+
+`GET /api/monitoring/hosts/:hostKey/vms/:vmKey/containers` está disponível. Recebe somente os dois componentes de caminho codificados, sem query. Retorna o envelope de leitura padrão com:
+
+```ts
+type VmWorkloads = {
+  vm: VirtualMachine;
+  association: "linked" | "unlinked" | "host_unavailable";
+  containers: Container[];
+  configuredServices: ConfiguredResource[];
+};
+```
+
+O pai precisa ser um hipervisor do inventário operacional. A VM precisa pertencer a ele e não ser template. O servidor usa exclusivamente `vm.linuxHostKey`; não aceita host alternativo nem infere vínculo por nome/IP/ID numérico. Confere a mesma geração entre pai, vínculo e inventário Docker, repetindo a leitura até três vezes se houver publicação concorrente. Cada container é validado contra o host selecionado. PostgreSQL fornece somente as configurações `docker_container` daquele host, inclusive desabilitadas. Resolução preserva missing/ambiguous, sem escolher um candidato arbitrário.
+
+| Situação | Resposta |
+|---|---|
+| VM e Agent válidos com snapshot Docker | linked, ready; lista descoberta e configurações |
+| Sem vínculo Agent | unlinked, unavailable; arrays vazios, sem afirmar ausência de containers |
+| Host associado ausente da geração ou inalcançável | host_unavailable, unavailable; sem dados de outro host |
+| Agent válido sem snapshot Docker | linked, no_data; configurações preservadas, ainda que sem alvo |
+| Snapshot Docker com lista vazia | linked, ready; nenhum container individualizado nesta coleta |
+| Coleta antiga/falha com snapshot retido | dados retidos com stale e qualidade desatualizada |
+| Formato/query inválidos | 400 invalid_request |
+| Pai/VM ausentes ou template | 404 host_not_found/vm_not_found |
+| Cache/banco indisponível ou gerações divergentes | 503 seguro; nunca sucesso com lista vazia artificial |
+
+O modal cancela pedidos ao fechar/trocar de identidade; a rota confere cancelamento antes de acessar dependências e antes de entregar o resultado. Comandos de leitura de Redis/PostgreSQL já enviados terminam no servidor, sujeitos aos seus limites, sem trabalho externo novo. As rotas existentes por host Linux mantêm o contrato.
+
+Histórico de recurso configurado filtra os bindings pelas preferências atuais: CPU/memória/disco/rede/uptime e, quando habilitados, health/status discretos. Timeline requer showHealth + showHealthTimeline; showStatus controla a trilha de estado. Reinícios permanecem informação técnica disponível. Fonte, unidades, lacunas e cobertura continuam explícitos; não há média de códigos de health nem polling histórico por container. A lista global usa uma leitura agregada, sem chamadas por host para montá-la.
 
 ## DTOs normalizados
 

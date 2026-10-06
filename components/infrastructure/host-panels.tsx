@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useContext } from "react";
+import { useContext, useRef, useState } from "react";
 import { Activity, HardDrive, Layers, Server } from "lucide-react";
 import type { Host, Metrics, VirtualMachine } from "@/lib/monitoring/contracts";
 import { metricLabels } from "@/lib/infrastructure/history";
@@ -9,6 +9,8 @@ import { asgardUrl, evidenceExpired, hostUrl, type WindowRange } from "@/lib/inf
 import { number, timestamp } from "@/lib/dashboard/format";
 import { EvidenceTimeContext, MetricValue, Status } from "@/components/dashboard/metrics";
 import { VmAgentSummary, VmCpuCount } from "./vm-summary";
+import { Button } from "@/components/ui/button";
+import { VmWorkloadsDialog } from "@/components/services/vm-workloads-dialog";
 import "./infrastructure.css";
 
 export function MetricList({ metrics, stale }: { metrics: Metrics; stale: boolean }) {
@@ -42,9 +44,10 @@ export function DevicePanel({ title, devices, stale, network = false }: { title:
 }
 export function VmTable({ vms, stale, detailed = false, selected, range = "24h", hosts = [] }: { vms: VirtualMachine[]; stale: boolean; detailed?: boolean; selected?: string; range?: WindowRange; hosts?: Host[] }) {
   const now = useContext(EvidenceTimeContext);
+  const [workloadsVm, setWorkloadsVm] = useState<VirtualMachine | null>(null);
+  const trigger = useRef<HTMLButtonElement | null>(null), table = useRef<HTMLDivElement | null>(null);
   const compactDisk = !detailed && vms.some(vm => vm.metrics.diskUsagePercent || vm.metrics.diskUsedBytes || vm.metrics.diskTotalBytes);
-  if (!vms.length) return <p className="panel-empty">Nenhuma VM informada na coleta atual.</p>;
-  return <div className="vm-table-scroll" tabIndex={0} role="region" aria-label="Máquinas virtuais do hipervisor"><table className={`vm-summary ${detailed ? "vm-details-table" : ""}`}><thead><tr><th scope="col">VM no Asgard</th><th scope="col">Estado</th><th scope="col">CPU</th><th scope="col">RAM</th>{compactDisk && <th scope="col">Disco · hipervisor</th>}{detailed && <><th scope="col">Disco virtual</th><th scope="col">Filesystem · Agent</th><th scope="col">Tempo ativo</th><th scope="col">Evidência</th></>}</tr></thead><tbody>{vms.map(vm => {
+  return <><div ref={table} className="vm-table-scroll" tabIndex={0} role="region" aria-label="Máquinas virtuais do hipervisor">{!vms.length && <p className="panel-empty">Nenhuma VM informada na coleta atual.</p>}<table className={`vm-summary ${detailed ? "vm-details-table" : ""}`}><thead><tr><th scope="col">VM no Asgard</th><th scope="col">Estado</th><th scope="col">CPU</th><th scope="col">RAM</th>{compactDisk && <th scope="col">Disco · hipervisor</th>}{detailed && <><th scope="col">Disco virtual</th><th scope="col">Filesystem · Agent</th><th scope="col">Tempo ativo</th><th scope="col">Evidência</th><th scope="col">Serviços e containers</th></>}</tr></thead><tbody>{vms.map(vm => {
     const agent = vm.linuxHostKey ? hosts.find(host => host.hostKey === vm.linuxHostKey && host.role === "linux") : undefined;
     return <tr key={vm.vmKey} className={selected === vm.vmKey ? "vm-selected" : undefined}>
       <th scope="row"><Link className="vm-name-link" prefetch={false} onNavigate={() => window.scrollTo(0, 0)} href={asgardUrl(vm.parentHostKey, vm.vmKey, range)} aria-current={selected === vm.vmKey ? "true" : undefined}>{vm.name}{selected === vm.vmKey && <span className="sr-only"> · VM selecionada</span>}</Link>{detailed && <small>ID {vm.vmId ?? "não informado"} · {vm.linuxHostKey ? <Link href={hostUrl(vm.linuxHostKey, range)}>Detalhes do Agent</Link> : "Sem Agent associado"}</small>}</th>
@@ -52,9 +55,9 @@ export function VmTable({ vms, stale, detailed = false, selected, range = "24h",
       <td><MetricValue metric={vm.metrics.cpuUsagePercent} stale={stale} compact meter={detailed} />{detailed && <VmCpuCount vm={vm} stale={stale} />}</td>
       <td>{detailed ? <>{vm.metrics.memoryUsagePercent && <MetricValue metric={vm.metrics.memoryUsagePercent} stale={stale} series="memory" compact />}<small>Usada / total</small><div className="vm-memory-capacity"><MetricValue metric={vm.metrics.memoryUsedBytes} stale={stale} compact /><span aria-hidden="true">/</span><MetricValue metric={vm.metrics.memoryTotalBytes} stale={stale} compact /></div></> : <MetricValue metric={vm.metrics.memoryUsagePercent ?? vm.metrics.memoryUsedBytes} stale={stale} series="memory" compact meter={false} />}</td>
       {compactDisk && <td><MetricValue metric={vm.metrics.diskUsagePercent ?? vm.metrics.diskUsedBytes ?? vm.metrics.diskTotalBytes} stale={stale} series="disk" compact /><small>{vm.metrics.diskUsagePercent || vm.metrics.diskUsedBytes ? "Uso reportado" : "Capacidade virtual"}</small></td>}
-      {detailed && <><td><MetricValue metric={vm.metrics.diskTotalBytes} stale={stale} series="disk" compact /><small>Capacidade no hipervisor</small></td><td><VmAgentSummary vm={vm} agent={agent} stale={stale} /></td><td><MetricValue metric={vm.metrics.uptimeSeconds} stale={stale} compact /></td><td><time dateTime={vm.evidence.observedAt ?? undefined}>{timestamp(vm.evidence.observedAt)}</time></td></>}
+      {detailed && <><td><MetricValue metric={vm.metrics.diskTotalBytes} stale={stale} series="disk" compact /><small>Capacidade no hipervisor</small></td><td><VmAgentSummary vm={vm} agent={agent} stale={stale} /></td><td><MetricValue metric={vm.metrics.uptimeSeconds} stale={stale} compact /></td><td><time dateTime={vm.evidence.observedAt ?? undefined}>{timestamp(vm.evidence.observedAt)}</time></td><td><Button className="vm-workloads-action" aria-label={`Serviços e containers de ${vm.name}`} onClick={event => { trigger.current = event.currentTarget; setWorkloadsVm(vm); }}>Ver serviços</Button></td></>}
     </tr>;
-  })}</tbody></table></div>;
+  })}</tbody></table></div>{detailed && <VmWorkloadsDialog vm={workloadsVm} onClose={() => setWorkloadsVm(null)} restoreFocus={() => { (trigger.current?.isConnected ? trigger.current : table.current)?.focus(); }} />}</>;
 }
 export function HostInventory({ hosts, stale, compact = false }: { hosts: Host[]; stale: boolean; compact?: boolean }) {
   const now = useContext(EvidenceTimeContext);

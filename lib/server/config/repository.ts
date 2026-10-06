@@ -57,8 +57,8 @@ export async function savePresentation(body: unknown) {
     return presentationResult(await tx.pulseSetting.update({ where: { key: PRESENTATION_KEY }, data: { value: { ...settings, revision: expectedRevision + 1 } } }));
   });
 }
-export async function listResources() {
-  return database(async () => (await getPrisma().monitoredResourceConfig.findMany({ orderBy: [{ displayOrder: "asc" }, { id: "asc" }] })).map(resourceResult));
+export async function listResources(filter?: { resourceType: "docker_container"; zabbixHostKey: string }) {
+  return database(async () => (await getPrisma().monitoredResourceConfig.findMany({ where: filter, orderBy: [{ displayOrder: "asc" }, { id: "asc" }] })).map(resourceResult));
 }
 export async function getResource(id: string) {
   return database(async () => resourceResult(await getPrisma().monitoredResourceConfig.findUniqueOrThrow({ where: { id } })));

@@ -13,6 +13,7 @@ export const containerPresentationSchema = z.strictObject({
   ...commonPresentation, showHealth: z.boolean().default(false), showHealthTimeline: z.boolean().default(false),
   healthTimelineRange: historyRangeSchema.default("1h"),
 }).refine(value => !value.showHealthTimeline || value.showHealth, { path: ["showHealthTimeline"], message: "Timeline requires visible health" });
+export type ResourcePresentation = z.infer<typeof hostPresentationSchema> & Partial<z.infer<typeof containerPresentationSchema>>;
 
 const resourceFields = {
   resourceType: z.enum(["host", "docker_container"]), source: z.literal("zabbix").default("zabbix"),
@@ -33,7 +34,7 @@ export const resourceInputSchema = z.strictObject(resourceFields).transform((val
     else try { compileSelector(value.selectorType, value.selectorValue); }
     catch { ctx.addIssue({ code: "custom", path: ["selectorValue"], message: "Invalid or unsupported selector" }); }
   }
-  return { ...value, presentation: presentation.success ? presentation.data : hostPresentationSchema.parse({}) };
+  return { ...value, presentation: (presentation.success ? presentation.data : hostPresentationSchema.parse({})) as ResourcePresentation };
 });
 export const resourcePatchSchema = z.strictObject({
   resourceType: resourceFields.resourceType.optional(), source: resourceFields.source.removeDefault().optional(),
@@ -44,3 +45,4 @@ export const resourcePatchSchema = z.strictObject({
 }).refine(value => Object.keys(value).length > 0);
 export type ResourceInput = z.infer<typeof resourceInputSchema>;
 export type ResourceConfig = ResourceInput & { id: string; createdAt: string; updatedAt: string };
+export const resourceConfigSchema = z.object({ ...resourceFields, id: uuidSchema, createdAt: z.iso.datetime({ offset: true }), updatedAt: z.iso.datetime({ offset: true }) }).transform(({ id, createdAt, updatedAt, ...input }) => ({ ...resourceInputSchema.parse(input), id, createdAt, updatedAt }));

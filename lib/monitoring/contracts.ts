@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { hostKeySchema, historyRangeSchema, type ResourceConfig } from "../config/resources.ts";
+import { hostKeySchema, historyRangeSchema, resourceConfigSchema, type ResourceConfig } from "../config/resources.ts";
 import type { BlockType } from "../config/presentation.ts";
 
 export const isoSchema = z.iso.datetime({ offset: true });
@@ -76,6 +76,9 @@ export type ConfiguredResource = {
   id: string; config: ResourceConfig; resolved: boolean; resolution: "resolved" | "missing" | "ambiguous";
   resource: Host | Container | null; metrics: Metrics;
 };
+export const configuredResourceSchema = z.object({ id: z.uuid(), config: resourceConfigSchema, resolved: z.boolean(), resolution: z.enum(["resolved", "missing", "ambiguous"]), resource: z.union([hostSchema, containerSchema]).nullable(), metrics: metricsSchema });
+export const vmWorkloadsSchema = z.object({ vm: vmSchema, association: z.enum(["linked", "unlinked", "host_unavailable"]), containers: z.array(containerSchema), configuredServices: z.array(configuredResourceSchema) });
+export type VmWorkloads = z.infer<typeof vmWorkloadsSchema>;
 export type OverviewBlock = Omit<ReadResult<Summary | AsgardSummary | ConfiguredResource | ConfiguredResource[] | Problem[] | Host[] | Container[] | null>, "refreshAfterMs"> & { blockId: string; type: BlockType };
 export type Overview = {
   summary: Summary; highlightedResources: ConfiguredResource[]; problems: Problem[]; asgardSummary: AsgardSummary;

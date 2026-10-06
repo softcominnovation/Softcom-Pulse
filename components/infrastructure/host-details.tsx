@@ -10,6 +10,7 @@ import { DevicePanel, HostKpis, MetricList } from "./host-panels";
 import { HistoryPanel, RangeControls } from "./history-panel";
 import { HistoryCache } from "./use-history";
 import { ProblemsPanel } from "./problems-panel";
+import { HostContainers } from "@/components/services/container-inventory";
 
 export function HostDetails({ hostKey, range }: { hostKey: string; range?: string | string[] }) {
   const parsedKey = hostKeySchema.safeParse(hostKey), parsedRange = historyRangeSchema.default("24h").safeParse(range);
@@ -26,7 +27,7 @@ function HostContent({ hostKey, range }: { hostKey: string; range: "1h" | "24h" 
       <HostKpis host={host} stale={stale} />
       <HistoryPanel resource={{ type: "host", hostKey, reference: null }} range={range} name={host.name} host={host} origin="Linux · Agent · métricas internas" controls={<RangeControls range={range} onChange={value => router.push(hostUrl(hostKey, value), { scroll: false })} />} />
       <div className="detail-two-columns"><DevicePanel title="Filesystems" devices={host.filesystems} stale={stale} /><DevicePanel title="Rede por interface" devices={host.interfaces} stale={stale} network /></div>
-      <section className="dashboard-panel"><div className="panel-heading"><Server aria-hidden="true" /><h2>Métricas atuais do Agent</h2></div><MetricList metrics={host.metrics} stale={stale} /></section><ProblemsPanel poll={problems} hostKeys={[hostKey]} />
+      <section className="dashboard-panel"><div className="panel-heading"><Server aria-hidden="true" /><h2>Métricas atuais do Agent</h2></div><MetricList metrics={host.metrics} stale={stale} /></section><HostContainers hostKey={hostKey} /><ProblemsPanel poll={problems} hostKeys={[hostKey]} />
     </>)}
   </div>;
 }

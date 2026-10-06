@@ -15,6 +15,7 @@ import { freshness, readInventory } from "./inventory.ts";
 import { sourceBindingsSchema, sourceKey } from "../zabbix/bindings.ts";
 import { queryHistory } from "../zabbix/history.ts";
 import { isVmTemplate, operationalHost, operationalProblems } from "./virtual-machines.ts";
+import { visibleMetric } from "../../services/presentation.ts";
 
 export function configuredResource(config: ResourceConfig, inventory: { hosts: Host[]; containers: Container[] }): ConfiguredResource {
   const resolution = resolveResource(config, inventory);
@@ -88,7 +89,7 @@ export async function readOverview(screenId?: string) {
   const references = new Set(visibleBlocks.flatMap(block => block.resourceConfigId ? [block.resourceConfigId] : []));
   const configs = (await listResources()).filter(config => config.enabled && config.dashboardEnabled && (includeHighlights || references.has(config.id)));
   const containerHosts = [...new Set(configs.filter(config => config.resourceType === "docker_container").map(config => config.zabbixHostKey))];
-  const current = await readInventory(containerHosts, [snapshotKeys.overview, snapshotKeys.problems]);
+  const current = await readInventory(visibleBlocks.some(block => block.type === "container_inventory") ? "all" : containerHosts, [snapshotKeys.overview, snapshotKeys.problems]);
   const base = freshness(snapshotData(current.batch, snapshotKeys.overview, overviewSnapshotSchema, {
     summary: emptySummary(), asgardSummary: { host: null, vms: [] },
   }), readResult(null, current.batch, current.keys).stale);
@@ -104,6 +105,7 @@ export async function readOverview(screenId?: string) {
     if (block.type === "asgard_summary") { data = base.asgardSummary; keys = [snapshotKeys.overview]; }
     if (block.type === "problems") { data = problems; keys = [snapshotKeys.problems]; }
     if (block.type === "host_inventory") { data = current.hosts.map(operationalHost); keys = [snapshotKeys.hosts]; }
+    if (block.type === "container_inventory") { data = current.containers; keys = current.keys.filter(key => key.startsWith("pulse:inventory:containers:")); }
     if (block.type === "highlighted_resources") { data = resources; keys = configs.flatMap(resourceKeys); }
     if (block.type === "resource_card") {
       data = resources.find(resource => resource.id === block.resourceConfigId) ?? null;
@@ -118,8 +120,10 @@ export async function readOverview(screenId?: string) {
 export async function readHistory(resource: History["resource"], window: History["window"] = "1h", signal?: AbortSignal) {
   let target = resource;
   let generation: string | null = null;
+  let presentation: ResourceConfig["presentation"] | undefined;
   if (resource.type === "configured_resource") {
     const config = await getResource(resource.reference!);
+    presentation = config.presentation;
     const inventory = await readInventory(config.resourceType === "docker_container" ? [config.zabbixHostKey] : [], [snapshotKeys.bindings]);
     generation = inventory.batch.generation;
     const resolution = resolveResource(config, inventory);
@@ -132,5 +136,10 @@ export async function readHistory(resource: History["resource"], window: History
   const batch = await readSnapshotBatch([snapshotKeys.bindings]);
   if (generation && batch.generation !== generation) throw new BffError(503, "snapshot_inconsistent");
   const bindings = snapshotData(batch, snapshotKeys.bindings, sourceBindingsSchema, {});
-  return queryHistory(resource, window, bindings[sourceKey(target.type, target.hostKey, target.reference)], { signal, stale: readResult(null, batch, [snapshotKeys.bindings]).stale });
+  let source = bindings[sourceKey(target.type, target.hostKey, target.reference)];
+  if (source && presentation) {
+    const p = presentation;
+    source = { ...source, bindings: source.bindings.filter(binding => binding.kind === "numeric" ? visibleMetric(binding.key, p) : !!p.showHealthTimeline && !!p.showHealth && (binding.kind === "health" || p.showStatus)) };
+  }
+  return queryHistory(resource, window, source, { signal, stale: readResult(null, batch, [snapshotKeys.bindings]).stale });
 }

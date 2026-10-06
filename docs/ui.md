@@ -6,7 +6,7 @@
 
 O browser usa o cliente axios autenticado para ler `GET /api/settings/presentation` e `GET /api/dashboard/overview?screenId=<uuid>`. Cada atualização da tela visível usa uma única leitura agregada de telemetria. Não consulta histórico, outros slides nem recursos individualmente. Contratos completos em [BFF](bff.md).
 
-O documento `pulse_settings.dashboardPresentation` fornece ordem, telas habilitadas, blocos, larguras, layouts e defaults. O renderer atende `summary`, `highlighted_resources`, `problems`, `asgard_summary`, `resource_card` e `host_inventory`. Respeita a ordem dos arrays; `standard`, `wide` e `full` ocupam respectivamente 4, 6 e 12 colunas de uma grade de 12 em overview e wall: três blocos padrão ou dois amplos por linha. Breakpoints menores reorganizam a grade até uma coluna sem remover conteúdo.
+O documento `pulse_settings.dashboardPresentation` fornece ordem, telas habilitadas, blocos, larguras, layouts e defaults. O renderer atende `summary`, `highlighted_resources`, `problems`, `asgard_summary`, `resource_card`, `host_inventory` e `container_inventory`. Respeita a ordem dos arrays; `standard`, `wide` e `full` ocupam respectivamente 4, 6 e 12 colunas de uma grade de 12 em overview e wall: três blocos padrão ou dois amplos por linha. Breakpoints menores reorganizam a grade até uma coluna sem remover conteúdo.
 
 - Indicadores: hosts conhecidos/alcançáveis, VMs, containers em execução/parados e problemas/recursos críticos afetados.
 - Recursos destacados e cards individuais: preferências de status, health, CPU, memória, disco, rede e uptime. O BFF determina resolução, ordem e criticidade. Campos opcionais ausentes mostram o motivo em vez de zero.
@@ -54,7 +54,7 @@ Defaults de TV/autoStart valem na abertura. Depois disso, preferências locais n
 
 Fundo `#0c1116`, superfície `#121a21`, elevado `#18232c`, borda `#29343d`. Texto `#eef3f5`, secundários `#9daeb9`/`#82949f`. Estados usam verde `#64d6b0`, âmbar `#f2c275`, vermelho `#ff8585` e azul `#80bdf2`, sempre acompanhados de texto. Painéis/KPIs têm raio 14px, cards 9px, controles 7px e pílulas 5px. Botões usam a base shadcn/ui ajustada aos tokens Pulse.
 
-Interface: `-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`. Números/horários: `ui-monospace, SFMono-Regular, Consolas, monospace`, tabulares. Sem fonte externa. Logo usa o asset oficial existente; a marca não é um ícone Lucide.
+Interface: `-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`. Números/horários: `ui-monospace, SFMono-Regular, Consolas, monospace`, tabulares. Sem fonte externa. Logo usa o asset oficial existente; a marca não é um ícone Lucide. O nome `softcom` foi preservado; somente `pulse` usa a cor institucional `#fba704`, conforme ajuste aprovado.
 
 Status Docker e health são independentes. Em execução não significa saudável. Ausência de HEALTHCHECK comprovada é “Sem healthcheck”; ausência de evidência é “Desconhecido”, acompanhada do motivo quando informado. Ciclo falho/stale e `validUntil` vencido impedem pílula saudável. Valores antigos podem permanecer legíveis, identificados como desatualizados. O horário de coleta não substitui o da amostra.
 
@@ -68,4 +68,30 @@ Testes de dashboard cobrem 320×568, 360×800, 390×844, 768×1024, 1024×768, 1
 
 Arquivos principais: `components/dashboard/dashboard.tsx`, `blocks.tsx`, `asgard-panel.tsx`, `asgard-details.tsx`, `resource-card.tsx`, `metrics.tsx`, `player-toolbar.tsx`, `display-controls.tsx`, `use-poll.ts` e `dashboard.css`; estado puro em `lib/dashboard/player.ts`, formatação em `lib/dashboard/format.ts`. Testes em `tests/dashboard.test.mjs` e `tests/e2e/dashboard.spec.ts`. Execução e isolamento em [Ambiente](environment.md).
 
-O editor das configurações permanece previsto para a fase 08. O contrato atual ainda é schemaVersion 1, sem options por bloco. A evolução de filtros, ordenação, limites de linhas e quantidade por tela será entregue junto do editor; não confundir a especificação futura com opções já disponíveis. Infraestrutura, hosts, VMs e seus históricos estão implementados; serviços/containers e modal por VM ficam na fase 07. WhatsApp/Meta, Signal, n8n, Hub/Shop e simulações ficam após o MVP. Não criar links sem destino implementado nem inferir dados dessas fontes.
+O editor das configurações permanece previsto para a fase 08. O contrato atual ainda é schemaVersion 1, sem options por bloco. A evolução de filtros, ordenação, limites de linhas e quantidade por tela será entregue junto do editor; não confundir a especificação futura com opções já disponíveis. Infraestrutura, hosts, VMs, serviços/containers e modal por VM estão implementados. Integrações funcionais WhatsApp/Meta, Signal, n8n, Hub/Shop e simulações ficam após o MVP; containers descobertos com esses nomes continuam permitidos.
+
+## Serviços, containers e alertas
+
+`/servicos` usa a composição de tabela e diálogo do protótipo, com scroll vertical normal. O inventário agregado agrupa por host e distingue recursos individualizados de contadores totais do Docker. Nome/imagem, estado, health, CPU, memória, reinícios e evidência aparecem na tabela; “Mais dados” expande capacidades, rede e uptime. Não faz consulta por linha nem cria linhas a partir de totais. Campos ausentes não viram zero. O detalhe Agent reutiliza essa lista em “Containers do Agent”.
+
+O estado Docker cobre Em execução, Parado, Pausado, Reiniciando, Criado, Em remoção, Encerrado com falha e Sem estado atual. Health é independente: Saudável, Iniciando, Falha no healthcheck, Sem healthcheck ou Health desconhecido. Evidência vencida nunca mantém confirmação verde. Um container parado pode conservar health antigo saudável, sem alterar o estado Parado. Motivos unsupported/missing/stale ficam explícitos.
+
+Cards de recursos configurados mantêm flags de presentation e abrem detalhes com fonte, identidade, evidência e métricas habilitadas. Configuração desabilitada é identificada; alvo ausente ou ambíguo conserva o nome e explica a resolução. Criticidade afetada realça o card sem habilitar métrica oculta. Não há CRUD ou ação operacional nesta vista.
+
+Histórico carrega ao abrir um detalhe resolvido e ao trocar 1h/24h/7d, sem polling periódico. CPU/RAM/rede e outras métricas habilitadas usam uPlot, separadas por unidade. Health/status usam barras SVG com texto, intervalo e evidência acessíveis por toque e controle de teclado. Unknown/lacunas permanecem neutros, not_configured não é sucesso; stopped é vermelho na trilha de estado. Erro preserva a leitura da mesma seleção e oferece retry. Não há histórico automático nos cards do dashboard nem na lista de containers.
+
+Problemas usam um helper compartilhado de seis severidades: Não classificado, Informação, Atenção, Média, Alta e Desastre. Mantêm severidade original, descrição e horário, ordenados por severidade e início. A vista completa oferece a descrição original expandida quando houver texto humanizado. Não executa acknowledgement, encerramento ou notificação externa.
+
+O bloco `container_inventory` é elegível no catálogo/overview/player, com lista atual e scroll interno. Não altera as telas salvas nem adiciona `/servicos` à alternância. A faixa de destaques e os painéis compactos ASGARD/problemas permanecem no lugar.
+
+## Modal de workloads por VM
+
+Cada linha das tabelas detalhadas do ASGARD e da VM possui “Ver serviços”, com nome acessível “Serviços e containers de <VM>” e alvo de 44px. Abre a VM daquela linha sem mudar URL, gráfico ou seleção. O nome continua link independente. A tabela compacta da raiz não recebe essa ação adicional.
+
+O modal chama apenas o wrapper por pai/VM documentado no [BFF](bff.md). Valida a identidade retornada e apresenta ausência de vínculo, host indisponível, ausência de snapshot e descoberta vazia como situações distintas. Serviços resolvidos são labels junto do container, inclusive desabilitados; configurações ausentes/ambíguas ficam em seção própria. Não inventa systemd, stacks ou réplicas desejadas.
+
+Atualização segue refreshAfterMs somente enquanto aberto e visível, sem sobreposição. Fechar/trocar/navegar/desmontar cancela pedidos e timers; respostas antigas não aparecem em outra VM. Falha mantém somente o resultado da mesma identidade, com aviso persistente, retry e toast não repetido por ciclo. Atualização não recria expansões nem redefine foco/scroll.
+
+Diálogos Radix mantêm foco contido, Escape e retorno ao acionador; se a linha deixou de existir, o foco retorna à região estável da tabela. Cabeçalho/fechar permanecem fora do corpo rolável. O detalhe com gráfico pode ter 920px; o inventário de workloads, 1240px, ambos limitados ao espaço disponível por percentuais, inclusive com zoom CSS de 200%. São extensões de largura para dados reais; cores, bordas, tipografia, paddings e hierarquia seguem o diálogo do protótipo. Tabelas possuem rolagem interna e todas as ações continuam acessíveis no celular. A matriz de Serviços/modais foi verificada de 320px a 1920px, incluindo tablet, paisagem, toque e teclado; homologação física adicional permanece separada.
+
+Implementação em `components/services`, com estados/rótulos em `lib/services/presentation.ts`, wrapper em `lib/server/monitoring/vm-workloads.ts` e testes em `tests/e2e/services.spec.ts` e na integração de configuração. Nenhuma migration, alteração de credenciais ou escrita externa é necessária.

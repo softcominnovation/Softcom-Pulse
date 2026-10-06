@@ -29,7 +29,7 @@ export function useHistory(resource: History["resource"], range: History["window
       if (!forced && cached && Date.now() - cached.at < 60000) { setState({ key, data: cached.value, failed: false, loading: false }); return; }
       setState(previous => ({ key, data: previous?.key === key ? previous.data : null, failed: false, loading: true }));
       try {
-        const path = `/monitoring/hosts/${encodeURIComponent(hostKey)}${type === "vm" ? `/vms/${encodeURIComponent(reference!)}` : ""}/history`;
+        const path = type === "configured_resource" ? `/monitoring/services/${encodeURIComponent(reference!)}/history` : `/monitoring/hosts/${encodeURIComponent(hostKey)}${type === "vm" ? `/vms/${encodeURIComponent(reference!)}` : ""}/history`;
         const result = readSchema(historySchema).parse((await api.get(path, { params: { range }, signal: controller.signal })).data);
         if (result.data.resource.type !== type || result.data.resource.hostKey !== hostKey || result.data.resource.reference !== reference || result.data.window !== range) throw new Error("Unexpected history identity");
         if (disposed) return;

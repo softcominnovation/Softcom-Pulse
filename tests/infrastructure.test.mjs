@@ -36,6 +36,6 @@ test("alignment preserves explicit nulls, unsampled timestamps, observed zero an
   assert.deepEqual(data[0], [...data[0]].sort()); assert.deepEqual(data[1], [0, null, null]); assert.deepEqual(data[2], [null, 10, 12]);
   assert.equal(historyValue(0, "percent"), "0%"); assert.equal(historyValue(null, "percent"), "Sem dados"); assert.equal(historyValue(1024 ** 3, "bytes"), "1 GiB");
 });
-test("host inventory is available while container inventory remains reserved for phase seven", () => {
-  assert.equal(blockCatalog.host_inventory.available, true); assert.equal(blockCatalog.container_inventory.available, false);
+test("host and container inventory are available in their delivered phases", () => {
+  assert.equal(blockCatalog.host_inventory.available, true); assert.equal(blockCatalog.container_inventory.available, true);
 });

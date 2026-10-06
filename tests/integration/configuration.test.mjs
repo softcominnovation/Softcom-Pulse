@@ -236,14 +236,16 @@ test("overview reads only visible resource inventories and never enables hidden 
   assert.equal(hidden.data.blocks[0].availability, "unavailable"); assert.equal(hidden.data.blocks[0].data, null);
   await clearSnapshots(); await deleteResource(first.id); await deleteResource(second.id);
 });
-test("unimplemented blocks cannot be selected and stored future blocks report unavailable", async () => {
+test("container inventory joins the selected overview without changing saved screens or requesting history", async () => {
   const { revision, ...settings } = (await getPresentation()).data;
   settings.rotation.autoStart = false;
   settings.screens[0].blocks = [{ id: randomUUID(), type: "container_inventory", enabled: true, width: "full" }];
-  await assert.rejects(savePresentation({ expectedRevision: revision, settings }), error => error.code === "block_unavailable");
-  await getPrisma().pulseSetting.update({ where: { key: "dashboardPresentation" }, data: { value: { ...settings, revision: revision + 1 } } });
+  await savePresentation({ expectedRevision: revision, settings });
+  const first = container("same-service", "agent-a"), second = container("same-service", "agent-b");
+  await publish({ [keys.hosts]: [host("agent-a"), host("agent-b")], [keys.containers("agent-a")]: [first], [keys.containers("agent-b")]: [second] });
   const overview = await (await handlers.overviewGet(request())).json();
-  assert.equal(overview.data.blocks[0].availability, "unavailable"); assert.equal(overview.data.blocks[0].data, null);
+  assert.equal(overview.data.blocks[0].availability, "ready"); assert.deepEqual(overview.data.blocks[0].data.map(item => item.hostKey), ["agent-a", "agent-b"]);
+  assert.deepEqual((await getPresentation()).data.screens, settings.screens);
 });
 
 function templateFixture(templateId = "900") {
@@ -341,6 +343,75 @@ test("new template configuration requires current discovery and never accepts a 
   assert.equal(response.status, 409); assert.equal(response.body.error.code, "template_inventory_unavailable");
   const stale = await (await handlers.templatesGet(request())).json(); assert.equal(stale.stale, true); assert.equal(stale.data[0].memoryBytes.quality, "stale");
   assert.equal((await (await handlers.templateConfigsGet(request())).json()).data.some(row => row.templateKey === fixture.template.vmKey), false);
+});
+
+test("VM workloads validate parent and linked host, preserve configurations and distinguish discovery absence", async () => {
+  const parent = { ...host("workload-parent"), role: "hypervisor" };
+  const a = { ...host("workload-a"), role: "linux" }, b = { ...host("workload-b"), role: "linux" };
+  const vm = { vmKey: "vm-workloads", vmId: "10", parentHostKey: parent.hostKey, name: "Same VM", linuxHostKey: a.hostKey, state: "running", metrics: {}, evidence: evidence() };
+  parent.vms = [vm, { ...vm, vmKey: "template", name: "tpl-workload" }];
+  const first = container("shared-service", a.hostKey), second = container("shared-service", b.hostKey);
+  const entries = { [keys.hosts]: [parent, a, b], [keys.containers(a.hostKey)]: [first], [keys.containers(b.hostKey)]: [second] };
+  await publish(entries);
+  const config = await createResource({ resourceType: "docker_container", zabbixHostKey: a.hostKey, selectorType: "exact_name", selectorValue: first.name, enabled: false });
+  await createResource({ resourceType: "docker_container", zabbixHostKey: b.hostKey, selectorType: "exact_name", selectorValue: second.name });
+  await createResource({ resourceType: "docker_container", zabbixHostKey: a.hostKey, selectorType: "exact_name", selectorValue: "missing-service", critical: true });
+  const read = (query = "", values = { hostKey: parent.hostKey, vmKey: vm.vmKey }) => handlers.vmContainersGet(request("/" + query), params(values));
+  let response = await read(); assert.equal(response.headers.get("cache-control"), "no-store");
+  let body = await response.json();
+  assert.equal(body.data.association, "linked"); assert.equal(body.availability, "ready");
+  assert.deepEqual(body.data.containers.map(item => item.reference), [first.reference]);
+  assert.equal(body.data.configuredServices.length, 2); assert.ok(body.data.configuredServices.every(item => item.config.zabbixHostKey === a.hostKey));
+  assert.equal(body.data.configuredServices.find(item => item.id === config.id).config.enabled, false);
+  assert.equal(body.data.configuredServices.find(item => item.config.selectorValue === "missing-service").resolution, "missing");
+  assert.equal((await read("?linuxHostKey=" + b.hostKey)).status, 400);
+  assert.equal((await read("?range=1h")).status, 400);
+  assert.equal((await read("", { hostKey: "../bad", vmKey: vm.vmKey })).status, 400);
+  assert.equal((await read("", { hostKey: a.hostKey, vmKey: vm.vmKey })).status, 404);
+  assert.deepEqual(await (await read("", { hostKey: parent.hostKey, vmKey: "template" })).json(), { error: { code: "vm_not_found" } });
+  assert.equal((await read("", { hostKey: parent.hostKey, vmKey: "wrong" })).status, 404);
+  vm.linuxHostKey = null; await publish(entries); body = await (await read()).json();
+  assert.equal(body.data.association, "unlinked"); assert.equal(body.availability, "unavailable"); assert.deepEqual(body.data.containers, []);
+  vm.linuxHostKey = "absent-host"; await publish(entries); body = await (await read()).json(); assert.equal(body.data.association, "host_unavailable");
+  vm.linuxHostKey = a.hostKey; a.availability = "unreachable"; await publish(entries); body = await (await read()).json(); assert.equal(body.data.association, "host_unavailable");
+  a.availability = "reachable"; delete entries[keys.containers(a.hostKey)]; await publish(entries); body = await (await read()).json();
+  assert.equal(body.availability, "no_data"); assert.equal(body.data.association, "linked"); assert.equal(body.data.configuredServices.length, 2);
+  entries[keys.containers(a.hostKey)] = []; await publish(entries); body = await (await read()).json(); assert.equal(body.availability, "ready"); assert.deepEqual(body.data.containers, []);
+  entries[keys.containers(a.hostKey)] = [first]; await publish(entries); await markSyncFailure(); body = await (await read()).json();
+  assert.equal(body.stale, true); assert.equal(body.data.containers.length, 1); assert.equal(body.data.containers[0].status, "unknown");
+  entries[keys.containers(a.hostKey)] = [second]; await publish(entries);
+  assert.deepEqual(await (await read()).json(), { error: { code: "snapshot_invalid" } });
+});
+
+test("VM workload generation changes retry the association and never combine inventories", async () => {
+  const a = { ...host("race-agent-a"), role: "linux" }, b = { ...host("race-agent-b"), role: "linux" };
+  const vm = { vmKey: "race-vm", vmId: "11", parentHostKey: "race-parent", name: "Same VM", linuxHostKey: a.hostKey, state: "running", metrics: {}, evidence: evidence() };
+  const parent = { ...host("race-parent"), role: "hypervisor", vms: [vm] };
+  const entries = { [keys.hosts]: [parent, a, b], [keys.containers(a.hostKey)]: [container("same", a.hostKey)], [keys.containers(b.hostKey)]: [container("same", b.hostKey)] };
+  await publish(entries);
+  const read = () => handlers.vmContainersGet(request(), params({ hostKey: parent.hostKey, vmKey: vm.vmKey }));
+  await read();
+  const client = globalThis.pulseCache, original = client.mGet;
+  const requested = [];
+  let swapped = false;
+  client.mGet = async function(batchKeys) {
+    requested.push(...batchKeys);
+    if (!swapped && batchKeys.includes(keys.containers(a.hostKey))) { swapped = true; vm.linuxHostKey = b.hostKey; await publish(entries); }
+    return original.call(this, batchKeys);
+  };
+  try {
+    const response = await read(), body = await response.json(); assert.equal(response.status, 200);
+    assert.equal(body.data.vm.linuxHostKey, b.hostKey); assert.ok(body.data.containers.every(item => item.hostKey === b.hostKey));
+    assert.ok(!requested.includes(keys.containers(parent.hostKey)));
+  } finally { client.mGet = original; }
+  const raw = JSON.parse(await cache.get(keys.containers(b.hostKey))); raw.generation = randomUUID();
+  await cache.set(keys.containers(b.hostKey), JSON.stringify(raw));
+  const inconsistent = await read(); assert.equal(inconsistent.status, 503); assert.deepEqual(await inconsistent.json(), { error: { code: "snapshot_inconsistent" } });
+  await publish(entries);
+  const findMany = getPrisma().monitoredResourceConfig.findMany;
+  getPrisma().monitoredResourceConfig.findMany = async () => { throw new Error("test database failure"); };
+  try { const response = await read(); assert.equal(response.status, 503); assert.deepEqual(await response.json(), { error: { code: "database_unavailable" } }); }
+  finally { getPrisma().monitoredResourceConfig.findMany = findMany; }
 });
 
 test("dashboard layout migration reorders only the untouched initial composition and preserves IDs and custom choices", async () => {

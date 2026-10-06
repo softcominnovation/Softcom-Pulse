@@ -7,6 +7,7 @@ import { readHosts, readHost, readContainers, readProblems, readServices, readOv
 import { templateKeySchema } from "../../config/templates.ts";
 import { listTemplateConfigs, saveTemplateConfig } from "../config/templates.ts";
 import { readTemplates } from "./templates.ts";
+import { readVmWorkloads } from "./vm-workloads.ts";
 
 type Params<K extends string> = { params: Promise<Record<K, string>> };
 const emptyQuery = z.strictObject({});
@@ -45,6 +46,13 @@ export function containersGet(request: Request) {
 }
 export function hostContainersGet(request: Request, context: Params<"hostKey">) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readContainers(hostKeySchema.parse((await context.params).hostKey)); });
+}
+export function vmContainersGet(request: Request, context: Params<"hostKey" | "vmKey">) {
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const params = await context.params;
+    return readVmWorkloads(hostKeySchema.parse(params.hostKey), hostKeySchema.parse(params.vmKey), request.signal);
+  });
 }
 export function problemsGet(request: Request) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readProblems(); });

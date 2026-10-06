@@ -1,9 +1,10 @@
 import { Activity, Box, Layers, Server, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
-import type { AsgardSummary, ConfiguredResource, Host, OverviewBlock, Problem, Summary } from "@/lib/monitoring/contracts";
+import type { AsgardSummary, ConfiguredResource, Container, Host, OverviewBlock, Problem, Summary } from "@/lib/monitoring/contracts";
 import { HostInventory } from "@/components/infrastructure/host-panels";
 import { number, timestamp } from "@/lib/dashboard/format";
-import { Status } from "./metrics";
+import { SeverityPill } from "@/components/services/states";
+import { ContainerInventory } from "@/components/services/container-inventory";
 import { AsgardPanel } from "./asgard-panel";
 import { ResourceCard } from "./resource-card";
 
@@ -26,6 +27,7 @@ export function DashboardBlock({ block, failed }: { block: OverviewBlock; failed
     case "summary": return <SummaryBlock data={block.data as Summary} stale={stale} />;
     case "asgard_summary": return <AsgardPanel data={block.data as AsgardSummary} stale={stale} />;
     case "host_inventory": return <HostInventory hosts={block.data as Host[]} stale={stale} compact />;
+    case "container_inventory": return <Panel title="Containers descobertos" icon={<Box aria-hidden="true" />}><ContainerInventory containers={block.data as Container[]} stale={stale} availability={block.availability} compact /></Panel>;
     case "highlighted_resources": {
       const items = block.data as ConfiguredResource[];
       return <Panel title="Serviços destacados" icon={<Activity aria-hidden="true" />} note="Exibição conforme as preferências de cada recurso.">{items.length ? <div className="resource-grid" tabIndex={0} role="region" aria-label="Recursos destacados">{items.map(item => <ResourceCard key={item.id} item={item} stale={stale} compact />)}</div> : <p className="panel-empty">Nenhum serviço destacado. Os recursos configurados para destaque aparecerão aqui.</p>}</Panel>;
@@ -34,7 +36,7 @@ export function DashboardBlock({ block, failed }: { block: OverviewBlock; failed
     case "problems": {
       const problems = [...block.data as Problem[]].sort((a, b) => b.severity - a.severity || b.startedAt.localeCompare(a.startedAt));
       return <Panel title="Problemas ativos" icon={<TriangleAlert aria-hidden="true" />} note={`Última atualização: ${timestamp(block.lastUpdated)}${stale ? " · Dados desatualizados" : ""}`}>
-        {problems.length ? <ul className="problem-list" tabIndex={0} aria-label="Lista de problemas ativos">{problems.map(problem => <li key={problem.id}><Status value={problem.visualState} /><div><p title={problem.displayDescription ? problem.description : undefined}>{problem.displayDescription ?? problem.description}</p><small>{problem.resource.hostKey}</small></div><time dateTime={problem.startedAt}>{timestamp(problem.startedAt)}</time></li>)}</ul> : <p className="panel-empty">{stale || block.availability !== "ready" ? "Sem evidência atual de problemas." : "Nenhum problema ativo informado pela origem."}</p>}
+        {problems.length ? <ul className="problem-list" tabIndex={0} aria-label="Lista de problemas ativos">{problems.map(problem => <li key={problem.id}><SeverityPill severity={problem.severity} /><div><p title={problem.displayDescription ? problem.description : undefined}>{problem.displayDescription ?? problem.description}</p><small>{problem.resource.hostKey}</small></div><time dateTime={problem.startedAt}>{timestamp(problem.startedAt)}</time></li>)}</ul> : <p className="panel-empty">{stale || block.availability !== "ready" ? "Sem evidência atual de problemas." : "Nenhum problema ativo informado pela origem."}</p>}
       </Panel>;
     }
     default: return <Panel title="Bloco indisponível" icon={<TriangleAlert aria-hidden="true" />}><p className="panel-empty">Visualização ainda não disponível.</p></Panel>;

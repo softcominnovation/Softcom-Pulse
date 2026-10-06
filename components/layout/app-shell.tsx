@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { getAuthController } from "@/store/auth.store";
 import { useUiStore } from "@/store/ui.store";
 import { DisplayControls } from "@/components/dashboard/display-controls";
+import { MonitoringNav } from "./monitoring-nav";
 
 const formatter = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Fortaleza", hour: "2-digit", minute: "2-digit", second: "2-digit" });
 function Clock() {
@@ -42,7 +43,7 @@ export function AppShell({ children, dashboard = false }: { children: ReactNode;
             <Button className="shell-logout" onClick={() => { void logout(); }}><LogOut className="size-4" aria-hidden="true" />Sair</Button>
           </div>
         </header>
-        <main id="main" className={dashboard ? "dashboard-main" : "mx-auto w-full max-w-[2160px] px-4 py-6 sm:px-[34px]"}>{children}</main>
+        <main id="main" className={dashboard ? "dashboard-main" : "monitoring-main"}>{!dashboard && <div className="dashboard-nav"><MonitoringNav /></div>}{children}</main>
       </div>
     </AuthGate>
   );

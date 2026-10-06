@@ -6,7 +6,7 @@ export type BlockType = typeof blockTypes[number];
 export const blockCatalog: Record<BlockType, { available: boolean; uiPhase: number }> = {
   summary: { available: true, uiPhase: 5 }, highlighted_resources: { available: true, uiPhase: 5 },
   problems: { available: true, uiPhase: 5 }, asgard_summary: { available: true, uiPhase: 5 },
-  resource_card: { available: true, uiPhase: 5 }, host_inventory: { available: false, uiPhase: 6 },
+  resource_card: { available: true, uiPhase: 5 }, host_inventory: { available: true, uiPhase: 6 },
   container_inventory: { available: false, uiPhase: 7 },
 };
 const blockSchema = z.strictObject({

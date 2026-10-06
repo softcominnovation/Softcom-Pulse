@@ -44,7 +44,7 @@ test("removed screen is replaced immediately; remote autoStart never overrides a
   const store = createPlayerStore(), action = store.getState(); action.configure(document(3, 1, true), 0); action.select("screen-2");
   action.configure(document(2, 2), 1000); assert.equal(store.getState().screenId, "screen-0"); assert.ok(store.getState().notice);
   action.stop(); action.configure(document(3, 3, true), 2000); assert.equal(store.getState().rotating, false);
-  const unavailable = document(1, 4); unavailable.screens[0].blocks[0].type = "host_inventory"; action.configure(unavailable, 3000);
+  const unavailable = document(1, 4); unavailable.screens[0].blocks[0].type = "container_inventory"; action.configure(unavailable, 3000);
   assert.equal(playableScreens(store.getState().document).length, 0); assert.equal(store.getState().screenId, null);
 });
 test("metric formatting preserves zero, units, unsupported and evidence age", () => {

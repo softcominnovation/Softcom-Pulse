@@ -56,10 +56,10 @@ Bloco: `{id, type, enabled, width, resourceConfigId?}`. Largura `standard|wide|f
 | problems | disponível | fase 05; detalhe ampliado na 07 |
 | asgard_summary | disponível | fase 05 |
 | resource_card | disponível | fase 05 |
-| host_inventory | reconhecido; nova seleção recusada | fase 06 |
+| host_inventory | disponível; Host[] operacional | fase 06 implementada |
 | container_inventory | reconhecido; nova seleção recusada | fase 07 |
 
-Disponibilidade aqui significa contrato do bloco no BFF. O dashboard já renderiza summary, highlighted_resources, problems, asgard_summary e resource_card; comportamento em [Interface](ui.md). O editor administrativo permanece previsto para a fase 08. As próximas interfaces usam o mesmo catálogo e só habilitam os renderers implementados. Um bloco reconhecido indisponível já armazenado retorna `data: null, availability: "unavailable"` no overview.
+Disponibilidade aqui significa contrato do bloco no BFF. O dashboard já renderiza summary, highlighted_resources, problems, asgard_summary, resource_card e host_inventory; comportamento em [Interface](ui.md) e [Infraestrutura](infrastructure.md). O editor administrativo permanece previsto para a fase 08. As próximas interfaces usam o mesmo catálogo e só habilitam os renderers implementados. Um bloco reconhecido indisponível já armazenado retorna `data: null, availability: "unavailable"` no overview.
 
 `intervalSeconds` inteiro de 5 a 300, default 20. AutoStart exige duas telas habilitadas com bloco habilitado disponível; ausência de telemetria não desabilita uma tela. A reprodução revalida essa condição. Tela atual, pausa, contador, formato temporário e fullscreen não são gravados neste documento.
 
@@ -86,11 +86,13 @@ Envelope público: `{data, availability, stale, lastUpdated, refreshAfterMs}`. A
 
 Componentes de caminho e query devem usar URL encoding. Históricos aceitam range `1h|24h|7d`, default 1h. O servidor resolve somente os itens mapeados para o recurso, sem aceitar itemid do browser. source descreve as séries numéricas: history para 1h/24h e trends para 7d; estados discretos usam history em qualquer janela. Serviços são configuração humana resolvida, não sinônimo da lista de containers.
 
+O envelope de `GET /api/monitoring/hosts` acrescenta `asgardHostKey: string|null`: identidade efetiva presente no overview da mesma geração, validada contra um host de papel hypervisor no inventário. Sem evidência correspondente, é null. Não é uma seleção por nome no browser. O bloco `host_inventory` recebe `Host[]` da mesma leitura agregada, com templates removidos apenas das listas operacionais e capacidades do host preservadas. Nenhum endpoint novo nem escrita de telemetria foi necessário para as telas de infraestrutura.
+
 VMs com nome iniciado literalmente por `tpl` saem das listas e contadores operacionais, inclusive problemas com vínculo comprovado à VM template. As métricas gerais do ASGARD permanecem integrais. Summary.problems conta entradas públicas após o filtro, e não eventos brutos; um evento pode ter mais de um recurso. Histórico de VM não aceita template. O Collector/Redis preserva o inventário completo. Metadados usam `GET /api/settings/templates` e `PUT /api/settings/templates/:templateKey`, com revisão concorrente; payloads, ausência/stale e limites em [Templates](templates.md).
 
 History acrescenta `technicalReference`, `coverageLimited` e `states`. Séries numéricas têm `aggregation: last_min_max|hourly_average` e até 1000 pontos `{timestamp,value,min,max}`. Resampling curto conserva o último valor e extremos do bucket; só mantém um valor entre amostras dentro da cadência suportada. Janela de 7d usa média horária do Zabbix, com mínimo/máximo preservados. Null explicita lacuna. States contêm key `status|health`, aggregation `worst_state`, coverageLimited e até 1000 segmentos `{from,to,state,observedAt}`. Não se calcula média de códigos de health. Estado anterior só é carregado dentro da validade sustentada; itens por evento usam evidência de coleta do mesmo mestre quando disponível. Sem evidência, lacuna unknown. O limite de leitura ou uma lacuna sinalizam coverageLimited.
 
-Histórico tem timeout total de 25s, fila global limitada, no máximo três chamadas simultâneas por processo e refreshAfterMs de 60000. Não é pré-carregado nem persistido no Redis/PostgreSQL. A identidade opaca muda no redeploy do container. A futura UI deverá cancelar a seleção anterior e descartar respostas tardias; o BFF já propaga o sinal de cancelamento HTTP.
+Histórico tem timeout total de 25s, fila global limitada, no máximo três chamadas simultâneas por processo e refreshAfterMs de 60000. Não é pré-carregado nem persistido no Redis/PostgreSQL. A identidade opaca muda no redeploy do container. A UI de infraestrutura cancela a seleção anterior e descarta respostas de outra identidade/janela; o BFF propaga o sinal de cancelamento HTTP. O cache de página e o orçamento por perspectiva estão em [Infraestrutura](infrastructure.md).
 
 Overview mantém `summary`, `highlightedResources`, `problems`, `asgardSummary`, além de `screenId`, `presentationRevision` e `blocks`. Cada bloco habilitado: `{blockId, type, data, availability, stale, lastUpdated}`. UUID de tela inválido retorna 400; tela ausente/desabilitada, 404. Os recursos destacados retornados correspondem aos blocos da tela selecionada. Só seus inventários Docker são lidos; outra tela não dispara leitura de seus cards/históricos. Resumo e problemas permanecem no envelope tradicional. Configurações gerais são buscadas separadamente.
 
@@ -101,7 +103,7 @@ Schemas e tipos compartilhados em `lib/monitoring/contracts.ts` filtram campos i
 | Tipo | Campos |
 |---|---|
 | Metric | `value: number|null`, `unit`, `observedAt: ISO|null`, `quality: fresh|stale|missing|unsupported`, `validUntil: ISO|null` quando a cadência foi avaliada |
-| Metrics | CPU percent; memória usada/total/percent; disco usado/total/percent/leitura/escrita; rede recebida/transmitida; uptime; restartCount, todos opcionais e tipados |
+| Metrics | CPU percent, provisionedCpuCount e osCpuCount (count); memória usada/total/percent; disco usado/total/percent/leitura/escrita; rede recebida/transmitida; uptime; restartCount, todos opcionais e tipados |
 | Host | hostKey, name, role `hypervisor|linux|unknown`, availability `reachable|unreachable|unknown`, metrics, storages, filesystems, interfaces, vms, evidence |
 | VM | vmKey, vmId anulável, name, parentHostKey, state `running|stopped|paused|unknown`, metrics, linuxHostKey anulável, evidence |
 | Container | reference opaca, hostKey, name atual sem `/` inicial do Docker, image anulável, status, health, healthReason, healthObservedAt, healthValidUntil, metrics, evidence |
@@ -112,6 +114,10 @@ Schemas e tipos compartilhados em `lib/monitoring/contracts.ts` filtram campos i
 | AsgardSummary | host: Host/null e vms: VM[] |
 
 Evidence contém source zabbix, observedAt, validUntil quando avaliado e basis `item|discovery|configuration|unknown`. Dispositivos de host contêm key, name e metrics. Resource de problema/histórico contém type `host|vm|docker_container|configured_resource`, hostKey e reference anulável. VM sem Agent mantém linuxHostKey null; nunca se fabrica um host Linux. HealthReason distingue observed, missing, unsupported, stale e unrecognized. Campos de capacidade opcionais ausentes não indicam zero.
+
+`VM.metrics.provisionedCpuCount` é a quantidade provisionada no Proxmox, obtida do item dependente QEMU, inclusive sem Agent. `Host.metrics.osCpuCount` representa CPUs reconhecidas pelo SO via Agent. São inteiros positivos, unidade count, com horário/qualidade/validade próprios; um campo nunca substitui o outro. A UI consulta o SO somente pelo `linuxHostKey` confirmado. O leitor aceita o antigo `cpuCount` de snapshots Linux exclusivamente como `osCpuCount`, removendo o nome antigo da saída; não o converte em provisionamento. Ausência continua explícita.
+
+Os campos seguem nas rotas existentes de hosts, detalhe, overview e histórico por recurso. Templates de VM expõem `virtualCpuCount` a partir de `provisionedCpuCount`. Não há endpoint por quantidade de CPU nem requests por linha. Fontes e heartbeat estão no [contrato Zabbix](zabbix.md).
 
 Unidades: percent, bytes, bytes/s, bits/s, seconds e count. Uso e capacidade são campos separados, assim como taxas e acumulados. Campos indisponíveis não viram zero. Status Docker (`running|stopped|paused|restarting|created|removing|dead|unknown`) e health (`healthy|unhealthy|starting|not_configured|unknown`) são separados. Sem HEALTHCHECK não significa healthy.
 

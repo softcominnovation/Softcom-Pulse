@@ -28,9 +28,11 @@ const docker: Record<string, Rule> = {
 export function metricRule(item: Item): Rule | null {
   const { base, args } = keyParts(item.key_);
   let result: Rule | undefined;
-  if (/^proxmox\.(node|qemu|lxc)\./.test(base)) result = proxmox[base.split('.').slice(2).join('.')];
+  if (base === "proxmox.qemu.cpus" && args.length === 1 && /^(qemu\/)?\d+$/.test(args[0]) && item.type === "18" && item.value_type === "3" && item.preprocessing[0]?.type === "12" && item.preprocessing[0].params === "$.data.cpus" && item.preprocessing.slice(1).every(step => step.type === "20")) result = rule("provisionedCpuCount", "count", [""]);
+  else if (/^proxmox\.(node|qemu|lxc)\./.test(base)) result = proxmox[base.split('.').slice(2).join('.')];
   else if (docker[base]) result = docker[base];
   else if (base === "system.uptime") result = time;
+  else if (base === "system.cpu.num" && !args.length && item.value_type === "3") result = rule("osCpuCount", "count", [""]);
   else if (base === "system.cpu.util" && !args.length) result = percent("cpuUsagePercent");
   else if (base === "system.cpu.util" && args[1] === "idle") result = rule("cpuUsagePercent", "percent", ["%"], -1, 100);
   else if (base === "vm.memory.util") result = percent("memoryUsagePercent");
@@ -44,6 +46,12 @@ export function metricRule(item: Item): Rule | null {
 }
 const scalar = new Set(["agent.ping", "zabbix", "proxmox.node.online", "proxmox.api.available", "proxmox.qemu.vmstatus", "proxmox.lxc.vmstatus", "docker.container_info.state.health", "docker.container_info.state.status", "docker.container_info.image", "docker.container_info.created", "docker.container_info.started", "docker.containers.running", "docker.containers.stopped", "docker.containers.total", "vm.memory.size"]);
 export function needsValue(item: Item) { return !!metricRule(item) || scalar.has(keyParts(item.key_).base); }
+export function provisionedCpuMaster(item: Item, context: ObservationContext) {
+  if (metricRule(item)?.field !== "provisionedCpuCount") return undefined;
+  const master = context.byId.get(item.master_itemid);
+  const vmId = keyParts(item.key_).args[0].replace(/^qemu\//, "");
+  return master?.hostid === item.hostid && master.key_ === `proxmox.qemu.get.data[qemu/${vmId}]` ? master : undefined;
+}
 export function stateBinding(item: Item | undefined, kind: "status" | "health", context: ObservationContext): Binding | null {
   if (!item || !["0", "1", "3", "4"].includes(item.value_type)) return null;
   const { quality, observedAt, maxGapSeconds } = context.evidence(item);
@@ -57,7 +65,12 @@ export function mapMetrics(items: Item[], context: ObservationContext, prefix = 
   for (const item of ordered) {
     const r = metricRule(item);
     if (!r) continue;
+    if (r.field === "provisionedCpuCount" && !provisionedCpuMaster(item, context)) continue;
     metrics[r.field] = metric(item, r.unit, context, r.scale, r.offset);
+    const observed = metrics[r.field]!;
+    if ((r.field === "provisionedCpuCount" || r.field === "osCpuCount") && (observed.value === null || !Number.isSafeInteger(observed.value) || observed.value <= 0)) {
+      metrics[r.field] = { ...observed, value: null, quality: observed.quality === "unsupported" ? "unsupported" : "missing" };
+    }
     const old = bindings.findIndex(binding => binding.key === prefix + r.field);
     if (old >= 0) bindings.splice(old, 1);
     const { quality, observedAt, maxGapSeconds } = context.evidence(item);

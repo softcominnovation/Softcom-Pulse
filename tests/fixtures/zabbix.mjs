@@ -1,3 +1,15 @@
+export function addProvisionedCpuItems(f) {
+  return ["101", "102"].map((vm, index) => {
+    const state = f.items.find(i => i.key_ === `proxmox.qemu.vmstatus[qemu/${vm}]`);
+    const master = { ...state, itemid: String(999000 + index * 2), key_: `proxmox.qemu.get.data[qemu/${vm}]`, type: "19", value_type: "4", lastvalue: "RAW_NOT_FETCHED", lastclock: "0" };
+    const capacity = { ...state, itemid: String(999001 + index * 2), key_: `proxmox.qemu.cpus[${index ? vm : 'qemu/' + vm}]`, type: "18", value_type: "3", units: "", delay: "0", lastvalue: String(index ? 16 : 8), lastclock: String(Math.floor(f.now / 1000) - 400), master_itemid: master.itemid, tags: [], preprocessing: [{ type: "12", params: "$.data.cpus" }, { type: "20", params: "10m" }] };
+    const cpu = f.items.find(i => i.key_ === `proxmox.qemu.cpu[qemu/${vm}]`);
+    Object.assign(cpu, { type: "18", delay: "0", master_itemid: master.itemid });
+    f.items.push(master, capacity);
+    return { master, capacity };
+  });
+}
+
 export function zabbixFixture(now = Date.now()) {
   let id = 100;
   const clock = seconds => String(Math.floor(now / 1000) - seconds);
@@ -26,6 +38,7 @@ export function zabbixFixture(now = Date.now()) {
     item("1", `proxmox.qemu.vmstatus[qemu/${vm}]`, "running", "", { tags, value_type: "1" });
   }
   item("2", "system.cpu.util[,idle]", 75, "%");
+  item("2", "system.cpu.num", 4, "", { value_type: "3", lastclock: clock(10800), preprocessing: [{ type: "20", params: "1d" }] });
   item("2", "system.uptime", 1000, "uptime", { value_type: "3" });
   item("2", "vm.memory.size[total]", 8192, "B", { value_type: "3" });
   item("2", "vm.memory.size[available]", 4096, "B", { value_type: "3" });

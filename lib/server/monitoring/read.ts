@@ -47,8 +47,11 @@ function resourceKeys(config: ResourceConfig) {
   return [config.resourceType === "host" ? snapshotKeys.hosts : snapshotKeys.containers(config.zabbixHostKey)];
 }
 export async function readHosts() {
-  const batch = await readSnapshotBatch([snapshotKeys.hosts]);
-  return readResult(freshness(snapshotData(batch, snapshotKeys.hosts, z.array(hostSchema), []).map(operationalHost), readResult(null, batch, [snapshotKeys.hosts]).stale), batch, [snapshotKeys.hosts]);
+  const batch = await readSnapshotBatch([snapshotKeys.hosts, snapshotKeys.overview]);
+  const result = readResult(freshness(snapshotData(batch, snapshotKeys.hosts, z.array(hostSchema), []).map(operationalHost), readResult(null, batch, [snapshotKeys.hosts]).stale), batch, [snapshotKeys.hosts]);
+  const overview = snapshotData(batch, snapshotKeys.overview, overviewSnapshotSchema.nullable(), null);
+  const effectiveKey = overview?.asgardSummary.host?.hostKey;
+  return { ...result, asgardHostKey: result.data.find(host => host.role === "hypervisor" && host.hostKey === effectiveKey)?.hostKey ?? null };
 }
 export async function readHost(hostKey: string) {
   const key = snapshotKeys.host(hostKey);
@@ -100,6 +103,7 @@ export async function readOverview(screenId?: string) {
     if (block.type === "summary") { data = base.summary; keys = [snapshotKeys.overview]; }
     if (block.type === "asgard_summary") { data = base.asgardSummary; keys = [snapshotKeys.overview]; }
     if (block.type === "problems") { data = problems; keys = [snapshotKeys.problems]; }
+    if (block.type === "host_inventory") { data = current.hosts.map(operationalHost); keys = [snapshotKeys.hosts]; }
     if (block.type === "highlighted_resources") { data = resources; keys = configs.flatMap(resourceKeys); }
     if (block.type === "resource_card") {
       data = resources.find(resource => resource.id === block.resourceConfigId) ?? null;

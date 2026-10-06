@@ -1,6 +1,7 @@
 import { Activity, Box, Layers, Server, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
-import type { AsgardSummary, ConfiguredResource, OverviewBlock, Problem, Summary } from "@/lib/monitoring/contracts";
+import type { AsgardSummary, ConfiguredResource, Host, OverviewBlock, Problem, Summary } from "@/lib/monitoring/contracts";
+import { HostInventory } from "@/components/infrastructure/host-panels";
 import { number, timestamp } from "@/lib/dashboard/format";
 import { Status } from "./metrics";
 import { AsgardPanel } from "./asgard-panel";
@@ -24,6 +25,7 @@ export function DashboardBlock({ block, failed }: { block: OverviewBlock; failed
   switch (block.type) {
     case "summary": return <SummaryBlock data={block.data as Summary} stale={stale} />;
     case "asgard_summary": return <AsgardPanel data={block.data as AsgardSummary} stale={stale} />;
+    case "host_inventory": return <HostInventory hosts={block.data as Host[]} stale={stale} compact />;
     case "highlighted_resources": {
       const items = block.data as ConfiguredResource[];
       return <Panel title="Serviços destacados" icon={<Activity aria-hidden="true" />} note="Exibição conforme as preferências de cada recurso.">{items.length ? <div className="resource-grid" tabIndex={0} role="region" aria-label="Recursos destacados">{items.map(item => <ResourceCard key={item.id} item={item} stale={stale} compact />)}</div> : <p className="panel-empty">Nenhum serviço destacado. Os recursos configurados para destaque aparecerão aqui.</p>}</Panel>;

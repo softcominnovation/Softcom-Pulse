@@ -68,6 +68,16 @@ for (const [width, height] of [[320,568],[360,800],[390,844],[768,1024],[1024,76
     await page.getByRole("button", { name: "Sair do modo TV" }).click();
   });
 }
+test("configured host inventory renders from the aggregate without historical requests", async ({page}) => {
+  const state = await mock(page);
+  state.document.screens[0].blocks = [{id:id(900),type:"host_inventory",width:"wide",enabled:true}];
+  const histories: string[] = []; page.on("request", request => {if(request.url().includes("/history"))histories.push(request.url());});
+  await enter(page);
+  await expect(page.locator(".host-inventory-compact")).toBeVisible();
+  await expect(page.locator(".host-inventory-compact").getByRole("link",{name:"ASGARD",exact:true})).toHaveAttribute("href","/asgard?hostKey=ASGARD&range=24h");
+  expect(histories).toEqual([]);
+});
+
 test("growing inventories stay inside panels without losing rows or stretching the desktop page", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
   const state = await mock(page);
@@ -111,6 +121,7 @@ test("ASGARD summary follows the prototype and opens the protected detailed view
   let failed = false, stale = false;
   const history: string[] = [];
   page.on("request", request => { if (request.url().includes("/history")) history.push(request.url()); });
+  await page.route("**/api/monitoring/hosts/ASGARD/history?*", route => route.fulfill({json:{availability:"no_data",stale:false,lastUpdated:null,refreshAfterMs:20000,data:{resource:{type:"host",hostKey:"ASGARD",reference:null},window:"24h",source:"history",series:[]}}}));
   await page.route("**/api/monitoring/hosts", route => {
     const fixture = overview(state.document, undefined, stale);
     return route.fulfill(failed ? {status:503,json:{error:"unavailable"}} : {json:{...fixture,data:[fixture.data.asgardSummary.host]}});
@@ -128,7 +139,7 @@ test("ASGARD summary follows the prototype and opens the protected detailed view
     await expect(page.getByRole("heading", {name:"Detalhes do ASGARD",exact:true})).toBeVisible();
     await expect(page.locator(".vm-summary tbody tr")).toHaveCount(16);
     await expect(page.getByRole("columnheader", {name:"Tempo ativo"})).toBeVisible();
-    await expect(page.getByText("ID 100 · Agent: linux-operacao", {exact:true})).toBeVisible();
+    await expect(page.getByRole("link", {name:"Detalhes do Agent"})).toHaveAttribute("href", "/hosts/linux-operacao?range=24h");
     await expect(page.getByText("Total", {exact:true})).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({path:`.cache/screenshots/asgard-details-${width}.png`,fullPage:true});
@@ -136,16 +147,17 @@ test("ASGARD summary follows the prototype and opens the protected detailed view
     await expect(page.getByRole("heading", {name:"Dashboard",exact:true})).toBeVisible();
   }
   await page.getByRole("link", {name:"Ver ASGARD"}).click();
-  await expect(page.locator(".asgard-detailed").getByText("16 em execução de 16 VMs", {exact:true})).toBeVisible();
+  await expect(page.getByText("16 em execução com evidência atual", {exact:true})).toBeVisible();
   failed = true; await page.getByRole("button", {name:"Atualizar ASGARD"}).click();
   await expect(page.getByText("Falha na atualização", {exact:true})).toBeVisible();
-  await expect(page.getByText("0 em execução de 16 VMs · 16 sem estado atual", {exact:true})).toBeVisible();
-  await expect(page.locator(".asgard-panel .tone-good")).toHaveCount(0);
+  await expect(page.getByText("0 em execução com evidência atual", {exact:true})).toBeVisible();
+  await expect(page.locator(".vm-detail-panel .tone-good")).toHaveCount(0);
   failed = false; stale = true; await page.getByRole("button", {name:"Atualizar ASGARD"}).click();
   await expect(page.getByText("Dados desatualizados", {exact:true})).toBeVisible();
   stale = false; await page.getByRole("button", {name:"Atualizar ASGARD"}).click();
-  await expect(page.getByText("16 em execução de 16 VMs", {exact:true})).toBeVisible();
-  expect(history).toEqual([]);
+  await expect(page.getByText("16 em execução com evidência atual", {exact:true})).toBeVisible();
+  expect(history.length).toBeGreaterThan(0);
+  expect(history.every(url => new URL(url).pathname === "/api/monitoring/hosts/ASGARD/history")).toBe(true);
 });
 test("three compact panels share a desktop row and a single highlight stays card sized", async ({ page }) => {
   await page.setViewportSize({width:1920,height:1080});

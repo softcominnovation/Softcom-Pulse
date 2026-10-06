@@ -2,7 +2,7 @@ import { createStore } from "zustand/vanilla";
 import type { PresentationDocument } from "../config/presentation.ts";
 
 export type Screen = PresentationDocument["screens"][number];
-export const renderedBlocks = new Set(["summary", "highlighted_resources", "problems", "asgard_summary", "resource_card"]);
+export const renderedBlocks = new Set(["summary", "highlighted_resources", "problems", "asgard_summary", "resource_card", "host_inventory"]);
 export function playableScreens(document: PresentationDocument | null): Screen[] {
   return document?.screens.filter(screen => screen.enabled && screen.blocks.some(block => block.enabled && renderedBlocks.has(block.type))) ?? [];
 }

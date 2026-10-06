@@ -14,7 +14,7 @@ import { publishSnapshots, readSnapshotBatch, markSyncFailure, snapshotKeys as k
 import { createResource, updateResource, deleteResource, listResources } from "../../lib/server/config/repository.ts";
 import { readContainers, readOverview, readHost } from "../../lib/server/monitoring/read.ts";
 import { overviewGet, hostHistoryGet } from "../../lib/server/monitoring/handlers.ts";
-import { zabbixFixture } from "../fixtures/zabbix.mjs";
+import { zabbixFixture, addProvisionedCpuItems } from "../fixtures/zabbix.mjs";
 
 let admin, cache, created = false, owned = false, token;
 const databaseName = "pulse_phase04_test_" + process.pid + "_" + Date.now(), leaseKey = "pulse:test:phase04:lease", lease = randomUUID();
@@ -46,7 +46,8 @@ after(async () => {
   for (const key of ["DATABASE_URL", "REDIS_URL", "TOKEN_ENCRYPTION_KEY"]) if (env[key] === undefined) delete process.env[key]; else process.env[key] = env[key];
 });
 test("whole collector generation feeds authenticated BFF while technical mappings stay private", async () => {
-  const f = zabbixFixture(), { entries } = await collectSnapshots({ rpc: f.rpc }); await publish(entries);
+  const f = zabbixFixture(); addProvisionedCpuItems(f);
+  const { entries } = await collectSnapshots({ rpc: f.rpc }); await publish(entries);
   const response = await overviewGet(request()); assert.equal(response.status, 200);
   const body = await response.json(); assert.equal(body.data.summary.vms, 2); assert.equal(body.data.summary.containersStopped, 4); assert.equal(body.stale, false);
   assert.ok(!JSON.stringify(body).includes("itemid")); assert.ok(!JSON.stringify(body).includes("hostid"));
@@ -54,6 +55,15 @@ test("whole collector generation feeds authenticated BFF while technical mapping
   for (const value of batch.snapshots.values()) assert.equal(value.generation, batch.generation);
   const before = f.calls.length;
   await readOverview(); await readContainers(); await readHost("ASGARD"); assert.equal(f.calls.length, before);
+  const agent = await readHost("linux-a");
+  assert.equal(agent.data.metrics.osCpuCount.value, 4);
+  assert.equal(agent.data.metrics.osCpuCount.unit, "count");
+  const hypervisor = await readHost("ASGARD");
+  assert.equal(hypervisor.data.vms[0].metrics.provisionedCpuCount.value, 8);
+  assert.equal(hypervisor.data.vms[1].metrics.provisionedCpuCount.value, 16);
+  assert.equal(hypervisor.data.vms[1].linuxHostKey, null);
+  assert.equal(hypervisor.data.vms[0].metrics.osCpuCount, undefined);
+  assert.ok(!JSON.stringify(agent).includes("itemid"));
   const unauth = await hostHistoryGet(new Request("http://localhost/api/monitoring/hosts/ASGARD/history"), { params: Promise.resolve({ hostKey: "ASGARD" }) }); assert.equal(unauth.status, 401);
 });
 test("partial collection failure keeps the prior generation and TTL while recording attempt and safe error", async () => {

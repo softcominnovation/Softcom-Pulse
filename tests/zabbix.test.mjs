@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
-import { zabbixFixture } from "./fixtures/zabbix.mjs";
+import { zabbixFixture, addProvisionedCpuItems } from "./fixtures/zabbix.mjs";
+import { hostSchema } from "../lib/monitoring/contracts.ts";
 import { collectSnapshots } from "../lib/server/zabbix/collect.ts";
 import { normalizeInventory, normalizeProblems, summarize } from "../lib/server/zabbix/normalize.ts";
 import { observationContext } from "../lib/server/zabbix/observations.ts";
@@ -13,6 +14,68 @@ import { createCycle } from "../collector/worker.ts";
 import { freshness } from "../lib/server/monitoring/inventory.ts";
 
 function normalize(f) { return normalizeInventory(f.hosts.slice(0, 2), f.items, "ASGARD", f.scope.scope.vmLinks, f.now); }
+
+test("CPU count retains Agent origin, integer semantics and daily heartbeat through collection", async () => {
+  const f = zabbixFixture(), item = f.items.find(i => i.key_ === "system.cpu.num");
+  const result = await collectSnapshots({ rpc: f.rpc, scope: f.scope, configs: [], now: f.now });
+  const hosts = result.entries["pulse:inventory:hosts"];
+  const agent = hosts.find(host => host.hostKey === "linux-a");
+  assert.equal(agent.metrics.osCpuCount.value, 4);
+  assert.equal(agent.metrics.osCpuCount.unit, "count");
+  assert.equal(agent.metrics.osCpuCount.quality, "fresh");
+  assert.equal(agent.metrics.osCpuCount.observedAt, new Date(Number(item.lastclock) * 1000).toISOString());
+  assert.equal(hosts[0].vms[0].metrics.provisionedCpuCount, undefined, "Agent capacity must not be labeled as hypervisor provisioning");
+  const legacy = hostSchema.parse({ ...agent, metrics: { cpuCount: agent.metrics.osCpuCount } });
+  assert.equal(legacy.metrics.osCpuCount.value, 4);
+  assert.equal(legacy.metrics.provisionedCpuCount, undefined);
+  assert.equal(legacy.metrics.cpuCount, undefined);
+  assert.equal(hostSchema.parse({ ...legacy, role: "hypervisor", metrics: { cpuCount: agent.metrics.osCpuCount } }).metrics.osCpuCount, undefined);
+  assert.equal(f.calls.filter(call => call.method === "item.get").length, 2, "capacity is part of the same batches");
+  for (const lastvalue of ["0", "-1", "4.5", "NaN", ""]) {
+    item.lastvalue = lastvalue;
+    assert.equal(normalize(f).hosts[1].metrics.osCpuCount.value, null);
+  }
+  item.lastvalue = "4"; item.state = "1";
+  assert.equal(normalize(f).hosts[1].metrics.osCpuCount.quality, "unsupported");
+  item.state = "0"; item.lastclock = String(Math.floor(f.now / 1000) - 90000);
+  assert.equal(normalize(f).hosts[1].metrics.osCpuCount.quality, "stale");
+  assert.equal(metricRule({ ...item, units: "%" }), null);
+  assert.equal(metricRule({ ...item, key_: "docker.container_stats.online_cpus[x]" }), null);
+});
+
+test("dependent QEMU CPU capacity is bound to the same VM master and collected in existing batches", async () => {
+  const f = zabbixFixture(), [{ master, capacity }] = addProvisionedCpuItems(f);
+  const result = await collectSnapshots({ rpc: f.rpc, scope: f.scope, configs: [], now: f.now });
+  const hosts = result.entries["pulse:inventory:hosts"];
+  assert.equal(hosts[0].vms[0].metrics.provisionedCpuCount.value, 8);
+  assert.equal(hosts[0].vms[0].metrics.provisionedCpuCount.quality, "fresh");
+  assert.equal(hosts[0].vms[1].metrics.provisionedCpuCount.value, 16);
+  assert.equal(hosts[0].vms[1].linuxHostKey, null);
+  assert.equal(hosts[0].vms[0].metrics.osCpuCount, undefined);
+  assert.equal(hosts[1].metrics.osCpuCount.value, 4, "SO capacity remains a distinct perspective");
+  const valueRead = f.calls.find(call => call.method === "item.get" && call.params.itemids);
+  assert.ok(valueRead.params.itemids.includes(capacity.itemid));
+  assert.ok(!valueRead.params.itemids.includes(master.itemid));
+  assert.equal(f.calls.filter(call => call.method === "item.get").length, 2);
+  assert.ok(result.entries["pulse:source:bindings"][sourceKey("vm", "ASGARD", hosts[0].vms[0].vmKey)].bindings.some(b => b.key === "provisionedCpuCount" && b.itemid === capacity.itemid && b.unit === "count"));
+  assert.equal(hosts[0].vms[0].metrics.provisionedCpuCount.observedAt, new Date(Number(capacity.lastclock) * 1000).toISOString());
+  const originalClock = capacity.lastclock;
+  capacity.lastclock = String(Math.floor(f.now / 1000) - 900);
+  assert.equal(normalize(f).hosts[0].vms[0].metrics.provisionedCpuCount.quality, "stale");
+  capacity.lastclock = originalClock;
+  for (const lastvalue of ["0", "-1", "4.5", "NaN", ""]) {
+    capacity.lastvalue = lastvalue;
+    assert.equal(normalize(f).hosts[0].vms[0].metrics.provisionedCpuCount.value, null);
+  }
+  capacity.lastvalue = "8"; capacity.state = "1";
+  assert.equal(normalize(f).hosts[0].vms[0].metrics.provisionedCpuCount.quality, "unsupported");
+  capacity.state = "0";
+  master.key_ = "proxmox.qemu.get.data[qemu/102]";
+  assert.equal(normalize(f).hosts[0].vms[0].metrics.provisionedCpuCount, undefined);
+  master.key_ = "proxmox.qemu.get.data[qemu/101]"; master.hostid = "2";
+  assert.equal(normalize(f).hosts[0].vms[0].metrics.provisionedCpuCount, undefined);
+  for (const change of [{ units: "%" }, { value_type: "0" }, { type: "0" }, { key_: "proxmox.qemu.cpus[lxc/101]" }, { preprocessing: [{ type: "12", params: "$.data.cpu" }] }, { preprocessing: [{ type: "12", params: "$.data.cpus" }, { type: "1", params: "100" }] }]) assert.equal(metricRule({ ...capacity, ...change }), null);
+});
 
 test("scope never includes every visible host and never correlates by display name", () => {
   const f = zabbixFixture();

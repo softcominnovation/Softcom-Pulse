@@ -2,7 +2,7 @@ import "server-only";
 import { hostSchema, containerSchema, problemSchema, type Container, type Problem, type Summary, type VirtualMachine } from "../../monitoring/contracts.ts";
 import { tag, type Item, type ZabbixHost, type ZabbixProblem } from "./types.ts";
 import { keyParts, metric, observationContext, observedText, opaqueReference } from "./observations.ts";
-import { mapMetrics, stateBinding } from "./mapping.ts";
+import { mapMetrics, provisionedCpuMaster, stateBinding } from "./mapping.ts";
 import { sourceKey, type SourceBindings, type Binding } from "./bindings.ts";
 import { correlatedHost, type MonitoringScope } from "./scope.ts";
 
@@ -43,9 +43,15 @@ export function normalizeInventory(rawHosts: ZabbixHost[], items: Item[], asgard
     const vms: VirtualMachine[] = [];
     if (hypervisor) {
       const groups = new Map<string, Item[]>();
-      for (const item of own) if (/^proxmox\.(qemu|lxc)\./.test(item.key_) && tag(item.tags, "node") === node) {
+      for (const item of own) if (/^proxmox\.(qemu|lxc)\./.test(item.key_) && !item.key_.startsWith("proxmox.qemu.cpus[") && tag(item.tags, "node") === node) {
         const vmId = keyParts(item.key_).args[0];
         if (/^(qemu|lxc)\/\d+$/.test(vmId ?? "")) groups.set(vmId, [...(groups.get(vmId) ?? []), item]);
+      }
+      for (const item of own) {
+        const master = provisionedCpuMaster(item, context);
+        if (!master || tag(master.tags, "node") !== node) continue;
+        const group = groups.get(keyParts(master.key_).args[0]);
+        if (group) group.push(item);
       }
       for (const [vmId, group] of groups) {
         const vmKey = opaqueReference("vm", raw.host, vmId), vmStateItem = group.find(i => keyParts(i.key_).base.endsWith(".vmstatus"));

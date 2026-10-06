@@ -16,7 +16,7 @@ export async function readTemplates(options: { hostKey?: string; templateKey?: s
       displayName: config?.displayName ?? vm.name, virtualizationType: virtualizationType(vm),
       role: config?.roleOverride ?? (vm.name.toLowerCase().includes("worker") ? "worker" : "manager"),
       roleSource: config?.roleOverride ? "configuration" : "name_convention",
-      memoryBytes: vm.metrics.memoryTotalBytes ?? null, virtualCpuCount: null, diskBytes: vm.metrics.diskTotalBytes ?? null,
+      memoryBytes: vm.metrics.memoryTotalBytes ?? null, virtualCpuCount: vm.metrics.provisionedCpuCount ?? null, diskBytes: vm.metrics.diskTotalBytes ?? null,
       operatingSystem: null, state: vm.state, evidence: vm.evidence, configuration: config,
     };
   }));

@@ -21,6 +21,8 @@ Abra http://127.0.0.1:3000/login e entre com o e-mail e a senha de colaborador. 
 
 Templates `tpl*` têm consultas próprias e metadados persistidos para labels e classificação Worker/Manager. Não entram na contagem operacional de VMs, preservando os recursos gerais do ASGARD. Contratos, capacidades disponíveis e limites: [docs/templates.md](docs/templates.md). O editor visual de templates está previsto para as configurações administrativas.
 
+As abas Infraestrutura e Asgard & VMs abrem o inventário e os detalhes com históricos reais. Clique no nome de uma VM para selecionar seu gráfico, com períodos de 1 hora, 24 horas e 7 dias preservados na URL. VMs sem Agent continuam acessíveis pela perspectiva do hipervisor; vínculos confirmados oferecem também os detalhes internos do Linux. Unidades, lacunas, navegação e limites: [docs/infrastructure.md](docs/infrastructure.md).
+
 Para alimentar o monitoramento, preencha `ZABBIX_API_URL` e `ZABBIX_API_TOKEN`, confirme o escopo e execute `npm run collector` em outro terminal. `npm run collector:once` coleta uma única vez. O processo não abre porta HTTP. Configuração de escopo, mapeamento, históricos e limites: [docs/zabbix.md](docs/zabbix.md). Sem coleta válida, o BFF informa ausência ou desatualização dos dados.
 
 `npm run check` valida lint, tipos, testes e build. Variáveis, versões, stacks, migrations e testes adicionais: [docs/environment.md](docs/environment.md).

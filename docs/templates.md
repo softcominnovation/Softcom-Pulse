@@ -33,7 +33,7 @@ Lista de descoberta ordenada por hostKey, technicalName e templateKey. Filtro se
 | role | `worker` ou `manager` efetivo |
 | roleSource | `configuration` ou `name_convention` |
 | memoryBytes | Capacidade de memória: Metric em bytes ou null |
-| virtualCpuCount | Quantidade de vCPUs: Metric em count ou null; atualmente null por falta de fonte comprovada |
+| virtualCpuCount | Quantidade de vCPUs provisionadas: Metric em count a partir de VM.metrics.provisionedCpuCount, ou null quando sem item/evidência |
 | diskBytes | Capacidade de disco: Metric em bytes ou null; nunca taxa de I/O nem disco livre do host |
 | operatingSystem | Nome/versão confiável ou null; atualmente null |
 | state, evidence | Estado e evidência da perspectiva do hipervisor; parado é normal para um template |
@@ -76,5 +76,7 @@ O dashboard usa `displayDescription ?? description` e conserva o original no atr
 Em 03/10/2026, a consulta de leitura do ASGARD encontrou 9 templates, com 90 itens relacionados: 4 Workers e 5 Managers pela convenção autorizada. `maxmem` forneceu memória para os nove. Não havia item comprovado de quantidade de vCPUs, capacidade de disco ou SO/versão. Os nove itens mestres `proxmox.qemu.get.data` não tinham valor armazenado (`lastclock=0`); não forneceram esses campos. Não foi criada integração Proxmox direta nem inferência pelo nome.
 
 O inventário bruto tinha 33 entidades; o BFF retornou 24 VMs operacionais e os 9 templates em sua consulta própria. Métricas e storages do ASGARD permaneceram idênticos aos da fonte. Quantidades são evidência daquele instante, não constantes do aplicativo. O padrão dos alertas foi confirmado nos problemas reais antes da transformação.
+
+Atualização posterior em 03/10/2026: o responsável disponibilizou o item dependente QEMU de vCPU. A API passou a retornar 33 itens de capacidade, incluindo os nove templates. `virtualCpuCount` agora reutiliza a métrica provisionada da VM, com qualidade/horário originais, sem depender de Agent e sem preencher pela CPU do SO. A ausência de disco virtual e SO/versão continua separada. O teste de integração confirma o novo campo e a preservação do filtro operacional.
 
 Unitários, integração com PostgreSQL/Redis temporários, UI e runtime standalone cobrem filtro/identidade, preservação de recursos, fallback de texto, autenticação, revisão concorrente, reinício da conexão, desaparecimento/retorno, reset de preferências e ausência de telemetria no banco. O editor visual de templates permanece para a fase 08; nenhum controle administrativo foi antecipado no dashboard.

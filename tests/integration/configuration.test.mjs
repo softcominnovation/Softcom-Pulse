@@ -156,7 +156,7 @@ test("empty authenticated reads use stable unknown states and unknown details re
   await clearSnapshots();
   for (const handler of [handlers.hostsGet, handlers.containersGet, handlers.problemsGet]) {
     const response = await result(await handler(request()));
-    assert.equal(response.status, 200); assert.deepEqual(response.body, { data: [], availability: "no_data", stale: false, lastUpdated: null, refreshAfterMs: 20000 });
+    assert.equal(response.status, 200); assert.deepEqual(response.body, { data: [], availability: "no_data", stale: false, lastUpdated: null, refreshAfterMs: 20000, ...(handler === handlers.hostsGet ? { asgardHostKey: null } : {}) });
   }
   const overview = await result(await handlers.overviewGet(request()));
   assert.equal(overview.status, 200); assert.equal(overview.body.availability, "no_data");
@@ -239,7 +239,7 @@ test("overview reads only visible resource inventories and never enables hidden 
 test("unimplemented blocks cannot be selected and stored future blocks report unavailable", async () => {
   const { revision, ...settings } = (await getPresentation()).data;
   settings.rotation.autoStart = false;
-  settings.screens[0].blocks = [{ id: randomUUID(), type: "host_inventory", enabled: true, width: "full" }];
+  settings.screens[0].blocks = [{ id: randomUUID(), type: "container_inventory", enabled: true, width: "full" }];
   await assert.rejects(savePresentation({ expectedRevision: revision, settings }), error => error.code === "block_unavailable");
   await getPrisma().pulseSetting.update({ where: { key: "dashboardPresentation" }, data: { value: { ...settings, revision: revision + 1 } } });
   const overview = await (await handlers.overviewGet(request())).json();
@@ -256,6 +256,26 @@ function templateFixture(templateId = "900") {
   const summary = { hostsKnown: 1, hostsReachable: 1, vms: 2, containersRunning: null, containersStopped: null, containersTotal: null, problems: 2, criticalAffected: 0 };
   return { target, template, vm, entries: { [keys.hosts]: [target], [keys.host("asgard")]: target, [keys.problems]: problems, [keys.overview]: { summary, asgardSummary: { host: target, vms: target.vms } } } };
 }
+
+test("host inventory is configurable, excludes templates and exposes the effective hypervisor without changing raw capacity", async () => {
+  const fixture = templateFixture(); fixture.target.role = "hypervisor";
+  const other = { ...host("secondary"), role: "hypervisor" };
+  fixture.entries[keys.hosts].push(other);
+  await publish(fixture.entries);
+  const hosts = await (await handlers.hostsGet(request())).json();
+  assert.equal(hosts.asgardHostKey, "asgard"); assert.equal(hosts.data.length, 2);
+  const current = (await getPresentation()).data;
+  const settings = initialPresentation(randomUUID); delete settings.revision;
+  settings.screens[0].blocks = [{id:randomUUID(),type:"host_inventory",enabled:true,width:"wide"}];
+  await savePresentation({expectedRevision:current.revision,settings});
+  const response = await (await handlers.overviewGet(request())).json();
+  const block = response.data.blocks[0];
+  assert.equal(block.availability,"ready"); assert.equal(block.type,"host_inventory"); assert.equal(block.data.length,2);
+  assert.deepEqual(block.data[0].vms.map(vm => vm.vmId),["101"]);
+  assert.equal(block.data[0].metrics.memoryTotalBytes.value,32768);
+  await publish({[keys.hosts]:[other]});
+  assert.equal((await (await handlers.hostsGet(request())).json()).asgardHostKey,null);
+});
 test("BFF separates templates and correlated problems while retaining raw snapshots and all ASGARD capacity", async () => {
   const fixture = templateFixture(); await publish(fixture.entries);
   const before = await cache.get(keys.hosts);
@@ -276,6 +296,11 @@ test("BFF separates templates and correlated problems while retaining raw snapsh
   assert.equal(templates.data[0].memoryBytes.value, 4096);
   for (const key of ["virtualCpuCount", "diskBytes", "operatingSystem", "configuration"]) assert.equal(templates.data[0][key], null);
   assert.equal(await cache.get(keys.hosts), before);
+  fixture.template.metrics.provisionedCpuCount = { ...fixture.template.metrics.memoryTotalBytes, value: 8, unit: "count" };
+  await publish(fixture.entries);
+  const withCapacity = await (await handlers.templatesGet(request("/?hostKey=asgard"))).json();
+  assert.equal(withCapacity.data[0].virtualCpuCount.value, 8);
+  assert.equal(withCapacity.data[0].virtualCpuCount.unit, "count");
   assert.equal((await handlers.templatesGet(request("/?unknown=1"))).status, 400);
   assert.equal((await handlers.templateGet(request(), params({ templateKey: fixture.template.vmKey }))).status, 200);
   assert.equal((await handlers.vmHistoryGet(request(), params({ hostKey: "asgard", vmKey: fixture.template.vmKey }))).status, 404);

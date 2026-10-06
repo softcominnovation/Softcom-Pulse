@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, Play, RefreshCw, Pause } from "lucide-react";
 import { useStore } from "zustand";
-import Link from "next/link";
+import { MonitoringNav } from "@/components/layout/monitoring-nav";
 import { Button } from "@/components/ui/button";
 import { createPlayerStore, playableScreens } from "@/lib/dashboard/player";
 
@@ -13,7 +13,7 @@ export function PlayerToolbar({ store }: { store: ReturnType<typeof createPlayer
   const canRotate = screens.length > 1;
   return <div className="dashboard-toolbar">
     <div className="dashboard-nav">
-      <nav aria-label="Navegação principal"><Link href="/" aria-current="page"><span className="status-dot" />Visão geral</Link></nav>
+      <MonitoringNav />
       <div className="display-options" role="group" aria-label="Formato da TV">
         <span>FORMATO DA TV</span>
         <Button aria-pressed={!player.rotating && layout === "overview"} onClick={() => player.format("overview")}>1 · Visão geral</Button>

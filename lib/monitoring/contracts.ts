@@ -11,7 +11,7 @@ export const metricSchema = z.object({
   validUntil: isoSchema.nullable().optional(),
 }).refine(metric => metric.value === null || (metric.observedAt !== null && ["fresh", "stale"].includes(metric.quality)));
 export const metricsSchema = z.object({
-  cpuUsagePercent: metricSchema.optional(), memoryUsedBytes: metricSchema.optional(), memoryTotalBytes: metricSchema.optional(),
+  cpuUsagePercent: metricSchema.optional(), provisionedCpuCount: metricSchema.optional(), osCpuCount: metricSchema.optional(), memoryUsedBytes: metricSchema.optional(), memoryTotalBytes: metricSchema.optional(),
   memoryUsagePercent: metricSchema.optional(), diskUsedBytes: metricSchema.optional(), diskTotalBytes: metricSchema.optional(),
   diskUsagePercent: metricSchema.optional(), diskReadBytesPerSecond: metricSchema.optional(), diskWriteBytesPerSecond: metricSchema.optional(),
   networkReceiveBitsPerSecond: metricSchema.optional(), networkTransmitBitsPerSecond: metricSchema.optional(), uptimeSeconds: metricSchema.optional(),
@@ -27,8 +27,11 @@ export const vmSchema = z.object({
 const deviceSchema = z.object({ key: opaqueId, name, metrics: metricsSchema });
 export const hostSchema = z.object({
   hostKey: hostKeySchema, name, role: z.enum(["hypervisor", "linux", "unknown"]), availability: observedAvailability,
-  metrics: metricsSchema, storages: z.array(deviceSchema), filesystems: z.array(deviceSchema), interfaces: z.array(deviceSchema),
+  metrics: metricsSchema.extend({ cpuCount: metricSchema.optional() }), storages: z.array(deviceSchema), filesystems: z.array(deviceSchema), interfaces: z.array(deviceSchema),
   vms: z.array(vmSchema), evidence: evidenceSchema,
+}).transform(({ metrics, ...host }) => {
+  const { cpuCount, ...explicit } = metrics;
+  return { ...host, metrics: { ...explicit, ...(host.role === "linux" && !explicit.osCpuCount && cpuCount ? { osCpuCount: cpuCount } : {}) } };
 });
 export const containerSchema = z.object({
   reference: opaqueId, hostKey: hostKeySchema, name, image: z.string().max(1024).nullable(),

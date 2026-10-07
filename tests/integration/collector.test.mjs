@@ -14,7 +14,7 @@ import { publishSnapshots, readSnapshotBatch, markSyncFailure, snapshotKeys as k
 import { createResource, updateResource, deleteResource, listResources } from "../../lib/server/config/repository.ts";
 import { readContainers, readOverview, readHost } from "../../lib/server/monitoring/read.ts";
 import { overviewGet, hostHistoryGet } from "../../lib/server/monitoring/handlers.ts";
-import { zabbixFixture, addProvisionedCpuItems } from "../fixtures/zabbix.mjs";
+import { zabbixFixture, addProvisionedCpuItems, addClusterStatusHeartbeat } from "../fixtures/zabbix.mjs";
 
 let admin, cache, created = false, owned = false, token;
 const databaseName = "pulse_phase04_test_" + process.pid + "_" + Date.now(), leaseKey = "pulse:test:phase04:lease", lease = randomUUID();
@@ -76,6 +76,24 @@ test("partial collection failure keeps the prior generation and TTL while record
   assert.equal((await readOverview()).stale, true); assert.equal((await readContainers()).data[0].health, "unknown");
   const response = await overviewGet(request()); assert.equal(response.status, 200); assert.equal((await response.json()).stale, true);
 });
+
+test("the BFF preserves ASGARD availability between stored heartbeats and expires only overdue evidence", async () => {
+  const f = zabbixFixture(), { online } = addClusterStatusHeartbeat(f);
+  await publish((await collectSnapshots({ rpc: f.rpc })).entries);
+  const response = await overviewGet(request()), body = await response.json();
+  assert.equal(response.status, 200);
+  const asgard = body.data.blocks.find(block => block.type === "asgard_summary").data.host;
+  assert.equal(body.stale, false);
+  assert.equal(asgard.availability, "reachable");
+  assert.ok(Date.parse(asgard.evidence.validUntil) > Date.now());
+  assert.equal((await readHost("ASGARD")).data.availability, "reachable");
+  online.lastclock = String(Math.floor(Date.now() / 1000) - 1000);
+  await publish((await collectSnapshots({ rpc: f.rpc })).entries);
+  assert.equal((await readHost("ASGARD")).data.availability, "unknown");
+  online.lastvalue = "0"; online.lastclock = String(Math.floor(Date.now() / 1000));
+  await publish((await collectSnapshots({ rpc: f.rpc })).entries);
+  assert.equal((await readHost("ASGARD")).data.availability, "unreachable");
+});
 test("dead collector and TTL expiry cannot produce healthy empty dashboards", async () => {
   const f = zabbixFixture(); const { entries } = await collectSnapshots({ rpc: f.rpc });
   await publish(entries, new Date(Date.now() - 70000).toISOString());
@@ -98,5 +116,5 @@ test("disabled or deleted configuration is immediately excluded, and a disappear
   await deleteResource(config.id); assert.equal((await readOverview()).data.highlightedResources.length, 0);
   const next = (await collectSnapshots({ rpc: absent.rpc })).entries; await publish(next);
   assert.equal((await readSnapshotBatch([keys.service(config.id)])).snapshots.get(keys.service(config.id)), null);
-  const tables = await getDatabase().query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"); assert.deepEqual(tables.rows.map(r => r.table_name), ["_prisma_migrations", "monitored_resource_config", "pulse_settings", "vm_template_config"]);
+  const tables = await getDatabase().query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"); assert.deepEqual(tables.rows.map(r => r.table_name), ["_prisma_migrations", "monitored_resource_config", "pulse_settings", "vm_display_config", "vm_template_config"]);
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { AuthGate } from "@/components/auth/auth-gate";
@@ -24,6 +24,10 @@ function Clock() {
 }
 export function AppShell({ children, dashboard = false }: { children: ReactNode; dashboard?: boolean }) {
   const tvMode = useUiStore(state => state.tvMode);
+  const isFullscreen = useUiStore(state => state.isFullscreen);
+  const displayScalePercent = useUiStore(state => state.displayScalePercent);
+  const presentationActive = dashboard && (tvMode || isFullscreen);
+  const scale = presentationActive ? displayScalePercent : 100;
   async function logout() {
     const auth = getAuthController();
     const result = auth.logout();
@@ -32,10 +36,10 @@ export function AppShell({ children, dashboard = false }: { children: ReactNode;
   }
   return (
     <AuthGate>
-      <div className={`min-h-dvh ${dashboard ? "dashboard-shell" : ""} ${dashboard && tvMode ? "tv-mode" : ""}`}>
+      <div className={`min-h-dvh ${dashboard ? "dashboard-shell" : ""} ${dashboard && tvMode ? "tv-mode" : ""}`} data-presentation={presentationActive || undefined} data-display-scale={dashboard ? scale : undefined} style={dashboard ? { "--dashboard-scale": scale / 100 } as CSSProperties : undefined}>
         <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:z-10 focus:bg-background focus:p-4">Ir para o conteúdo</a>
         <header className="pulse-topbar">
-          <Brand />
+          <Brand className="dashboard-brand" size={presentationActive ? 57 : 37} />
           <p className="text-xs text-muted-foreground">Central de monitoramento</p>
           <div className="pulse-top-actions">
             <Clock />

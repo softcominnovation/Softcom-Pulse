@@ -27,12 +27,25 @@ export function keyParts(key: string): { base: string; args: string[] } {
 }
 export function observationContext(items: Item[], now = Date.now()) {
   const byId = new Map(items.map(item => [item.itemid, item]));
-  const siblings = new Map<string, number>();
-  for (const item of items) if (item.status === "0" && item.state === "0" && item.master_itemid !== "0") siblings.set(item.master_itemid, Math.max(siblings.get(item.master_itemid) ?? 0, Number(item.lastclock)));
   function cadence(item: Item, visited = new Set<string>()): number | null {
     if (visited.has(item.itemid)) return null;
     visited.add(item.itemid);
     return seconds(item.delay) ?? (byId.has(item.master_itemid) ? cadence(byId.get(item.master_itemid)!, visited) : null);
+  }
+  function sampleDeadline(item: Item): number {
+    const clock = Number(item.lastclock), interval = cadence(item);
+    const throttle = item.preprocessing.find(p => p.type === "20");
+    const heartbeat = throttle ? seconds(throttle.params) : 0;
+    if (!interval || !Number.isFinite(clock) || clock <= 0 || clock * 1000 > now + 60000 || heartbeat === null) return 0;
+    if (item.preprocessing.some(p => p.type === "19") && !heartbeat && item.master_itemid === "0") return 0;
+    return clock + heartbeat + Math.max(120, interval * 3 + 30);
+  }
+  const siblings = new Map<string, number>();
+  for (const item of items) {
+    const master = byId.get(item.master_itemid);
+    if (master?.hostid === item.hostid && item.status === "0" && item.state === "0" && item.itemDiscovery?.status !== "1") {
+      siblings.set(master.itemid, Math.max(siblings.get(master.itemid) ?? 0, sampleDeadline(item)));
+    }
   }
   function evidence(item?: Item): { quality: Metric["quality"]; observedAt: string | null; validUntil: string | null; maxGapSeconds: number } {
     if (!item) return { quality: "missing", observedAt: null, validUntil: null, maxGapSeconds: 60 };
@@ -41,19 +54,18 @@ export function observationContext(items: Item[], now = Date.now()) {
     const heartbeat = seconds(item.preprocessing.find(p => p.type === "20")?.params ?? "");
     const discards = item.preprocessing.some(p => p.type === "19" || p.type === "20");
     const maxGapSeconds = Math.max(60, (interval ?? 30) * 2 + 15, (heartbeat ?? 0) + (interval ?? 30) * 2);
-    let expires = clock + maxGapSeconds;
+    let expires = sampleDeadline(item);
     let unsupported = item.state !== "0" || item.status !== "0" || item.itemDiscovery?.status === "1";
     const visited = new Set<string>();
     let child = item;
-    while (child.master_itemid !== "0" && byId.has(child.master_itemid) && !visited.has(child.master_itemid)) {
+    while (child.master_itemid !== "0") {
+      const master = byId.get(child.master_itemid);
+      if (!master || master.hostid !== item.hostid || visited.has(master.itemid)) { expires = 0; break; }
       visited.add(child.master_itemid);
-      const master = byId.get(child.master_itemid)!;
-      unsupported ||= master.state !== "0" || master.status !== "0";
+      unsupported ||= master.state !== "0" || master.status !== "0" || master.itemDiscovery?.status === "1";
       // Masters with history disabled have lastclock=0; a supported sibling proves that the same master delivered a sample.
-      const masterClock = Math.max(Number(master.lastclock), siblings.get(master.itemid) ?? 0);
-      const masterInterval = cadence(master);
-      if (masterClock > 0 && masterInterval) expires = Math.min(expires, masterClock + masterInterval * 2 + 15);
-      else if (discards) expires = 0;
+      // Preserve that sibling's heartbeat window instead of treating its stored clock as an unthrottled master sample.
+      expires = Math.min(expires, Math.max(sampleDeadline(master), siblings.get(master.itemid) ?? 0));
       child = master;
     }
     if (discards && !heartbeat && item.master_itemid === "0") expires = 0;

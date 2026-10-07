@@ -13,6 +13,11 @@ const settings = () => { const { revision, ...settings } = initialPresentation(r
 
 test("resource schemas reject telemetry and enforce type-specific defaults and selectors", () => {
   const parsed = resourceInputSchema.parse(host);
+  assert.equal(parsed.description, null);
+  assert.equal(parsed.serviceType, null);
+  assert.deepEqual(resourcePatchSchema.parse({ description: "  Portal  ", serviceType: "  API " }), { description: "Portal", serviceType: "API" });
+  assert.deepEqual(resourcePatchSchema.parse({ description: " ", serviceType: "" }), { description: null, serviceType: null });
+  for (const fields of [{ description: "x".repeat(241) }, { serviceType: "x".repeat(41) }, { description: "a\nb" }, { serviceType: "a\u0000" }]) assert.equal(resourceInputSchema.safeParse({ ...host, ...fields }).success, false);
   assert.equal(parsed.selectorType, null);
   assert.deepEqual(parsed.presentation, { showStatus: true, showCpu: true, showMemory: true, showDisk: false, showNetwork: false, showUptime: false });
   assert.equal(resourceInputSchema.parse(container).presentation.showHealth, false);

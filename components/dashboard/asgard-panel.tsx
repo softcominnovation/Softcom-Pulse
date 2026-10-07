@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { ArrowRight, HardDrive, Server } from "lucide-react";
-import { useContext } from "react";
+import { useContext, type CSSProperties } from "react";
+import type { OptionsByType } from "@/lib/config/presentation";
+import { selectVms } from "@/lib/dashboard/block-options";
 import type { AsgardSummary, VirtualMachine } from "@/lib/monitoring/contracts";
 import { number, timestamp } from "@/lib/dashboard/format";
 import { VmTable } from "@/components/infrastructure/host-panels";
@@ -10,12 +12,13 @@ function evidenceOld(vm: { evidence: VirtualMachine["evidence"] }, stale: boolea
   return stale || !vm.evidence.observedAt || !!vm.evidence.validUntil && Date.parse(vm.evidence.validUntil) < now;
 }
 
-export function AsgardPanel({ data, stale, detailed = false }: { data: AsgardSummary; stale: boolean; detailed?: boolean }) {
+export function AsgardPanel({ data, stale, detailed = false, options }: { data: AsgardSummary; stale: boolean; detailed?: boolean; options?: OptionsByType["asgard_summary"] }) {
   const { host, vms } = data, now = useContext(EvidenceTimeContext);
+  const visible = options ? selectVms(vms, options, stale, now) : vms;
   const running = vms.filter(vm => vm.state === "running" && !evidenceOld(vm, stale, now)).length;
   const unknown = vms.filter(vm => vm.state === "unknown" || evidenceOld(vm, stale, now)).length;
-  return <section className={`dashboard-panel asgard-panel ${detailed ? "asgard-detailed" : "asgard-compact"}`}>
-    <div className="panel-heading"><Server aria-hidden="true" /><h2>{host?.name ?? "Asgard"} · armazenamento & VMs</h2>{!detailed && host && <Link className="panel-link" href={`/asgard?hostKey=${encodeURIComponent(host.hostKey)}`}>Ver ASGARD<ArrowRight aria-hidden="true" /></Link>}</div>
+  return <section className={`dashboard-panel asgard-panel ${detailed ? "asgard-detailed" : "asgard-compact"}`} style={options ? { "--visible-rows": options.visibleRows } as CSSProperties : undefined}>
+    <div className="panel-heading"><Server aria-hidden="true" /><h2>{host?.displayName ?? host?.name ?? "Asgard"} · armazenamento & VMs</h2>{!detailed && host && <Link className="panel-link" href={`/asgard?hostKey=${encodeURIComponent(host.hostKey)}`}>Ver ASGARD<ArrowRight aria-hidden="true" /></Link>}</div>
     {!host ? <p className="panel-empty">Sem dados do hipervisor na coleta atual.</p> : <>
       <div className="asgard-content">
         <div className="asgard-context">
@@ -30,7 +33,8 @@ export function AsgardPanel({ data, stale, detailed = false }: { data: AsgardSum
         </div>
         <div className="asgard-machines">
           {detailed && <div className="vm-caption"><h3>Máquinas virtuais <span>{number(vms.length)}</span></h3><p>Role a tabela para ver todas as colunas e VMs.</p></div>}
-          <VmTable vms={vms} stale={stale} detailed={detailed} />
+          {visible.length !== vms.length && <p className="panel-foot">{visible.length} exibidas de {vms.length} VMs · {visible.length ? "Filtro aplicado" : "Nenhuma VM corresponde ao filtro"}</p>}
+          {(visible.length > 0 || !vms.length) && <VmTable vms={visible} stale={stale} detailed={detailed} />}
         </div>
       </div>
       <footer className="panel-foot asgard-foot"><div className="metric-legend" aria-label="Legenda das métricas"><span>CPU</span><span>RAM</span><span>Disco</span></div><p>{number(running)} em execução de {number(vms.length)} VMs{unknown > 0 && ` · ${number(unknown)} sem estado atual`}</p>{detailed && <p>Perspectiva do hipervisor · valores atuais · as cores identificam métricas, não severidade. Storages não são somados; disco da VM não representa ocupação interna do sistema operacional.</p>}</footer>

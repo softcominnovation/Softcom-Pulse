@@ -1,3 +1,11 @@
+export function addClusterStatusHeartbeat(f, ageSeconds = 480) {
+  const online = f.items.find(i => i.key_ === "proxmox.node.online[ASGARD]");
+  const master = { ...online, itemid: "998000", key_: "proxmox.cluster.status", type: "19", value_type: "4", delay: "2m", lastclock: "0", lastvalue: "DO_NOT_FETCH_CLUSTER_RAW", preprocessing: [] };
+  Object.assign(online, { type: "18", delay: "0", master_itemid: master.itemid, lastclock: String(Math.floor(f.now / 1000) - ageSeconds), preprocessing: [{ type: "20", params: "10m" }] });
+  f.items.push(master);
+  return { master, online };
+}
+
 export function addProvisionedCpuItems(f) {
   return ["101", "102"].map((vm, index) => {
     const state = f.items.find(i => i.key_ === `proxmox.qemu.vmstatus[qemu/${vm}]`);

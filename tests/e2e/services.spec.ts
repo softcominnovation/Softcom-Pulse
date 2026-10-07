@@ -9,6 +9,15 @@ test("services use aggregated discovery and show all container and health states
   state.infrastructure.problems = ([0, 1, 2, 3, 4, 5] as const).map(severity => ({ ...state.infrastructure.problems[0], id: `severity-${severity}`, severity }));
   await signIn(page); await page.goto("/servicos");
   await expect(page.getByRole("heading", { name: "Inventário de containers" })).toBeVisible();
+  const configuredPanel = page.locator("section").filter({ has: page.getByRole("heading", { name: "Recursos configurados", exact: true }) });
+  const panelBox = await configuredPanel.boundingBox();
+  const noticeBox = await configuredPanel.locator(".dashboard-banner").boundingBox();
+  const cardBox = await configuredPanel.locator(".resource-card").first().boundingBox();
+  expect(noticeBox!.x).toBeGreaterThanOrEqual(panelBox!.x + 12);
+  expect(noticeBox!.x + noticeBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width - 12);
+  expect(cardBox!.width).toBeGreaterThan(230);
+  expect(cardBox!.width).toBeLessThanOrEqual(360.5);
+  expect(cardBox!.y).toBeGreaterThanOrEqual(noticeBox!.y + noticeBox!.height + 12);
   const first = page.getByRole("region", { name: "Lista de containers de linux-operacao", exact: true });
   await expect(first.locator("tbody tr")).toHaveCount(8);
   for (const value of ["Em execução", "Parado", "Pausado", "Reiniciando", "Criado", "Em remoção", "Encerrado com falha", "Sem estado atual", "Sem healthcheck", "Saudável", "Iniciando", "Falha no healthcheck", "Métrica de health não suportada"]) await expect(first.getByText(value, { exact: true }).first()).toBeVisible();
@@ -119,7 +128,7 @@ test("container-only screen is playable and service detail from dashboard has no
     else { body.data.highlightedResources = [state.services[0]]; body.data.blocks.find(block => block.type === "highlighted_resources")!.data = [state.services[0]]; }
     return route.fulfill({ json: body });
   });
-  await signIn(page); await page.getByRole("button", { name: "Detalhes de Serviço 0", exact: true }).click();
+  await signIn(page); await page.getByRole("button", { name: /^Detalhes de Serviço 0:/ }).click();
   await expect(page.getByRole("dialog").locator(".uplot")).toBeVisible(); expect(state.historyCalls).toHaveLength(1);
   await page.keyboard.press("Escape"); await page.getByLabel("Escolher tela").selectOption(document.screens[1].id);
   await expect(page.getByRole("heading", { name: "Containers descobertos", exact: true })).toBeVisible();
@@ -158,7 +167,9 @@ for (const [width, height] of [[320,568],[360,800],[390,844],[768,1024],[1024,76
   test(`services and VM modal retain fields, actions and scroll at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height }); const state = await servicesFixture(page); await signIn(page); await page.goto("/servicos");
     await expect(page.locator(".container-table tbody tr")).toHaveCount(9);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    console.log(await page.evaluate(() => [...document.querySelectorAll("main *")].filter(node => node.getBoundingClientRect().right > innerWidth).slice(0, 8).map(node => [node.className, node.getBoundingClientRect().width, getComputedStyle(node).overflowX])));
+    if (width === 390) await page.screenshot({ path: ".cache/services-overflow.png", fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), await page.evaluate(() => [...document.querySelectorAll("main *")].filter(node => node.getBoundingClientRect().right > innerWidth && !node.closest(".container-table-scroll")).slice(0, 10).map(node => [node.className, node.getBoundingClientRect().width]))).toBe(true);
     if (width === 1366 || width === 390) { await mkdir(".cache/screenshots", { recursive: true }); await page.screenshot({ path: `.cache/screenshots/services-${width}.png`, fullPage: true }); }
     await page.goto("/asgard?hostKey=ASGARD");
     await page.getByRole("button", { name: `Serviços e containers de ${state.infrastructure.hosts[0].vms[0].name}`, exact: true }).click();

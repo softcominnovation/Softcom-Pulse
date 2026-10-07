@@ -10,10 +10,106 @@ import { getPresentation, savePresentation, createResource, updateResource, dele
 import { getDatabase } from "../../lib/server/database.ts";
 import { getPrisma } from "../../lib/server/prisma.ts";
 import { sealEnvelope } from "../../lib/server/auth/envelope.ts";
-import { initialPresentation } from "../../lib/config/presentation.ts";
+import { initialPresentation as initialV2, effectiveOptions } from "../../lib/config/presentation.ts";
+function initialPresentation(newId) { const document = initialV2(newId); document.schemaVersion = 1; document.screens.forEach(screen => screen.blocks.forEach(block => { delete block.options; })); return document; }
 import { publishSnapshots, markSyncFailure, readSnapshotBatch, snapshotKeys as keys } from "../../lib/server/cache/snapshots.ts";
 import * as handlers from "../../lib/server/monitoring/handlers.ts";
 import { opaqueReference } from "../../lib/server/zabbix/observations.ts";
+import { saveVmConfig, listVmConfigs } from "../../lib/server/config/vms.ts";
+
+function namedVmFixture(parentKey = "names-parent", id = "100", type = "qemu") {
+  const parent = { ...host(parentKey), role: "hypervisor" };
+  const vm = { vmKey: opaqueReference("vm", parentKey, type + "/" + id), vmId: id, name: "technical-vm", parentHostKey: parentKey, linuxHostKey: null, state: "stopped", metrics: { cpuUsagePercent: metric(12) }, evidence: evidence() };
+  parent.vms = [vm]; return { parent, vm };
+}
+
+test("VM names persist with atomic revisions, immutable identities, no Agent and no presentation revision writes", async () => {
+  const { parent, vm } = namedVmFixture(), other = namedVmFixture("names-other"), lxc = namedVmFixture("names-parent", "100", "lxc");
+  parent.vms.push(lxc.vm);
+  await publish({ [keys.hosts]: [parent, other.parent], [keys.host(parent.hostKey)]: parent });
+  const before = (await getPresentation()).data.revision, input = { expectedRevision: 0, displayName: "tpl Friendly" };
+  const writes = await Promise.all([1, 2].map(() => handlers.vmConfigPut(request("/", "PUT", input), params({ vmKey: vm.vmKey }))));
+  assert.deepEqual(writes.map(response => response.status).sort(), [200, 409]);
+  const saved = (await writes.find(response => response.status === 200).json()).data;
+  assert.equal(saved.originalName, vm.name); assert.equal(saved.virtualizationType, "qemu"); assert.equal(saved.revision, 1);
+  await saveVmConfig(other.vm.vmKey, { ...input, displayName: "Other parent" });
+  await saveVmConfig(lxc.vm.vmKey, { ...input, displayName: "Other type" });
+  const hosts = (await (await handlers.hostsGet(request())).json()).data;
+  assert.deepEqual(hosts[0].vms.map(vm => vm.displayName), ["tpl Friendly", "Other type"]);
+  assert.equal(hosts[0].vms[0].name, vm.name); assert.equal(hosts[0].vms[0].metrics.cpuUsagePercent.value, 12);
+  assert.equal(hosts[1].vms[0].displayName, "Other parent");
+  const raw = JSON.parse(await cache.get(keys.hosts)); assert.equal(JSON.stringify(raw).includes("tpl Friendly"), false);
+  assert.equal((await getPresentation()).data.revision, before);
+  await getPrisma().$disconnect(); delete globalThis.pulsePrisma;
+  assert.equal((await listVmConfigs()).find(item => item.vmKey === vm.vmKey).displayName, input.displayName);
+  await clearSnapshots();
+  assert.equal((await saveVmConfig(vm.vmKey, { expectedRevision: 1, displayName: null })).revision, 2);
+  assert.equal((await (await handlers.vmConfigsGet(request())).json()).data.some(item => item.vmKey === vm.vmKey), true);
+  vm.name = "renamed-at-source"; await publish({ [keys.hosts]: [parent] });
+  assert.equal((await (await handlers.hostsGet(request())).json()).data[0].vms[0].displayName, "renamed-at-source");
+  assert.equal((await handlers.vmConfigPut(request("/", "PUT", input), params({ vmKey: vm.vmKey }))).status, 409);
+});
+
+test("VM name creation rejects templates, forged identity, stale discovery and unknown body fields", async () => {
+  const { parent, vm } = namedVmFixture("names-validation");
+  const input = { expectedRevision: 0, displayName: "VM" };
+  const put = body => handlers.vmConfigPut(request("/", "PUT", body), params({ vmKey: vm.vmKey }));
+  vm.name = "tpl-template"; await publish({ [keys.hosts]: [parent] });
+  assert.equal((await put(input)).status, 404);
+  vm.name = "vm-normal"; vm.vmKey = opaqueReference("vm", "forged-parent", "qemu/100");
+  await publish({ [keys.hosts]: [parent] }); assert.equal((await put(input)).status, 409);
+  vm.vmKey = opaqueReference("vm", parent.hostKey, "qemu/100");
+  await publish({ [keys.hosts]: [parent] });
+  assert.equal((await put({ ...input, hostKey: "forged" })).status, 400);
+  await markSyncFailure(); assert.equal((await put(input)).status, 409);
+  await publish({ [keys.hosts]: [parent] });
+  vm.metrics.cpuUsagePercent.observedAt = "2000-01-01T00:00:00.000Z";
+  vm.metrics.cpuUsagePercent.quality = "stale";
+  await publish({ [keys.hosts]: [parent] }); assert.equal((await put(input)).status, 200);
+});
+
+test("VM preferences unavailable preserve Redis telemetry and return safe errors for admin writes", async () => {
+  const { parent, vm } = namedVmFixture("names-db-failure");
+  await publish({ [keys.hosts]: [parent], [keys.host(parent.hostKey)]: parent });
+  await getDatabase().query("ALTER TABLE vm_display_config RENAME TO vm_display_config_test_hidden");
+  try {
+    for (const response of [await handlers.hostsGet(request()), await handlers.hostGet(request(), params({ hostKey: parent.hostKey }))]) {
+      assert.equal(response.status, 200);
+      const body = await response.json(), host = Array.isArray(body.data) ? body.data[0] : body.data;
+      assert.equal(body.presentationStatus, "unavailable"); assert.equal(body.stale, false);
+      assert.equal(host.vms[0].name, vm.name); assert.equal(host.vms[0].metrics.cpuUsagePercent.quality, "fresh");
+    }
+    const response = await result(await handlers.vmConfigPut(request("/", "PUT", { expectedRevision: 0, displayName: "name" }), params({ vmKey: vm.vmKey })));
+    assert.equal(response.status, 503); assert.deepEqual(response.body, { error: { code: "database_unavailable" } });
+    assert.equal((await handlers.vmConfigsGet(request())).status, 503);
+  } finally { await getDatabase().query("ALTER TABLE vm_display_config_test_hidden RENAME TO vm_display_config"); }
+});
+
+test("contextual container writes verify the current VM Agent and target and aliases survive without highlight", async () => {
+  const { parent, vm } = namedVmFixture("names-workloads"), agent = { ...host("names-agent"), role: "linux" }, other = { ...host("names-another-agent"), role: "linux" };
+  vm.linuxHostKey = agent.hostKey;
+  const target = container("same-service", agent.hostKey), duplicate = container("same-service", other.hostKey);
+  const entries = { [keys.hosts]: [parent, agent, other], [keys.containers(agent.hostKey)]: [target], [keys.containers(other.hostKey)]: [duplicate] };
+  await publish(entries);
+  const context = { parentHostKey: parent.hostKey, vmKey: vm.vmKey, containerReference: target.reference };
+  const body = { resourceType: "docker_container", zabbixHostKey: agent.hostKey, selectorType: "exact_name", selectorValue: target.name, displayName: "Friendly app", enabled: true, dashboardEnabled: false, context };
+  const saved = await result(await handlers.servicePost(request("/", "POST", body)));
+  assert.equal(saved.status, 201); const id = saved.body.data.id;
+  const list = (await (await handlers.containersGet(request())).json()).data;
+  assert.equal(list.find(item => item.reference === target.reference).displayName, "Friendly app");
+  assert.equal(list.find(item => item.reference === duplicate.reference).displayName, duplicate.name);
+  const workloads = (await (await handlers.vmContainersGet(request(), params({ hostKey: parent.hostKey, vmKey: vm.vmKey }))).json()).data;
+  assert.equal(workloads.containers[0].displayName, "Friendly app");
+  assert.equal((await handlers.servicePatch(request("/", "PATCH", { dashboardEnabled: true, context }), params({ id }))).status, 200);
+  vm.linuxHostKey = other.hostKey; await publish(entries);
+  assert.equal((await handlers.servicePatch(request("/", "PATCH", { displayName: "Wrong", context }), params({ id }))).status, 409);
+  assert.equal((await getResource(id)).displayName, "Friendly app");
+  vm.linuxHostKey = agent.hostKey; await publish(entries);
+  assert.equal((await handlers.servicePost(request("/", "POST", { ...body, context: { ...context, containerReference: duplicate.reference } }))).status, 409);
+  entries[keys.containers(agent.hostKey)] = []; await publish(entries);
+  assert.equal((await handlers.servicePatch(request("/", "PATCH", { displayName: "Missing", context }), params({ id }))).status, 409);
+  assert.equal((await handlers.servicePatch(request("/", "PATCH", { displayName: "Offline preference" }), params({ id }))).status, 200);
+});
 
 let admin, cache, token, databaseCreated = false, leaseOwned = false;
 const databaseName = "pulse_phase03_test_" + process.pid + "_" + Date.now();
@@ -51,6 +147,7 @@ before(async () => {
   process.env.TOKEN_ENCRYPTION_KEY = randomBytes(32).toString("base64");
   token = sealEnvelope({ type: "access", token: "test-only", user, sessionId: randomUUID(), expiresAt: Date.now() + 600000 });
   globalThis.fetch = () => { throw new Error("Monitoring must not call any upstream in this phase"); };
+  await getPrisma().pulseSetting.upsert({ where: { key: "dashboardPresentation" }, update: { value: initialPresentation(randomUUID) }, create: { key: "dashboardPresentation", value: initialPresentation(randomUUID) } });
 }, { timeout: 45000 });
 after(async () => {
   globalThis.fetch = originalFetch;
@@ -79,10 +176,18 @@ test("every business handler rejects missing, expired and refresh credentials be
   }
 });
 test("migrated schema contains only human configuration and host uniqueness includes NULL selectors", async () => {
-  const a = await createResource(hostConfig);
+  await publish({ [keys.hosts]: [host()] });
+  const a = await createResource({ ...hostConfig, description: " Portal de atendimento ", serviceType: " Front " });
+  assert.equal((await getResource(a.id)).description, "Portal de atendimento");
+  assert.equal((await getResource(a.id)).serviceType, "Front");
+  await updateResource(a.id, { displayName: "Portal" });
+  assert.equal((await getResource(a.id)).description, "Portal de atendimento");
+  await updateResource(a.id, { description: null, serviceType: " " });
+  assert.equal((await getResource(a.id)).description, null);
+  assert.equal((await getResource(a.id)).serviceType, null);
   await assert.rejects(createResource(hostConfig), error => error.status === 409);
   const { rows } = await getDatabase().query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name");
-  assert.deepEqual(rows.map(row => row.table_name), ["_prisma_migrations", "monitored_resource_config", "pulse_settings", "vm_template_config"]);
+  assert.deepEqual(rows.map(row => row.table_name), ["_prisma_migrations", "monitored_resource_config", "pulse_settings", "vm_display_config", "vm_template_config"]);
   const invalid = [
     [randomUUID(), "host", "zabbix", "other", "exact_name", "x", {}],
     [randomUUID(), "docker_container", "zabbix", "other", null, null, {}],
@@ -92,6 +197,7 @@ test("migrated schema contains only human configuration and host uniqueness incl
     [randomUUID(), "host", "zabbix", "other", null, null, { showCpu: null }],
   ];
   for (const values of invalid) await assert.rejects(getDatabase().query('INSERT INTO monitored_resource_config(id,resource_type,source,zabbix_host_key,selector_type,selector_value,presentation) VALUES($1,$2,$3,$4,$5,$6,$7)', values), error => error.code === "23514");
+  await publish({ [keys.hosts]: [host(), host("concurrent")] });
   const concurrent = await Promise.allSettled([createResource({ ...hostConfig, zabbixHostKey: "concurrent" }), createResource({ ...hostConfig, zabbixHostKey: "concurrent" })]);
   assert.equal(concurrent.filter(item => item.status === "fulfilled").length, 1);
   assert.equal(concurrent.find(item => item.status === "rejected").reason.status, 409);
@@ -113,6 +219,7 @@ test("presentation initialization is idempotent across clients and revision comp
   assert.deepEqual(await getPresentation(), saved);
 });
 test("CRUD HTTP contracts preserve untouched fields, reject unknown writes and keep UUID ordering", async () => {
+  await publish({ [keys.hosts]: [host()], [keys.containers("asgard")]: [container()] });
   const post = await result(await handlers.servicePost(request("/monitoring/services", "POST", { resourceType: "docker_container", zabbixHostKey: "asgard", selectorType: "name_prefix", selectorValue: "evolution", displayOrder: 4, dashboardEnabled: true })));
   assert.equal(post.status, 201);
   const id = post.body.data.id;
@@ -128,6 +235,7 @@ test("CRUD HTTP contracts preserve untouched fields, reject unknown writes and k
   assert.equal((await handlers.serviceDelete(request("/", "DELETE"), params({ id }))).status, 204);
 });
 test("presentation validates references and DELETE repairs every affected screen in one transaction", async () => {
+  await publish({ [keys.hosts]: [host("presentation-target")] });
   const config = await createResource({ ...hostConfig, zabbixHostKey: "presentation-target" });
   let { data: current } = await getPresentation();
   const settings = { ...current }; delete settings.revision;
@@ -145,6 +253,7 @@ test("presentation validates references and DELETE repairs every affected screen
   await assert.rejects(savePresentation({ expectedRevision: current.revision, settings: missingRef }), error => error.status === 400);
 });
 test("concurrent presentation save and resource deletion never leave a dangling reference", async () => {
+  await publish({ [keys.hosts]: [host("race-target")] });
   const config = await createResource({ ...hostConfig, zabbixHostKey: "race-target" });
   const { revision, ...settings } = (await getPresentation()).data;
   settings.screens[0].blocks = [{ id: randomUUID(), type: "resource_card", enabled: true, width: "full", resourceConfigId: config.id }];
@@ -156,7 +265,7 @@ test("empty authenticated reads use stable unknown states and unknown details re
   await clearSnapshots();
   for (const handler of [handlers.hostsGet, handlers.containersGet, handlers.problemsGet]) {
     const response = await result(await handler(request()));
-    assert.equal(response.status, 200); assert.deepEqual(response.body, { data: [], availability: "no_data", stale: false, lastUpdated: null, refreshAfterMs: 20000, ...(handler === handlers.hostsGet ? { asgardHostKey: null } : {}) });
+    assert.equal(response.status, 200); assert.deepEqual(response.body, { data: [], availability: "no_data", stale: false, lastUpdated: null, refreshAfterMs: 20000, presentationStatus: "ready", ...(handler === handlers.hostsGet ? { asgardHostKey: null } : {}) });
   }
   const overview = await result(await handlers.overviewGet(request()));
   assert.equal(overview.status, 200); assert.equal(overview.body.availability, "no_data");
@@ -219,6 +328,7 @@ test("Redis outage returns sanitized 503 while presentation can still be saved i
 });
 
 test("overview reads only visible resource inventories and never enables hidden metrics", async () => {
+  await publish({ [keys.hosts]: [host("first"), host("second")], [keys.containers("first")]: [container("task", "first")], [keys.containers("second")]: [container("task", "second")] });
   const first = await createResource({ resourceType: "docker_container", zabbixHostKey: "first", selectorType: "exact_name", selectorValue: "task", dashboardEnabled: true, presentation: { showCpu: false, showStatus: false } });
   const second = await createResource({ resourceType: "docker_container", zabbixHostKey: "second", selectorType: "exact_name", selectorValue: "task", dashboardEnabled: true });
   const { revision, ...settings } = (await getPresentation()).data;
@@ -355,7 +465,9 @@ test("VM workloads validate parent and linked host, preserve configurations and 
   await publish(entries);
   const config = await createResource({ resourceType: "docker_container", zabbixHostKey: a.hostKey, selectorType: "exact_name", selectorValue: first.name, enabled: false });
   await createResource({ resourceType: "docker_container", zabbixHostKey: b.hostKey, selectorType: "exact_name", selectorValue: second.name });
+  entries[keys.containers(a.hostKey)].push(container("missing-service", a.hostKey)); await publish(entries);
   await createResource({ resourceType: "docker_container", zabbixHostKey: a.hostKey, selectorType: "exact_name", selectorValue: "missing-service", critical: true });
+  entries[keys.containers(a.hostKey)].pop(); await publish(entries);
   const read = (query = "", values = { hostKey: parent.hostKey, vmKey: vm.vmKey }) => handlers.vmContainersGet(request("/" + query), params(values));
   let response = await read(); assert.equal(response.headers.get("cache-control"), "no-store");
   let body = await response.json();
@@ -449,4 +561,90 @@ test("compact dashboard migration places highlights above two panels and preserv
     const custom = structuredClone(previous); customize(custom); await write(custom); await getDatabase().query(sql);
     assert.deepEqual((await getPresentation()).data, custom);
   }
+});
+
+test("options migration preserves identity and preferences, increments once, and leaves excessive legacy screens intact", async () => {
+  const sql = await readFile(new URL("../../prisma/migrations/20261003180000_presentation_options/migration.sql", import.meta.url), "utf8");
+  const legacy = initialPresentation(randomUUID); legacy.revision = 40; legacy.rotation.intervalSeconds = 52;
+  const write = value => getDatabase().query("UPDATE pulse_settings SET value=$1::jsonb WHERE key='dashboardPresentation'", [JSON.stringify(value)]);
+  await write(legacy); await getDatabase().query(sql);
+  const current = (await getPresentation()).data;
+  assert.equal(current.schemaVersion, 2); assert.equal(current.revision, 41); assert.equal(current.rotation.intervalSeconds, 52);
+  assert.deepEqual(current.screens.map(screen => ({ ...screen, blocks: screen.blocks.map(({ options, ...block }) => { void options; return block; }) })), legacy.screens);
+  for (const block of current.screens[0].blocks) assert.deepEqual(block.options, effectiveOptions({ type: block.type }));
+  await getDatabase().query(sql); assert.deepEqual((await getPresentation()).data, current);
+  const excessive = structuredClone(legacy); excessive.screens[0].blocks = Array.from({ length: 7 }, () => ({ id: randomUUID(), type: "summary", enabled: true, width: "full" }));
+  await write(excessive); await getDatabase().query(sql); assert.deepEqual((await getPresentation()).data, excessive);
+  const result = await (await handlers.overviewGet(request())).json(); assert.equal(result.data.blocks.length, 7); assert.deepEqual(result.data.blocks[0].options, effectiveOptions({ type: "summary" }));
+  assert.deepEqual((await getPresentation()).data, excessive);
+});
+test("v2 writes validate scope/options, preserve revisions and repair resource deletion with default options", async () => {
+  await publish({ [keys.hosts]: [host("v2-target")] });
+  const config = await createResource({ ...hostConfig, zabbixHostKey: "v2-target" });
+  await getPrisma().pulseSetting.upsert({ where: { key: "monitoringScope" }, update: { value: { hostKeys: ["v2-target"], vmLinks: [] } }, create: { key: "monitoringScope", value: { hostKeys: ["v2-target"], vmLinks: [] } } });
+  const { revision, ...settings } = initialV2(randomUUID); void revision;
+  let current = (await getPresentation()).data;
+  settings.screens[0].blocks = [{ id: randomUUID(), type: "container_inventory", enabled: true, width: "wide", options: { hostKeys: ["outside"] } }];
+  await assert.rejects(savePresentation({ expectedRevision: current.revision, settings }), error => error.code === "invalid_host_reference");
+  settings.screens[0].blocks[0].options.hostKeys = ["v2-target"];
+  current = (await savePresentation({ expectedRevision: current.revision, settings })).data;
+  const response = await handlers.presentationPut(request("/", "PUT", { expectedRevision: current.revision, settings: { ...settings, screens: [{ ...settings.screens[0], blocks: [{ ...settings.screens[0].blocks[0], options: { visibleRows: 100 } }] }] } }));
+  assert.equal(response.status, 400); const failure = await response.json(); assert.equal(failure.error.fields[0].path, "settings.screens.0.blocks.0.options.visibleRows");
+  settings.screens[0].blocks = [{ id: randomUUID(), type: "resource_card", enabled: true, width: "wide", options: {}, resourceConfigId: config.id }];
+  current = (await savePresentation({ expectedRevision: current.revision, settings })).data;
+  await deleteResource(config.id); const repaired = (await getPresentation()).data;
+  assert.equal(repaired.revision, current.revision + 1); assert.deepEqual(repaired.screens[0].blocks[0].options, effectiveOptions({ type: "summary" }));
+});
+test("reading scale defaults without a database rewrite and persists through the revision-protected BFF", async () => {
+  const legacy = initialV2(randomUUID); delete legacy.displayScalePercent;
+  await getDatabase().query("UPDATE pulse_settings SET value=$1::jsonb WHERE key='dashboardPresentation'", [JSON.stringify(legacy)]);
+  const loaded = await (await handlers.presentationGet(request())).json();
+  assert.equal(loaded.data.displayScalePercent, 110);
+  assert.equal(loaded.data.revision, legacy.revision);
+  const stored = await getDatabase().query("SELECT value FROM pulse_settings WHERE key='dashboardPresentation'");
+  assert.deepEqual(stored.rows[0].value, legacy);
+  const { revision, ...settings } = loaded.data; settings.displayScalePercent = 125;
+  const saved = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision, settings }));
+  assert.equal(saved.status, 200);
+  assert.equal((await saved.json()).data.displayScalePercent, 125);
+  assert.equal((await getPresentation()).data.displayScalePercent, 125);
+  assert.deepEqual((await getPresentation()).data.screens, legacy.screens);
+  const conflict = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision, settings: { ...settings, displayScalePercent: 100 } }));
+  assert.equal(conflict.status, 409);
+  const invalid = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision + 1, settings: { ...settings, displayScalePercent: 150 } }));
+  assert.equal(invalid.status, 400);
+  assert.equal((await getPresentation()).data.displayScalePercent, 125);
+});
+
+test("idle presentation defaults without rewriting legacy data and saves with revision and minute validation", async () => {
+  const legacy = initialV2(randomUUID); delete legacy.idlePresentation;
+  await getDatabase().query("UPDATE pulse_settings SET value=$1::jsonb WHERE key='dashboardPresentation'", [JSON.stringify(legacy)]);
+  const loaded = await (await handlers.presentationGet(request())).json();
+  assert.deepEqual(loaded.data.idlePresentation, { enabled: false, afterMinutes: 5, requestFullscreen: true });
+  assert.deepEqual((await getDatabase().query("SELECT value FROM pulse_settings WHERE key='dashboardPresentation'")).rows[0].value, legacy);
+  const { revision, ...settings } = loaded.data;
+  settings.idlePresentation = { enabled: true, afterMinutes: 10, requestFullscreen: false };
+  const saved = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision, settings }));
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await getPresentation()).data.idlePresentation, settings.idlePresentation);
+  assert.deepEqual((await getPresentation()).data.screens, legacy.screens);
+  const conflict = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision, settings }));
+  assert.equal(conflict.status, 409);
+  for (const minutes of [0, 121, 1.5, "5", null]) {
+    const invalid = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision + 1, settings: { ...settings, idlePresentation: { ...settings.idlePresentation, afterMinutes: minutes } } }));
+    assert.equal(invalid.status, 400);
+  }
+  assert.equal((await getPresentation()).data.revision, revision + 1);
+});
+
+test("resource creation needs current discovery, while existing preferences and configuration reads survive missing inventory", async () => {
+  await clearSnapshots(); await assert.rejects(createResource({ ...hostConfig, zabbixHostKey: "new-target" }), error => error.code === "resource_inventory_unavailable");
+  await publish({ [keys.hosts]: [host("new-target")] });
+  const config = await createResource({ ...hostConfig, zabbixHostKey: "new-target" });
+  await clearSnapshots(); const updated = await updateResource(config.id, { ...config, id: undefined }).catch(() => null); assert.equal(updated, null);
+  const saved = await updateResource(config.id, { displayName: "Offline preference", zabbixHostKey: "new-target", selectorType: null, selectorValue: null, resourceType: "host" });
+  assert.equal(saved.displayName, "Offline preference");
+  const response = await handlers.resourceConfigsGet(request()); assert.equal(response.status, 200); assert.ok((await response.json()).data.some(item => item.id === config.id));
+  await assert.rejects(updateResource(config.id, { zabbixHostKey: "outside" }), error => error.code === "resource_inventory_unavailable");
+  await deleteResource(config.id);
 });

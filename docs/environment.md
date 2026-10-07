@@ -24,9 +24,13 @@ PostgreSQL e Redis rodam diretamente no host, nas portas 5432 e 6379. Não há D
 4. Executar `npm run db:validate` e `npm run db:migrate`.
 5. Executar `npm run dev` e acessar http://127.0.0.1:3000.
 
-O schema contém as tabelas de configuração humana `monitored_resource_config` e `pulse_settings`, na migration `20261003010322_human_configuration`, e `vm_template_config`, na migration `20261003093000_vm_template_configuration`. A primeira inclui índices únicos parciais e CHECKs, inclusive para impedir hosts duplicados com seletores NULL. A segunda armazena identidade, label e papel opcional dos templates, com revisão; não contém telemetria nem cria cadastros automaticamente. `npm run db:migrate` aplica migrations localmente; o entrypoint continua usando `prisma migrate deploy`, sem reset. Para atualizar uma instalação com migrations já prontas, usar `npx prisma migrate deploy` antes de consultar os novos endpoints. As migrations de dados `20261003103000_dashboard_layout` e `20261003120000_compact_dashboard` reorganizam somente o preset inicial reconhecido, preservando IDs/configurações personalizadas e incrementando a revisão. Não criam tabelas nem exigem novas envs. A composição final é indicadores e destaques em faixas inteiras, ASGARD e problemas em meias larguras. Não editar migrations já aplicadas; atualizações usam uma nova migration. O cliente Prisma usa o adapter pg sobre o mesmo pool do health. `dev`, `typecheck` e `build` geram o cliente antes de executar o Next; `npm run db:generate` permite geração explícita. A geração não conecta ao banco nem exige credenciais no build; operação e migrations exigem DATABASE_URL. Contratos e limites: [BFF](bff.md) e [Templates](templates.md).
+O schema contém as tabelas de configuração humana `monitored_resource_config` e `pulse_settings`, na migration `20261003010322_human_configuration`, e `vm_template_config`, na migration `20261003093000_vm_template_configuration`. A primeira inclui índices únicos parciais e CHECKs, inclusive para impedir hosts duplicados com seletores NULL. A segunda armazena identidade, label e papel opcional dos templates, com revisão; não contém telemetria nem cria cadastros automaticamente. A migration `20261004160000_external_service` acrescenta `external_service` e `external_service_sample` para aplicações consultadas por URL; não altera as tabelas já existentes. `npm run db:migrate` aplica migrations localmente; o entrypoint continua usando `prisma migrate deploy`, sem reset. Para atualizar uma instalação com migrations já prontas, usar `npx prisma migrate deploy` antes de consultar os novos endpoints. As migrations de dados `20261003103000_dashboard_layout` e `20261003120000_compact_dashboard` reorganizam somente o preset inicial reconhecido, preservando IDs/configurações personalizadas e incrementando a revisão. Não criam tabelas nem exigem novas envs. A composição final é indicadores e destaques em faixas inteiras, ASGARD e problemas em meias larguras. Não editar migrations já aplicadas; atualizações usam uma nova migration. O cliente Prisma usa o adapter pg sobre o mesmo pool do health. `dev`, `typecheck` e `build` geram o cliente antes de executar o Next; `npm run db:generate` permite geração explícita. A geração não conecta ao banco nem exige credenciais no build; operação e migrations exigem DATABASE_URL. Contratos e limites: [BFF](bff.md) e [Templates](templates.md).
 
 `npm run collector` executa a coleta real do Zabbix em loop; `npm run collector:once` faz um ciclo e termina. Os dois geram snapshots no Redis e não abrem HTTP. SIGINT/SIGTERM interrompem a espera/requests e aguardam o ciclo para encerrar. Configurar ZABBIX_API_URL/TOKEN e o escopo humano conforme [Zabbix](zabbix.md); `npm run collector:scope -- CAMINHO_JSON` salva apenas as escolhas de escopo/vínculo no banco. Não inicia a UI do dashboard.
+
+`npm run probe` consulta as aplicações externas em loop; `npm run probe:once` faz uma rodada e termina. Não abre HTTP, não chama o Zabbix e não escreve `pulse:sync:last`. Sem `PROBE_INTERVAL_MS`, o intervalo é 60000 ms.
+
+`npm run vps-monitor` consulta o monitor das VPS avulsas que estão ativas e têm URL base; `npm run vps-monitor:once` faz uma rodada e termina. Não chama o Zabbix, não escreve `pulse:sync:last` e não altera a sonda. Sem `VPS_MONITOR_INTERVAL_MS`, o intervalo é 60000 ms.
 
 A configuração local usa URLs completas. Os campos antigos `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_PASSWORD`, `REDIS_HOST`, `REDIS_PORT` e `REDIS_PASSWORD`, se existirem num `.env` anterior, não substituem `DATABASE_URL` e `REDIS_URL`. Não imprimir credenciais em logs. `.env`, variações locais e artefatos de teste estão ignorados no Git; o contexto Docker exclui `.env*`.
 
@@ -38,11 +42,13 @@ Web e collector recebem o mesmo contrato de ambiente. Autenticação utiliza a U
 |---|---|---|---|
 | `DATABASE_URL` | Web/health, Prisma, configuração humana e inicialização de web/collector | Não | Mesmo nome nos dois serviços da stack. Obrigatória, banco `pulse`; host `pulse_postgres` em produção ou `pulse_postgres_dev` em dev |
 | `REDIS_URL` | Web/health e leitura/publicação de envelopes pelo Collector | Não | Mesmo nome nos dois serviços; default `redis://pulse_redis:6379` ou `redis://pulse_redis_dev:6379` |
-| `API_BASE_URL` | BFF de login, refresh e logout | Não | `https://api.softcom.cloud` nos dois ambientes; sem chave de serviço |
+| `API_BASE_URL` | BFF de login, refresh e logout | Não | Web e collector leem `${API_BASE_URL:-https://api.softcom.cloud}`. Exemplo, `.env` local e os dois arquivos do Portainer trazem `https://api.softcom.cloud`. Sem chave de serviço |
 | `TOKEN_ENCRYPTION_KEY` | AES-256-GCM dos envelopes de sessão | Não | Obrigatória: 32 bytes aleatórios em base64, segredo próprio por ambiente e igual entre réplicas do mesmo ambiente |
 | `ZABBIX_API_URL` | Collector e BFF de histórico | Não | Mesmo nome nos dois ambientes; endpoint JSON-RPC do Server |
 | `ZABBIX_API_TOKEN` | Collector e BFF de histórico | Não | Mesmo nome nos dois ambientes; somente consultas de leitura |
 | `COLLECTOR_INTERVAL_MS` | BFF/refreshAfterMs e Collector | Não | Mesmo nome, default `20000` |
+| `PROBE_INTERVAL_MS` | Processo da sonda | Não | Default `60000` se ausente ou vazia. Inteiro de 30000 a 120000. O collector não lê esta variável |
+| `VPS_MONITOR_INTERVAL_MS` | Processo do monitor de VPS | Não | Default `60000` se ausente ou vazia. Inteiro de 30000 a 120000. O collector e a sonda não leem esta variável |
 | `SNAPSHOT_TTL_SECONDS` | Helpers de snapshot: retenção por TTL | Não | Mesmo nome, default `300` |
 | `SNAPSHOT_STALE_AFTER_MS` | BFF/helpers de snapshot: limite de freshness | Não | Mesmo nome, default `60000` |
 | `POSTGRES_USER` | Container PostgreSQL | Não | Mesmo nome, default `postgres`; deve coincidir com o usuário da URL |
@@ -52,7 +58,11 @@ Web e collector recebem o mesmo contrato de ambiente. Autenticação utiliza a U
 | `NEXT_PUBLIC_APP_NAME` | Servidor → provider e interface | Sim, apenas o valor público | Mesmo nome, default `Softcom Pulse` |
 | `NEXT_PUBLIC_SOFTCOM_URL` | Servidor → provider e link institucional | Sim, apenas o valor público | Mesmo nome, default `https://www.softcomtecnologia.com.br` |
 
-COLLECTOR_INTERVAL_MS aceita 15000–30000ms. SNAPSHOT_STALE_AFTER_MS deve ser pelo menos o dobro desse intervalo e menor que SNAPSHOT_TTL_SECONDS × 1000. Valores inválidos impedem a leitura de monitoramento com 503; não produzem estado saudável. O TTL não substitui a avaliação de idade. Estas variáveis já constam no exemplo e nos dois composes.
+COLLECTOR_INTERVAL_MS aceita 15000–30000ms. SNAPSHOT_STALE_AFTER_MS deve ser pelo menos o dobro desse intervalo e menor que SNAPSHOT_TTL_SECONDS × 1000. Valores inválidos impedem a leitura de monitoramento com 503; não produzem estado saudável. O TTL não substitui a avaliação de idade. Os mesmos nomes e padrões estão em `.env.example`, no `.env` local e em `docker/portainer.desenvolvimento.env` e `docker/portainer.producao.env`.
+
+PROBE_INTERVAL_MS pertence só à sonda. Ausente ou vazia, vale 60000. Um inteiro de 30000 a 120000 é aceito. Fora dessa faixa a sonda não coleta. Os dois composes trazem `PROBE_INTERVAL_MS: ${PROBE_INTERVAL_MS:-60000}`. O collector do Zabbix não lê essa variável.
+
+VPS_MONITOR_INTERVAL_MS pertence só ao processo `vps-monitor`. Ausente ou vazia, vale 60000. Um inteiro de 30000 a 120000 é aceito. Fora dessa faixa o processo não coleta. Os dois composes trazem `VPS_MONITOR_INTERVAL_MS: ${VPS_MONITOR_INTERVAL_MS:-60000}`. O resultado recente usa o mesmo `SNAPSHOT_TTL_SECONDS` dos snapshots.
 
 `PORT=3000`, `HOSTNAME=0.0.0.0`, `NODE_ENV=production` e `NEXT_TELEMETRY_DISABLED=1` são controles técnicos da imagem, não variáveis de produto que precisem ser preenchidas no Portainer. O comando local restringe o servidor a `127.0.0.1`.
 
@@ -62,12 +72,14 @@ As duas variáveis públicas são lidas no servidor a cada renderização dinâm
 
 | Ambiente | Arquivo | Imagem | Host público |
 |---|---|---|---|
-| Produção | `docker/docker-compose.yaml` | `ghcr.io/softcominnovation/softcom-pulse:latest` | `pulse.hostsoftcom.cloud` |
-| Desenvolvimento | `docker/docker-compose.dev.yaml` | `ghcr.io/softcominnovation/softcom-pulse:dev` | `dev-pulse.hostsoftcom.cloud` |
+| Produção | `docker/docker-compose.yaml` | `ghcr.io/softcominnovation/softcom-pulse:${PULSE_VERSION:-latest}` | `pulse.softcomtecnologia.com` |
+| Desenvolvimento | `docker/docker-compose.dev.yaml` | `ghcr.io/softcominnovation/softcom-pulse:${PULSE_VERSION:-dev}` | `dev-pulse.softcomtecnologia.com` |
+
+`PULSE_VERSION` define a tag da imagem do aplicativo. Web, collector, sonda e monitor de VPS usam essa mesma tag. Em desenvolvimento o padrão é `dev`; em produção, `latest`. Para fixar uma publicação, por exemplo `0.2.0-dev`, altere só essa variável na stack. PostgreSQL e Redis não usam essa tag.
 
 As stacks usam `version: "3.8"`, placement `node.role == manager` e a rede externa existente `network_public`. A rede e o Traefik precisam existir na VPS. Somente o web recebe labels Traefik: `websecure`, `letsencryptresolver`, porta interna 3000, router/service `pulse` ou `pulse-dev`. PostgreSQL e Redis não publicam portas no host.
 
-Serviços de produção: `pulse`, `pulse-collector`, `pulse_postgres`, `pulse_redis`. Serviços de dev: `pulse-dev`, `pulse-dev-collector`, `pulse_postgres_dev`, `pulse_redis_dev`. Cada serviço começa com uma réplica. O collector mantém uma réplica e atualização `stop-first`.
+Serviços de produção: `pulse`, `pulse-collector`, `pulse-probe`, `pulse_postgres`, `pulse_redis`. Serviços de dev: `pulse-dev`, `pulse-dev-collector`, `pulse-dev-probe`, `pulse_postgres_dev`, `pulse_redis_dev`. Cada serviço começa com uma réplica. Collector e sonda mantêm uma réplica e atualização `stop-first`. A sonda não publica porta nem labels do Traefik e não usa as variáveis do Zabbix.
 
 PostgreSQL usa `postgres:17-bookworm`. Redis usa `redis:8-alpine`, com AOF habilitado. As tags dessas dependências acompanham patches da linha escolhida; a imagem do aplicativo é fixada pelo lockfile e pela tag/digest de release.
 
@@ -82,11 +94,15 @@ Valores definidos para esta base; são ponto de partida para medição de carga,
 | Ambiente / serviço | Limite CPU / memória | Reserva CPU / memória |
 |---|---|---|
 | Produção web | 1 / 768M | 0,25 / 128M |
-| Produção collector | 0,5 / 256M | 0,1 / 64M |
+| Produção collector | 0,5 / 512M | 0,1 / 64M |
+| Produção sonda | 0,5 / 512M | 0,1 / 64M |
+| Produção monitor de VPS | 0,5 / 512M | 0,1 / 64M |
 | Produção PostgreSQL | 1 / 1G | 0,25 / 256M |
 | Produção Redis | 0,5 / 256M | 0,1 / 64M |
 | Dev web | 0,5 / 512M | 0,1 / 128M |
-| Dev collector | 0,25 / 128M | 0,05 / 32M |
+| Dev collector | 0,25 / 512M | 0,05 / 32M |
+| Dev sonda | 0,25 / 512M | 0,05 / 32M |
+| Dev monitor de VPS | 0,25 / 512M | 0,05 / 32M |
 | Dev PostgreSQL | 0,5 / 512M | 0,1 / 128M |
 | Dev Redis | 0,25 / 128M | 0,05 / 32M |
 
@@ -150,4 +166,4 @@ Interface validada em Chromium: 320/360/390px, tablet retrato/paisagem, desktop 
 
 Autenticação, shell protegido, configuração PostgreSQL, BFF e Collector Zabbix estão implementados. A fase 04 também testa PostgreSQL temporário `pulse_phase04_test_`/`pulse_runtime04_test_` e Redis DB 13/12 vazio com trava; remove somente suas próprias chaves. O runtime exercita o processo empacotado, coleta, histórico autenticado, falha, exclusão entre workers e encerramento. Fixtures não usam o Redis DB 0 nem persistem telemetria no banco pulse.
 
-O dashboard visual está disponível na rota `/`, com apresentação persistida, atualização agregada, TV, fullscreen e alternância. Interface e limites em [ui.md](ui.md); o editor administrativo é posterior. Ver [autenticação](authentication.md), [BFF](bff.md) e [integração Zabbix](zabbix.md). A implantação mantém `replicas: 1` e `stop-first`; adicionalmente, a chave PostgreSQL `734021004` impede coletores concorrentes no mesmo banco.
+Dashboard, editores de recursos/apresentação e templates estão implementados. Aplicar a migration 20261003180000_presentation_options com `npx prisma migrate deploy` antes de disponibilizar o editor v2. Não há env nova nem reinício do Collector necessário. Ver [Administração](administration.md), [Interface](ui.md), [BFF](bff.md) e [Zabbix](zabbix.md).

@@ -1,8 +1,8 @@
 .monitoring-main { width: 100%; min-width: 0; padding: 0 clamp(14px, 2vw, 42px) 28px; }
-.monitoring-nav { display: flex; align-items: center; gap: 25px; min-width: 0; max-width: 100%; overflow-x: auto; }
+.monitoring-nav { display: flex; align-items: center; gap: calc(25px * var(--dashboard-scale, 1)); min-width: 0; max-width: 100%; overflow-x: auto; }
 .dashboard-nav .monitoring-nav a { flex: none; white-space: nowrap; color: var(--pulse-muted); border-bottom-color: transparent; text-decoration: none; }
 .dashboard-nav .monitoring-nav a[aria-current=page] { color: var(--pulse-green); border-bottom-color: var(--pulse-green); }
-.monitoring-nav svg { width: 17px; height: 17px; stroke-width: 1.7; }
+.monitoring-nav svg { width: calc(17px * var(--dashboard-scale, 1)); height: calc(17px * var(--dashboard-scale, 1)); stroke-width: 1.7; }
 .infrastructure-details { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .infrastructure-details .dashboard-heading, .infrastructure-details .dashboard-banner { margin-bottom: 0; }
 .infrastructure-details h1, .infrastructure-details h2, .infrastructure-details h3 { overflow-wrap: anywhere; }
@@ -43,10 +43,10 @@
 .host-kpis .metric-value strong { font-size: 26px; letter-spacing: -.7px; }
 .host-kpis .metric-value + p { margin-top: 8px; }
 .host-kpis .metric-value:last-child:not(:nth-child(2)) strong { font-size: 13px; }
-.detail-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 16px; padding: 10px 18px 18px; min-width: 0; }
+.detail-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(calc(160px * var(--dashboard-scale, 1)), 100%), 1fr)); gap: calc(16px * var(--dashboard-scale, 1)); padding: calc(10px * var(--dashboard-scale, 1)) calc(18px * var(--dashboard-scale, 1)) calc(18px * var(--dashboard-scale, 1)); min-width: 0; }
 .detail-metrics > div { min-width: 0; }
-.detail-metrics dt, .device-capacity dt { color: var(--pulse-muted); font-size: 11px; margin-bottom: 5px; }
-.detail-metrics dd { font-family: var(--font-numeric); font-size: 13px; }
+.detail-metrics dt, .device-capacity dt { color: var(--pulse-muted); font-size: calc(11px * var(--dashboard-scale, 1)); margin-bottom: calc(5px * var(--dashboard-scale, 1)); }
+.detail-metrics dd { font-family: var(--font-numeric); font-size: calc(13px * var(--dashboard-scale, 1)); }
 .device-list { padding: 0 18px; }
 .device-list > article { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; padding: 14px 0; border-top: 1px solid var(--pulse-line); min-width: 0; }
 .device-list > article:first-child { border-top: 0; }
@@ -102,23 +102,23 @@
 .agent-context summary { cursor: pointer; padding: 12px 0; color: var(--pulse-green); }
 .agent-context details > .dashboard-panel { margin-top: 14px; }
 .detail-problems .problem-list { max-height: none; }
-.host-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(290px, 100%), 1fr)); gap: 14px; padding: 0 18px 18px; }
-.host-card { background: var(--pulse-service); border: 1px solid var(--pulse-line); border-radius: 9px; padding: 16px; min-width: 0; }
-.host-card h3 { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
-.host-card > p { font-size: 11px; color: var(--pulse-muted); margin: 4px 0 12px; }
-.host-card .detail-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 16px 0 0; }
-.host-inventory-compact .host-card-grid { max-height: 310px; overflow: auto; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 9px; padding: 0 14px 14px; }
-.host-inventory-compact .host-card { padding: 10px; }
-.host-inventory-compact .host-card h3 { font-size: 12px; }
+.host-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(calc(290px * var(--dashboard-scale, 1)), 100%), 1fr)); gap: calc(14px * var(--dashboard-scale, 1)); padding: 0 calc(18px * var(--dashboard-scale, 1)) calc(18px * var(--dashboard-scale, 1)); }
+.host-card { background: var(--pulse-service); border: 1px solid var(--pulse-line); border-radius: 9px; padding: calc(16px * var(--dashboard-scale, 1)); min-width: 0; }
+.host-card h3 { font-size: calc(15px * var(--dashboard-scale, 1)); font-weight: 600; overflow-wrap: anywhere; }
+.host-card > p { font-size: calc(11px * var(--dashboard-scale, 1)); color: var(--pulse-muted); margin: calc(4px * var(--dashboard-scale, 1)) 0 calc(12px * var(--dashboard-scale, 1)); }
+.host-card .detail-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: calc(16px * var(--dashboard-scale, 1)) 0 0; }
+.host-inventory-compact .host-card-grid { max-height: calc(var(--visible-rows, 2) * calc(150px * var(--dashboard-scale, 1)) + calc(10px * var(--dashboard-scale, 1))); overflow: auto; grid-template-columns: repeat(auto-fit, minmax(min(calc(210px * var(--dashboard-scale, 1)), 100%), 1fr)); gap: calc(9px * var(--dashboard-scale, 1)); padding: 0 calc(14px * var(--dashboard-scale, 1)) calc(14px * var(--dashboard-scale, 1)); }
+.host-inventory-compact .host-card { padding: calc(10px * var(--dashboard-scale, 1)); }
+.host-inventory-compact .host-card h3 { font-size: calc(12px * var(--dashboard-scale, 1)); }
 @media(max-width:1100px) {
   .asgard-detail-layout, .detail-two-columns { grid-template-columns: 1fr; }
-  .monitoring-nav { gap: 20px; }
+  .monitoring-nav { gap: calc(20px * var(--dashboard-scale, 1)); }
 }
 @media(max-width:600px) {
   .vm-state-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dashboard-nav .monitoring-nav a { font-size: 11px; gap: 5px; }
-  .monitoring-nav { width: 100%; gap: 16px; }
-  .monitoring-nav svg { width: 14px; }
+  .dashboard-nav .monitoring-nav a { font-size: calc(11px * var(--dashboard-scale, 1)); gap: calc(5px * var(--dashboard-scale, 1)); }
+  .monitoring-nav { width: 100%; gap: calc(16px * var(--dashboard-scale, 1)); }
+  .monitoring-nav svg { width: calc(14px * var(--dashboard-scale, 1)); }
   .infrastructure-details .dashboard-banner { flex-wrap: wrap; }
   .infrastructure-details .dashboard-banner > div:first-child { flex-basis: 100%; }
   .infrastructure-details .banner-update { margin-left: 0; text-align: left; }
@@ -134,3 +134,8 @@
   .history-point-reader input[type=range] { height: 44px; }
   .vm-details-table small a { display: inline-flex; min-height: 44px; align-items: center; }
 }
+.vm-identity-heading { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.vm-identity-heading p { color: var(--pulse-muted); font-size: 11px; overflow-wrap: anywhere; min-width: 0; }
+.vm-identity-heading button { flex-shrink: 0; }
+.vm-identity-panel .admin-form { margin-top: 12px; }
+.infrastructure-page h1, .host-details-page h1, .asgard-details h1 { overflow-wrap: anywhere; }

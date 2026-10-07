@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw } from "lucide-react";
 
 export function readSchema<T>(schema: z.ZodType<T>) {
-  return z.object({ data: schema, availability: z.enum(["ready", "no_data", "unavailable"]), stale: z.boolean(), lastUpdated: z.iso.datetime({ offset: true }).nullable(), refreshAfterMs: z.number().finite().min(1000) });
+  return z.object({ presentationStatus: z.enum(["ready", "unavailable"]).optional(), data: schema, availability: z.enum(["ready", "no_data", "unavailable"]), stale: z.boolean(), lastUpdated: z.iso.datetime({ offset: true }).nullable(), refreshAfterMs: z.number().finite().min(1000) });
 }
 const hostsResultSchema = readSchema(hostSchema.array()).extend({ asgardHostKey: z.string().nullable().optional() });
 const delay = (value: { refreshAfterMs: number }) => value.refreshAfterMs;
@@ -48,7 +48,7 @@ export function EvidenceClock({ children }: { children: ReactNode }) {
 export function ReadNotice({ result, failed, refresh, label }: { result: ReadResult<unknown> | null; failed: boolean; refresh: () => void; label: string }) {
   const warning = failed || result?.stale || result?.availability === "unavailable";
   return <div className={`dashboard-banner banner-${warning ? "warn" : "unknown"}`} role={warning ? "alert" : "status"}>
-    <div><strong>{failed ? "Falha na atualização" : result?.stale ? "Dados desatualizados" : !result ? "Carregando monitoramento" : result.availability !== "ready" ? "Aguardando dados do monitoramento" : "Última leitura disponível"}</strong><p>{failed ? result ? "A última leitura foi mantida; não confirma o estado atual." : "Não foi possível obter a leitura. Tente novamente." : "Confira a qualidade e o horário de cada evidência. Uma nova coleta não renova uma amostra antiga."}</p></div>
+    <div><strong>{failed ? "Falha na atualização" : result?.stale ? "Dados desatualizados" : !result ? "Carregando monitoramento" : result.availability !== "ready" ? "Aguardando dados do monitoramento" : "Última leitura disponível"}</strong><p>{failed ? result ? "A última leitura foi mantida; não confirma o estado atual." : "Não foi possível obter a leitura. Tente novamente." : "Confira a qualidade e o horário de cada evidência. Uma nova coleta não renova uma amostra antiga."}</p>{result?.presentationStatus === "unavailable" && <p role="status">Personalização indisponível. Nomes técnicos exibidos; as métricas foram preservadas.</p>}</div>
     <div className="banner-update"><span>Última atualização</span><time dateTime={result?.lastUpdated ?? undefined}>{timestamp(result?.lastUpdated)}</time></div><Button onClick={refresh} aria-label={`Atualizar ${label}`}><RefreshCw aria-hidden="true" /><span>Atualizar</span></Button>
   </div>;
 }

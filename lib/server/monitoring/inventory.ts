@@ -3,6 +3,7 @@ import { z } from "zod";
 import { hostSchema, containerSchema } from "../../monitoring/contracts.ts";
 import { resolveResource } from "../../monitoring/selectors.ts";
 import type { ResourceInput } from "../../config/resources.ts";
+import type { ResourceContext } from "../../config/resource-context.ts";
 import { BffError } from "../bff.ts";
 import { readSnapshotBatch, readResult, snapshotData, snapshotKeys, snapshotTiming } from "../cache/snapshots.ts";
 
@@ -43,11 +44,25 @@ export async function readInventory(containerHosts: string[] | "all" = [], extra
   throw new BffError(503, "snapshot_inconsistent");
 }
 
-export async function validateSelection(config: ResourceInput) {
+export async function validateSelection(config: ResourceInput, requireFresh = false, context?: ResourceContext) {
   try {
     const inventory = await readInventory(config.resourceType === "docker_container" ? [config.zabbixHostKey] : []);
-    if (resolveResource(config, inventory).resolution === "ambiguous") throw new BffError(400, "selector_ambiguous");
+    const result = resolveResource(config, inventory);
+    if (context) {
+      const vm = inventory.hosts.find(host => host.hostKey === context.parentHostKey && host.role === "hypervisor")?.vms.find(vm => vm.vmKey === context.vmKey && vm.parentHostKey === context.parentHostKey && !vm.name.startsWith("tpl"));
+      const agent = inventory.hosts.find(host => host.hostKey === vm?.linuxHostKey && host.role === "linux");
+      if (!vm?.linuxHostKey || !agent || agent.availability === "unreachable" || vm.linuxHostKey !== config.zabbixHostKey || config.resourceType !== "docker_container" || !result.resolved || !("reference" in result.target) || result.target.reference !== context.containerReference) throw new BffError(409, "resource_context_changed");
+    }
+    if (result.resolution === "ambiguous") throw new BffError(400, "selector_ambiguous");
+    if (requireFresh) {
+      const state = readResult(null, inventory.batch, inventory.keys);
+      if (state.stale || state.availability !== "ready") throw new BffError(409, "resource_inventory_unavailable");
+      if (!result.resolved) throw new BffError(400, "resource_not_discovered");
+      const evidence = result.target.evidence;
+      if (!evidence.observedAt || evidence.validUntil !== undefined && (!evidence.validUntil || Date.parse(evidence.validUntil) < Date.now())) throw new BffError(409, "resource_inventory_unavailable");
+    }
   } catch (error) {
+    if (requireFresh && error instanceof BffError && error.status === 503) throw new BffError(409, "resource_inventory_unavailable");
     if (!(error instanceof BffError) || error.status !== 503) throw error;
   }
 }

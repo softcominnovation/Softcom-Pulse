@@ -15,10 +15,13 @@ export const containerPresentationSchema = z.strictObject({
 }).refine(value => !value.showHealthTimeline || value.showHealth, { path: ["showHealthTimeline"], message: "Timeline requires visible health" });
 export type ResourcePresentation = z.infer<typeof hostPresentationSchema> & Partial<z.infer<typeof containerPresentationSchema>>;
 
+const optionalText = (max: number) => z.string().refine(value => !/[\u0000-\u001f\u007f]/.test(value)).transform(value => value.trim()).pipe(z.string().max(max)).transform(value => value || null).nullable().default(null);
+
 const resourceFields = {
   resourceType: z.enum(["host", "docker_container"]), source: z.literal("zabbix").default("zabbix"),
   zabbixHostKey: hostKeySchema, selectorType: z.enum(["exact_name", "name_prefix", "name_contains", "regex"]).nullable().default(null),
   selectorValue: z.string().min(1).max(256).nullable().default(null), displayName: z.string().trim().min(1).max(120).nullable().default(null),
+  description: optionalText(240), serviceType: optionalText(40),
   dashboardEnabled: z.boolean().default(false), critical: z.boolean().default(false),
   displayOrder: z.number().int().min(0).max(2147483647).default(0),
   presentation: z.record(z.string(), z.unknown()).default({}), enabled: z.boolean().default(true),
@@ -40,6 +43,7 @@ export const resourcePatchSchema = z.strictObject({
   resourceType: resourceFields.resourceType.optional(), source: resourceFields.source.removeDefault().optional(),
   zabbixHostKey: hostKeySchema.optional(), selectorType: resourceFields.selectorType.removeDefault().optional(),
   selectorValue: resourceFields.selectorValue.removeDefault().optional(), displayName: resourceFields.displayName.removeDefault().optional(),
+  description: resourceFields.description.removeDefault().optional(), serviceType: resourceFields.serviceType.removeDefault().optional(),
   dashboardEnabled: z.boolean().optional(), critical: z.boolean().optional(), displayOrder: resourceFields.displayOrder.removeDefault().optional(),
   presentation: resourceFields.presentation.removeDefault().optional(), enabled: z.boolean().optional(),
 }).refine(value => Object.keys(value).length > 0);

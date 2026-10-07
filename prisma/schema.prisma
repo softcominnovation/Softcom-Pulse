@@ -16,6 +16,8 @@ model MonitoredResourceConfig {
   selectorType     String?  @map("selector_type") @db.VarChar(32)
   selectorValue    String?  @map("selector_value") @db.VarChar(256)
   displayName      String?  @map("display_name") @db.VarChar(120)
+  description      String?  @db.VarChar(240)
+  serviceType      String?  @map("service_type") @db.VarChar(40)
   dashboardEnabled Boolean @default(false) @map("dashboard_enabled")
   critical         Boolean @default(false)
   displayOrder     Int      @default(0) @map("display_order")
@@ -34,6 +36,21 @@ model PulseSetting {
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("pulse_settings")
+}
+
+model VmDisplayConfig {
+  vmKey              String   @id @map("vm_key") @db.VarChar(35)
+  hostKey            String   @map("host_key") @db.VarChar(256)
+  vmId               String   @map("vm_id") @db.VarChar(64)
+  virtualizationType String   @map("virtualization_type") @db.VarChar(8)
+  originalName       String   @map("original_name") @db.VarChar(512)
+  displayName        String?  @map("display_name") @db.VarChar(120)
+  revision           Int      @default(1)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([hostKey, virtualizationType, vmId])
+  @@map("vm_display_config")
 }
 
 model VmTemplateConfig {

@@ -3,10 +3,12 @@ import { randomUUID } from "node:crypto";
 import { ZodError } from "zod";
 import type { Prisma, MonitoredResourceConfig, PulseSetting } from "../../../generated/prisma/client.ts";
 import { resourceInputSchema, resourcePatchSchema, type ResourceConfig } from "../../config/resources.ts";
-import { blockCatalog, initialPresentation, presentationDocumentSchema, presentationWriteSchema, type PresentationResult } from "../../config/presentation.ts";
+import { blockCatalog, effectiveOptions, initialPresentation, presentationDocumentSchema, presentationWriteSchema, type PresentationResult } from "../../config/presentation.ts";
 import { BffError } from "../bff.ts";
 import { getPrisma } from "../prisma.ts";
 import { validateSelection } from "../monitoring/inventory.ts";
+import { monitoringScopeSchema } from "../zabbix/scope.ts";
+import type { ResourceContext } from "../../config/resource-context.ts";
 
 const PRESENTATION_KEY = "dashboardPresentation";
 type Transaction = Prisma.TransactionClient;
@@ -50,6 +52,12 @@ export async function savePresentation(body: unknown) {
     const current = presentationResult(await initialize(tx));
     if (current.data.revision !== expectedRevision) throw new BffError(409, "revision_conflict");
     const blocks = settings.screens.flatMap(screen => screen.blocks);
+    const hostKeys = blocks.flatMap(block => block.type === "container_inventory" ? effectiveOptions({ ...block, type: "container_inventory" }).hostKeys ?? [] : []);
+    if (hostKeys.length) {
+      const scopeRow = await tx.pulseSetting.findUnique({ where: { key: "monitoringScope" } });
+      const scope = monitoringScopeSchema.safeParse(scopeRow?.value);
+      if (!scope.success || hostKeys.some(key => !scope.data.hostKeys.includes(key))) throw new BffError(400, "invalid_host_reference");
+    }
     if (blocks.some(block => !blockCatalog[block.type].available)) throw new BffError(400, "block_unavailable");
     const ids = [...new Set(blocks.flatMap(block => block.resourceConfigId ? [block.resourceConfigId] : []))];
     const valid = await tx.monitoredResourceConfig.count({ where: { id: { in: ids }, enabled: true, dashboardEnabled: true } });
@@ -63,21 +71,21 @@ export async function listResources(filter?: { resourceType: "docker_container";
 export async function getResource(id: string) {
   return database(async () => resourceResult(await getPrisma().monitoredResourceConfig.findUniqueOrThrow({ where: { id } })));
 }
-export async function createResource(body: unknown) {
+export async function createResource(body: unknown, context?: ResourceContext) {
   const input = resourceInputSchema.parse(body);
   return transaction(async tx => {
     const created = await tx.monitoredResourceConfig.create({ data: input });
-    await validateSelection(input);
+    await validateSelection(input, true, context);
     return resourceResult(created);
   });
 }
-export async function updateResource(id: string, body: unknown) {
+export async function updateResource(id: string, body: unknown, context?: ResourceContext) {
   const patch = resourcePatchSchema.parse(body);
   return transaction(async tx => {
     const current = await tx.monitoredResourceConfig.findUniqueOrThrow({ where: { id } });
     const fields = Object.fromEntries(Object.entries(current).filter(([key]) => !["id", "createdAt", "updatedAt"].includes(key)));
     const input = resourceInputSchema.parse({ ...fields, ...patch });
-    if (["resourceType", "zabbixHostKey", "selectorType", "selectorValue"].some(key => key in patch)) await validateSelection(input);
+    if (context || ["resourceType", "zabbixHostKey", "selectorType", "selectorValue"].some(key => key in patch && patch[key as keyof typeof patch] !== fields[key])) await validateSelection(input, true, context);
     return resourceResult(await tx.monitoredResourceConfig.update({ where: { id }, data: input }));
   });
 }
@@ -91,7 +99,7 @@ export async function deleteResource(id: string) {
       if (blocks.length === screen.blocks.length) return screen;
       changed = true;
       if (!blocks.length || (screen.enabled && !blocks.some(block => block.enabled))) {
-        blocks.push({ id: randomUUID(), type: "summary", enabled: true, width: "full" });
+        blocks.push({ id: randomUUID(), type: "summary", enabled: true, width: "full", ...(data.schemaVersion === 2 ? { options: effectiveOptions({ type: "summary" }) } : {}) });
       }
       return { ...screen, blocks };
     });

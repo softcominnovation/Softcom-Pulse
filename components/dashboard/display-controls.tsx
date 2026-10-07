@@ -4,6 +4,7 @@ import { useCallback, useEffect } from "react";
 import { Maximize2, Minimize2, Tv } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { enterFullscreen } from "@/lib/client/fullscreen";
 import { useUiStore } from "@/store/ui.store";
 
 export function shortcutAllowed(event: KeyboardEvent) {
@@ -16,8 +17,7 @@ export function DisplayControls() {
   const fullscreen = useCallback(async () => {
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
-      else if (document.fullscreenEnabled && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
-      else throw new Error("unsupported");
+      else await enterFullscreen();
     } catch { toast.info("Tela cheia indisponível neste navegador. O modo TV e a alternância continuam disponíveis."); }
   }, []);
   useEffect(() => {
@@ -29,7 +29,7 @@ export function DisplayControls() {
     };
     update(); document.addEventListener("fullscreenchange", update); document.addEventListener("keydown", key);
     return () => {
-      document.removeEventListener("fullscreenchange", update); document.removeEventListener("keydown", key); setTvMode(false);
+      document.removeEventListener("fullscreenchange", update); document.removeEventListener("keydown", key); setTvMode(false); setFullscreen(false);
       if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
     };
   }, [fullscreen, setFullscreen, setTvMode]);

@@ -1,0 +1,20 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { serviceAvailability } from "../lib/dashboard/service-availability.ts";
+const now = Date.now(), metric = value => ({ value, unit: "percent", quality: "fresh", observedAt: new Date(now).toISOString(), validUntil: new Date(now + 60000).toISOString() });
+const fixture = () => ({ config: { enabled: true, presentation: { showStatus: true } }, resolved: true, resource: { reference: "container", status: "running", health: "unhealthy", evidence: { observedAt: new Date(now).toISOString(), validUntil: new Date(now + 60000).toISOString() } }, metrics: { cpuUsagePercent: metric(20), memoryUsagePercent: metric(98) } });
+test("availability follows process state, never healthcheck, and load requires both current CPU and RAM", () => {
+  const item = fixture();
+  assert.equal(serviceAvailability(item, false, now).label, "Disponível");
+  item.metrics.cpuUsagePercent.value = 90;
+  assert.equal(serviceAvailability(item, false, now).label, "Atenção");
+  item.metrics.memoryUsagePercent.value = 10;
+  assert.equal(serviceAvailability(item, false, now).label, "Disponível");
+  item.metrics.memoryUsagePercent.value = 90; item.metrics.cpuUsagePercent.quality = "stale";
+  assert.equal(serviceAvailability(item, false, now).label, "Disponível");
+  item.resource.status = "stopped";
+  assert.equal(serviceAvailability(item, false, now).label, "Indisponível");
+  assert.equal(serviceAvailability(item, true, now).label, "Desatualizado");
+  item.resolved = false;
+  assert.equal(serviceAvailability(item, false, now).label, "Sem dados");
+});

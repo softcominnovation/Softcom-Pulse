@@ -14,7 +14,7 @@ export function DialogContent({ className, children, hideClose = false, ...props
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-[var(--pulse-backdrop)] backdrop-blur-[4px]" />
-      <DialogPrimitive.Content className={cn("fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-32px)] w-[540px] max-w-[calc(100vw-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-dialog border border-[var(--pulse-dialog-border)] bg-popover text-popover-foreground shadow-[0_25px_100px_#0008]", className)} {...props}>
+      <DialogPrimitive.Content className={cn("fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100%-32px)] w-[540px] max-w-[calc(100%-32px)] -translate-x-1/2 -translate-y-1/2 flex-col rounded-dialog border border-[var(--pulse-dialog-border)] bg-popover text-popover-foreground shadow-[0_25px_100px_#0008]", className)} {...props}>
         {children}
         {!hideClose && <DialogPrimitive.Close asChild><Button variant="default" size="icon" aria-label="Fechar diálogo" className="absolute top-4 right-4"><X aria-hidden="true" /></Button></DialogPrimitive.Close>}
       </DialogPrimitive.Content>

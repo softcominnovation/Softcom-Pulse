@@ -21,6 +21,7 @@ Prisma gerencia `monitored_resource_config`, `pulse_settings` e `vm_template_con
 
 | Rota | Resultado |
 |---|---|
+| `GET /api/settings/resources` | `{data: ResourceConfig[]}` ordenado por displayOrder/UUID, independente do Redis; usado pela administração de preferências existentes |
 | `GET /api/monitoring/services` | Envelope de leitura com `data: ConfiguredResource[]`, incluindo configurações desabilitadas e alvos ausentes |
 | `GET /api/monitoring/services/:id` | Envelope com `data: ConfiguredResource`; UUID inexistente: 404 |
 | `POST /api/monitoring/services` | JSON da configuração, sem id/timestamps; 201 `{data: ResourceConfig}` |
@@ -30,9 +31,34 @@ Prisma gerencia `monitored_resource_config`, `pulse_settings` e `vm_template_con
 
 PATCH preserva campos omitidos. Se `presentation` for enviado, substitui o objeto inteiro, aplicando defaults aos campos omitidos dentro dele. Alteração de tipo deve fornecer os seletores e a apresentação compatíveis. Campos desconhecidos, telemetria, UUIDs inválidos e JSON inválido retornam 400. Conflito de unicidade retorna 409. Ordenação: `displayOrder`, depois UUID.
 
+Aplicações fora do Zabbix ficam em `external_service` e nas amostras `external_service_sample`. Não entram em `monitored_resource_config`. O segredo não sai na resposta: a leitura traz `secretConfigured`. Cada cadastro tem `timeoutMs`, de 1000 a 30000, padrão 5000. PATCH exige `expectedRevision`. Há no máximo 100 cadastros.
+
+| Rota | Resultado |
+|---|---|
+| `GET /api/monitoring/external-services` | `{data}` sem segredo. Cada item inclui `uptime`: `reason`, `latencyMs`, `checkedAt`, `uptime24h` e `strip` com as últimas 40 consultas. Falha do Redis deixa `uptime` vazio e a lista continua |
+| `POST /api/monitoring/external-services` | 201 `{data}` |
+| `PATCH /api/monitoring/external-services/:id` | 200 `{data}`; revisão divergente: 409 `revision_conflict` |
+| `DELETE /api/monitoring/external-services/:id` | 204; remove o cadastro e as amostras |
+| `GET /api/monitoring/external-services/:id/history?range=24h\|7d\|30d` | `{data}` com um ponto `{checkedAt, reason, latencyMs}` por amostra da janela, sem downsampling, e o resumo `uptime24h`, `uptime7d`, `uptime30d` |
+
+VPS avulsas ficam em `standalone_vps`, `vps_stack` e `vps_monitor_sample`. Não entram em `monitored_resource_config` nem em `external_service`. A lista e o detalhe do cadastro devolvem `apiKey` para o formulário de edição. A visão geral não devolve a chave. A leitura também traz `monitorConfigured`. `provider` é texto opcional, até 120 caracteres; vazio fica nulo. URL base e chave entram juntas ou saem juntas; o par incompleto responde 422 `monitor_incomplete`. Há no máximo 100 VPS e 50 stacks por VPS.
+
+| Rota | Resultado |
+|---|---|
+| `GET /api/monitoring/standalone-vps` | `{data}` com `apiKey` para edição. Cada item inclui `monitorConfigured`, `monitorState` e `strip`. A visão geral omite `apiKey` |
+| `POST /api/monitoring/standalone-vps` | 201 `{data}` |
+| `PATCH /api/monitoring/standalone-vps/:id` | 200 `{data}`; revisão divergente: 409 `revision_conflict` |
+| `DELETE /api/monitoring/standalone-vps/:id` | 204; remove a VPS, as stacks e as amostras |
+| `GET /api/monitoring/standalone-vps/:id?range=24h\|7d\|30d` | `{data}` com cadastro, `apiKey`, stacks, último resultado e amostras da janela |
+| `POST /api/monitoring/standalone-vps/:id/stacks` | 201 `{data}` |
+| `PATCH /api/monitoring/standalone-vps/:id/stacks/:stackId` | 200 `{data}` |
+| `DELETE /api/monitoring/standalone-vps/:id/stacks/:stackId` | 204 |
+
+O overview ganha `standaloneVps` só com as linhas em destaque. VPS inativa ou sem monitor traz faixa vazia. Isso não altera `externalServices` nem os problemas do Zabbix.
+
 Seletores são sensíveis a maiúsculas/minúsculas. Prefixo `evolution_evolution` casa o nome exato ou tasks iniciadas em `evolution_evolution.`; também se aceita o prefixo com ponto explícito. Não casa `evolution_evolution_backup`. `name_contains` busca trecho literal. Regex usa [RE2JS](https://github.com/le0pard/re2js), versão fixada 2.8.6, com avaliação linear e limite de 256 caracteres no padrão e 512 no nome; não usa RegExp nativo com padrão do usuário. Sintaxe não suportada, incluindo backreferences, retorna 400.
 
-A resolução usa host + seletor: um candidato é `resolved`, zero é `missing`, vários são `ambiguous`. Nunca escolhe o primeiro arbitrariamente nem agrega réplicas Swarm. Na criação ou alteração da identidade/seletor, inventário disponível com múltiplos candidatos retorna 400 `selector_ambiguous`. Sem inventário ou cache disponível, a configuração pode ser salva; alvo ausente também é permitido. Uma configuração que ficou ambígua após nova coleta continua editável e informa a ambiguidade na leitura. Mudar só nome/apresentação não exige resolver novamente o seletor no write.
+A resolução usa host + seletor: um candidato é resolved, zero é missing, vários são ambiguous. Na criação ou alteração efetiva de identidade/seletor, múltiplos candidatos retornam 400 selector_ambiguous; ausência do alvo retorna 400 resource_not_discovered; descoberta indisponível/stale retorna 409 resource_inventory_unavailable. Preferências de uma configuração existente continuam editáveis quando o alvo desaparece ou se torna ambíguo. Reenviar a mesma identidade não exige nova descoberta.
 
 ## Apresentação compartilhada
 
@@ -43,11 +69,15 @@ A resolução usa host + seletor: um candidato é `resolved`, zero é `missing`,
 | `GET /api/settings/presentation` | 200 `{data: PresentationDocument, updatedAt: ISO}` |
 | `PUT /api/settings/presentation` | Corpo `{expectedRevision, settings}`; 200 no mesmo formato do GET |
 
-`settings` contém `schemaVersion: 1`, `defaultTvMode`, `rotation: {autoStart, intervalSeconds}` e `screens`. `revision` é emitida exclusivamente pelo servidor. PUT troca o documento inteiro, compara a revisão e incrementa atomicamente. Um concorrente com revisão vencida recebe 409 `revision_conflict`; precisa recarregar e reconciliar. Não existe sobrescrita silenciosa. As gravações compartilham advisory lock transacional `734021003`, distinto da trava de migrations.
+`settings` contém schemaVersion 2, defaultTvMode, displayScalePercent, idlePresentation, rotation e screens. A versão 1 continua aceita durante a transição. revision é emitida pelo servidor. PUT troca o documento inteiro, compara expectedRevision e incrementa atomicamente. Revisão vencida retorna 409 revision_conflict; exige recarregar/revisar sem sobrescrita automática. Gravações e migration de opções compartilham advisory lock transacional 734021003.
+
+`displayScalePercent` aceita somente números **100, 110, 120 ou 125**, padrão **110**. Controla o tamanho de leitura apenas na raiz em TV ou fullscreen, aplicado uma única vez. Campo ausente em v1/v2 recebe o default na leitura e no próximo salvamento; a leitura não modifica o registro/revisão. Valores fora da lista, null, boolean e string retornam 400 invalid_request. É configuração humana compartilhada, não telemetria nem preferência local. A adição é compatível com o JSON existente e não exige migration nem altera telas, UUIDs ou larguras.
+
+`idlePresentation`: objeto estrito `{enabled: boolean, afterMinutes: integer, requestFullscreen: boolean}`, defaults **false/5/true**. `afterMinutes` deve ficar entre 1 e 120, inclusive quando desabilitado; strings, nulls, frações, campos desconhecidos e valores fora dos limites são rejeitados com 400. Ausência do objeto/campos em v1/v2 recebe defaults na leitura, sem regravar/revisionar o documento, e no próximo PUT. Configura a ativação por inatividade na raiz; fullscreen é tentativa sujeita à permissão do navegador, nunca promessa. Cronômetro, atividade e estado real dos modos são locais, não escritos no banco. Sem migration, nova rota ou mudança de telemetria.
 
 Tela: `{id, name, enabled, layout, blocks}`. Nome de 1–80 caracteres; layout `overview|wall`. De uma a três telas no total, contando desabilitadas, e pelo menos uma habilitada. A ordem dos arrays é a ordem de exibição. Cada tela tem no máximo 24 blocos; uma tela habilitada precisa de pelo menos um bloco habilitado. Todos os IDs de tela e bloco são UUIDs únicos no documento.
 
-Bloco: `{id, type, enabled, width, resourceConfigId?}`. Largura `standard|wide|full`, sem coordenadas, CSS, HTML, scripts ou URLs. Somente `resource_card` exige/aceita `resourceConfigId`, apontando para configuração existente com enabled e dashboardEnabled true. Mesma configuração pode aparecer em telas diferentes. O bloco respeita as métricas visíveis da configuração do recurso.
+Bloco v2: `{id, type, enabled, width, options, resourceConfigId?}`. Largura standard/wide/full. Até seis blocos habilitados e 24 totais por tela; v1 mantém o limite antigo. Somente resource_card exige resourceConfigId habilitado para destaque. options usa allowlist/defaults por tipo em lib/config/presentation.ts; contratos e comportamento em [Administração](administration.md). hostKeys do inventário de containers aceita até 32 chaves únicas do escopo persistido. Desconhecidas retornam 400 invalid_host_reference.
 
 | Tipo | Contrato BFF/gravação nesta entrega | Interface prevista |
 |---|---|---|
@@ -59,13 +89,13 @@ Bloco: `{id, type, enabled, width, resourceConfigId?}`. Largura `standard|wide|f
 | host_inventory | disponível; Host[] operacional | fase 06 implementada |
 | container_inventory | disponível; Container[] agregado dos hosts do escopo | fase 07 implementada |
 
-Disponibilidade aqui significa contrato do bloco no BFF. O dashboard renderiza os sete tipos acima; comportamento em [Interface](ui.md) e [Infraestrutura](infrastructure.md). O editor administrativo permanece previsto para a fase 08. O novo renderer não adiciona telas nem altera composições salvas.
+Os sete tipos estão implementados e disponíveis no editor em `/admin/configuracoes`. A composição muda somente no salvamento explícito; detalhes em [Administração](administration.md).
 
 `intervalSeconds` inteiro de 5 a 300, default 20. AutoStart exige duas telas habilitadas com bloco habilitado disponível; ausência de telemetria não desabilita uma tela. A reprodução revalida essa condição. Tela atual, pausa, contador, formato temporário e fullscreen não são gravados neste documento.
 
-DELETE de configuração remove todos os seus resource_cards na mesma transação, incrementando a revisão da apresentação se houve vínculo removido. Se uma tela ficar vazia, ou habilitada sem bloco habilitado, recebe um summary novo. A tela, a ordem e o layout são preservados. Desativação/retirada do destaque preserva o vínculo no documento, mas o overview oculta o conteúdo e marca o bloco unavailable; o futuro editor deve sinalizar o vínculo inválido. Novo PUT exige corrigi-lo. Apresentação pode ser lida/salva mesmo com Redis fora do ar.
+DELETE de configuração remove todos os seus resource_cards na mesma transação, incrementando a revisão da apresentação se houve vínculo removido. Se uma tela ficar vazia, ou habilitada sem bloco habilitado, recebe um summary novo. A tela, a ordem e o layout são preservados. Desativação/retirada do destaque preserva o vínculo no documento, mas o overview oculta o conteúdo e marca o bloco unavailable; o editor sinaliza a referência indisponível. Novo PUT exige corrigi-lo. Apresentação pode ser lida/salva mesmo com Redis fora do ar.
 
-As migrations `20261003103000_dashboard_layout` e `20261003120000_compact_dashboard` ajustam exclusivamente a composição inicial reconhecida: preservam UUIDs e incrementam revisão sob a mesma trava de apresentação. A segunda estabelece destaques acima e dois painéis amplos abaixo. Nome, ordem, largura, telas ou reprodução personalizados não são substituídos. São migrations de dados, sem tabela adicional. SchemaVersion permanece 1 e o teto atual continua 24; options/filtros específicos por bloco ainda não são aceitos.
+As migrations de layout anteriores permanecem imutáveis. A migration 20261003180000_presentation_options converte v1 compatível para v2, preservando composição/IDs e incrementando revision uma única vez. V1 com mais de seis blocos habilitados permanece intacta e reproduzível. Reexecução não modifica v2. Defaults v1 são resolvidos em memória nas leituras.
 
 ## Leituras de monitoramento
 
@@ -95,7 +125,7 @@ History acrescenta `technicalReference`, `coverageLimited` e `states`. Séries n
 
 Histórico tem timeout total de 25s, fila global limitada, no máximo três chamadas simultâneas por processo e refreshAfterMs de 60000. Não é pré-carregado nem persistido no Redis/PostgreSQL. A identidade opaca muda no redeploy do container. A UI de infraestrutura cancela a seleção anterior e descarta respostas de outra identidade/janela; o BFF propaga o sinal de cancelamento HTTP. O cache de página e o orçamento por perspectiva estão em [Infraestrutura](infrastructure.md).
 
-Overview mantém `summary`, `highlightedResources`, `problems`, `asgardSummary`, além de `screenId`, `presentationRevision` e `blocks`. Cada bloco habilitado: `{blockId, type, data, availability, stale, lastUpdated}`. UUID de tela inválido retorna 400; tela ausente/desabilitada, 404. Os recursos destacados retornados correspondem aos blocos da tela selecionada. Só seus inventários Docker são lidos, exceto quando essa tela contém `container_inventory`: nesse caso, a leitura agrega o inventário de todos os hosts do escopo. Outra tela não dispara leitura de cards/históricos. Resumo e problemas permanecem no envelope tradicional. Configurações gerais são buscadas separadamente.
+Overview mantém summary, highlightedResources, problems, asgardSummary, screenId, presentationRevision e blocks. Acrescenta `externalServices` e `uptimeBoard`, lidos só do Redis da sonda. Falha dessa leitura devolve listas vazias e não altera `stale` nem a ordem de `highlightedResources`. O bloco `uptime_list`, quando habilitado na tela, recebe `uptimeBoard` em `data` e fica com `stale: false` mesmo se a sincronização do Zabbix falhar. Sem esse bloco, `uptimeBoard` vem vazio. Cada bloco habilitado inclui `{blockId, type, options, data, availability, stale, lastUpdated}`. options contém defaults efetivos também na leitura v1, sem gravar. O renderer aplica ordenação/filtros/janela; o BFF não trunca o inventário. UUID inválido retorna 400; tela ausente/desabilitada, 404. Só são consultados os inventários dos destaques visíveis, exceto container_inventory, que agrega os hosts do escopo. Não há requests de histórico por bloco/linha.
 
 ## Serviços e containers de uma VM
 
@@ -180,6 +210,6 @@ Retenção: SNAPSHOT_TTL_SECONDS default 300s. Freshness do ciclo: SNAPSHOT_STAL
 
 ## Erros e verificação
 
-Erros têm `{error: {code}}`, sem stack, URL, SQL ou payload de origem. 400: entrada, query duplicada/desconhecida, seletor inválido/ambíguo ou referência inválida; 401: sessão; 404: recurso/tela; 409: revisão/unicidade; 503: banco/cache/configuração/snapshot indisponível. JSON exige Content-Type application/json e no máximo 64 KiB. Defeito inesperado retorna 500 internal_error.
+Erros têm `{error: {code}}`, sem stack, URL, SQL ou payload de origem. Validação Zod acrescenta `fields: [{path, message}]` com caminho e mensagem genérica, sem valores recebidos. 400: entrada, query, seletor ou referência inválida; 401: sessão; 404: recurso/tela; 409: revisão/unicidade ou descoberta indisponível para nova identidade; 503: dependência/configuração/snapshot indisponível. JSON exige Content-Type application/json e no máximo 64 KiB. Defeito inesperado retorna 500 internal_error.
 
 Testes cobrem schema, NULL/zero, defaults/PATCH, regex patológica, migrations reais, unicidade concorrente, revisão, exclusão e referências, seleção por tela, ausência/falha/stale/generation, autenticação e pacote standalone. Integração usa banco PostgreSQL temporário e Redis DB 15 vazio com trava; runtime usa outro banco temporário e DB 14 vazio somente para leitura. Não usam telemetria permanente nem conta corporativa real.

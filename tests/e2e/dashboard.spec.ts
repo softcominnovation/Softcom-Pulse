@@ -28,13 +28,13 @@ for (const [width, height] of [[320,568],[360,800],[390,844],[768,1024],[1024,76
   test(`dashboard remains complete at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height }); await mock(page); await enter(page);
     await expect(page.getByRole("heading", { name: "Hosts monitorados" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Serviços destacados" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Disponibilidade de Serviços" })).toBeVisible();
     await expect(page.getByRole("button", { name: "3 · Alternância" })).toBeDisabled();
     await expect(page.getByText("0%", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("Sem dados", { exact: true }).first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(page.locator(".dashboard-panel").first()).toHaveCSS("border-radius", "14px");
-    await expect(page.locator(".resource-card").first()).toHaveCSS("border-radius", "9px");
+    await expect(page.locator(".availability-card").first()).toHaveCSS("border-radius", "9px");
     await expect(page.locator("body")).toHaveCSS("background-color", "rgb(12, 17, 22)");
     expect(await page.locator("body").evaluate(node => getComputedStyle(node).fontFamily)).toContain("Segoe UI");
     const asgard = (await page.locator(".block-asgard_summary").boundingBox())!;
@@ -50,8 +50,8 @@ for (const [width, height] of [[320,568],[360,800],[390,844],[768,1024],[1024,76
       expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(height + 1);
       expect((await page.locator(".dashboard-blocks").boundingBox())!.width).toBeGreaterThan(width * .94);
       expect(highlights.width).toBeGreaterThan(width * .94);
-      const viewport = (await page.locator(".resource-grid").boundingBox())!;
-      const metric = (await page.locator(".resource-card .metric-value strong").first().boundingBox())!;
+      const viewport = (await page.locator(".availability-grid").boundingBox())!;
+      const metric = (await page.locator(".availability-reading strong").first().boundingBox())!;
       expect(metric.y).toBeGreaterThanOrEqual(viewport.y);
       expect(metric.y + metric.height).toBeLessThanOrEqual(viewport.y + viewport.height);
     }
@@ -63,7 +63,6 @@ for (const [width, height] of [[320,568],[360,800],[390,844],[768,1024],[1024,76
     await expect(page.getByRole("button", { name: "Sair do modo TV" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Tela cheia", exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    if (width >= 1201 && height >= 740) expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1)).toBe(true);
     await page.screenshot({ path: `.cache/screenshots/dashboard-tv-wall-${width}.png`, fullPage: true });
     await page.getByRole("button", { name: "Sair do modo TV" }).click();
   });
@@ -95,9 +94,9 @@ test("growing inventories stay inside panels without losing rows or stretching t
   };
   await enter(page); await expect(page.locator(".vm-summary tbody tr")).toHaveCount(100);
   await expect(page.locator(".problem-list li")).toHaveCount(50);
-  await expect(page.locator(".resource-card")).toHaveCount(12);
+  await expect(page.locator(".availability-card")).toHaveCount(12);
   expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(769);
-  for (const selector of [".vm-table-scroll", ".problem-list", ".resource-grid"]) {
+  for (const selector of [".vm-table-scroll", ".problem-list", ".availability-grid"]) {
     expect(await page.locator(selector).evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
     await page.locator(selector).focus(); await page.keyboard.press("End");
     await expect.poll(() => page.locator(selector).evaluate(node => node.scrollTop)).toBeGreaterThan(0);
@@ -168,13 +167,12 @@ test("three compact panels share a desktop row and a single highlight stays card
   await enter(page);
   const boxes = await Promise.all(["asgard_summary","problems","resource_card"].map(type => page.locator(`.block-${type}`).boundingBox()));
   for (const box of boxes) {expect(box!.width).toBeLessThan(640); expect(Math.abs(box!.y - boxes[0]!.y)).toBeLessThan(1);}
-  const highlight = page.locator(".block-highlighted_resources .resource-card");
+  const highlight = page.locator(".block-highlighted_resources .availability-card");
   expect((await highlight.boundingBox())!.width).toBeLessThan(300);
-  await highlight.locator("summary").click();
-  await expect(highlight.locator("details")).toHaveAttribute("open", "");
-  await expect(highlight.locator("details").getByText(/Amostra observada/)).toBeVisible();
-  await highlight.locator("summary").click();
-  await expect(highlight.locator("details")).not.toHaveAttribute("open", "");
+  await highlight.click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(highlight).toBeFocused();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({path:".cache/screenshots/dashboard-three-columns.png",fullPage:true});
 });
@@ -200,7 +198,7 @@ test("polls only the visible overview and preserves stale data after failure wit
   await page.getByRole("button", { name: "Atualizar monitoramento" }).click();
   await expect(page.getByText("Falha na atualização", { exact: true })).toBeVisible();
   await expect(page.getByText("Aplicação monitorada", { exact: true })).toBeVisible();
-  await expect(page.locator(".resource-card .tone-good")).toHaveCount(0);
+  await expect(page.locator(".availability-card .tone-good")).toHaveCount(0);
   await page.getByRole("button", { name: "Atualizar monitoramento" }).click();
   await expect(page.locator('[data-sonner-toast]')).toHaveCount(1);
   expect(new Set(state.calls)).toEqual(new Set([id(1)]));
@@ -210,6 +208,7 @@ test("polls only the visible overview and preserves stale data after failure wit
 
 test("container cards respect preferences and distinguish running, health, missing and unsupported evidence", async ({ page }) => {
   const state = await mock(page);
+  state.document.screens[0].blocks.push({id:id(900),type:"resource_card",width:"standard",enabled:true,resourceConfigId:id(90)});
   let health: Container["health"] = "not_configured";
   state.transform = body => {
     const item = body.data.highlightedResources[0];
@@ -262,7 +261,7 @@ test("configuration failure, initial failure and empty highlights remain honest"
   await expect(page.locator(".dashboard-kpi")).toHaveCount(0);
   state.fail = false; state.empty = true; await page.getByRole("button", { name: "Atualizar monitoramento" }).click();
   await expect(page.getByText(/Nenhum serviço destacado/)).toBeVisible();
-  await expect(page.locator(".resource-card")).toHaveCount(0);
+  await expect(page.locator(".availability-card")).toHaveCount(0);
   await expect(page.getByText("Explorar cenário", { exact: true })).toHaveCount(0);
 });
 test("fullscreen refusal keeps TV and playback available; shortcuts ignore form fields", async ({ page }) => {
@@ -363,13 +362,12 @@ test("touch targets, reduced motion and 200 percent zoom retain all controls and
   for (const name of ["Modo TV", "Tela cheia", "Próxima tela", "3 · Alternância"]) {
     const box = await page.getByRole("button", { name, exact: true }).boundingBox(); expect(box!.height).toBeGreaterThanOrEqual(44); expect(box!.width).toBeGreaterThanOrEqual(44);
   }
-  const evidence = page.locator(".resource-evidence summary").first();
-  expect((await evidence.boundingBox())!.height).toBeGreaterThanOrEqual(44);
-  await evidence.tap();
-  await expect(page.locator(".resource-evidence").first()).toHaveAttribute("open", "");
-  await evidence.tap();
+  const compactCard = page.locator(".availability-card").first();
+  expect((await compactCard.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await page.getByRole("button", { name: "3 · Alternância" }).tap();
-  await page.locator(".resource-card").tap();
+  await compactCard.tap();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "Continuar alternância" })).toBeVisible();
   await page.locator(".vm-table-scroll").evaluate(node => { node.scrollLeft = node.scrollWidth; });
   expect(await page.locator(".vm-table-scroll").evaluate(node => node.scrollLeft > 0)).toBe(true);

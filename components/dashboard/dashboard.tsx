@@ -16,6 +16,7 @@ import { DashboardBlock } from "./blocks";
 import { PlayerToolbar } from "./player-toolbar";
 import { shortcutAllowed } from "./display-controls";
 import { usePoll } from "./use-poll";
+import { useIdlePresentation } from "./use-idle-presentation";
 import { EvidenceTimeContext } from "./metrics";
 
 const configurationDelay = () => 60000;
@@ -32,13 +33,18 @@ export function Dashboard() {
   const loadConfiguration = useCallback(async (signal: AbortSignal) => {
     const response = await api.get("/settings/presentation", { signal });
     const document = presentationDocumentSchema.parse(response.data.data);
+    if (signal.aborted) return document;
     if (!store.getState().document) useUiStore.getState().setTvMode(document.defaultTvMode);
     store.getState().configure(document);
     return document;
   }, [store]);
+  useEffect(() => {
+    if (player.document) useUiStore.getState().setDisplayScalePercent(player.document.displayScalePercent);
+  }, [player.document]);
   const configuration = usePoll<PresentationDocument>("presentation", loadConfiguration, configurationDelay, "Não foi possível atualizar as configurações do dashboard.");
   const refreshConfiguration = configuration.refresh;
   const screen = playableScreens(player.document).find(item => item.id === player.screenId);
+  useIdlePresentation(screen ? player.document?.idlePresentation : undefined);
   const revision = player.document?.revision;
   const loadOverview = useCallback(async (signal: AbortSignal) => {
     const response = await api.get<ReadResult<Overview>>("/dashboard/overview", { params: { screenId: player.screenId }, signal }).catch(error => {
@@ -86,11 +92,11 @@ export function Dashboard() {
     {!player.document && !configuration.failed && <p className="panel-empty" role="status">Carregando as telas configuradas…</p>}
     {player.document && !screen && <div className="dashboard-banner banner-warn" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Nenhuma composição utilizável</strong><p>A configuração precisa de uma tela habilitada com blocos disponíveis.</p></div><Button onClick={configuration.refresh}>Recarregar configuração</Button></div>}
     {screen && <>
-      <div className={`dashboard-banner banner-${tone}`} role={overview.failed || result?.stale ? "alert" : "status"}>
+      <div className={`dashboard-banner dashboard-status-banner banner-${tone}`} role={overview.failed || result?.stale ? "alert" : "status"}>
         {tone === "warn" || tone === "bad" ? <TriangleAlert aria-hidden="true" /> : <Activity aria-hidden="true" />}
-        <div><strong>{title}</strong><p>{overview.failed ? result ? "A última leitura foi mantida. Os valores não representam confirmação do estado atual." : "Ainda não foi possível obter uma leitura. Tente novamente." : partial ? "Confira a data e a qualidade de cada amostra. Uma nova coleta não renova uma evidência antiga." : !hasData ? "Os indicadores serão exibidos quando houver evidência disponível." : "Dados do Zabbix · estado e qualidade avaliados por recurso."}</p></div>
+        <div><strong>{title}</strong><p>{overview.failed ? result ? "A última leitura foi mantida. Os valores não representam confirmação do estado atual." : "Ainda não foi possível obter uma leitura. Tente novamente." : result?.presentationStatus === "unavailable" ? "Nomes personalizados indisponíveis; identificações técnicas preservadas." : partial ? "Confira a data e a qualidade de cada amostra." : !hasData ? "Os indicadores serão exibidos quando houver evidência disponível." : "Dados do Zabbix · estado e qualidade avaliados por recurso."}</p></div>
         <div className="banner-update"><span>Última atualização</span><time dateTime={result?.lastUpdated ?? undefined}>{timestamp(result?.lastUpdated)}</time></div>
-        <Button size="icon" aria-label="Atualizar monitoramento" onClick={overview.refresh}><RefreshCw aria-hidden="true" /></Button>
+        <Button size="icon" aria-label="Atualizar monitoramento" title={`Última atualização: ${timestamp(result?.lastUpdated)}`} onClick={overview.refresh}><RefreshCw aria-hidden="true" /></Button>
       </div>
       <EvidenceTimeContext value={now}><div data-dashboard-content className="dashboard-blocks" aria-busy={overview.loading}>
         {!result && !overview.failed && <div className="dashboard-loading" role="status">Carregando os indicadores da tela…</div>}

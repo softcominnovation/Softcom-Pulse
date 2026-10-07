@@ -15,7 +15,7 @@ export async function protectedResponse(request: Request, action: () => Promise<
     return status === 204 ? new Response(null, { status, headers: { "Cache-Control": "no-store" } }) : authJson(body, status);
   } catch (error) {
     if (error instanceof AuthError || error instanceof BffError) return authJson({ error: { code: error.code } }, error.status);
-    if (error instanceof ZodError) return authJson({ error: { code: "invalid_request" } }, 400);
+    if (error instanceof ZodError) return authJson({ error: { code: "invalid_request", fields: error.issues.map(issue => ({ path: issue.path.map(String).join("."), message: "Valor inválido." })) } }, 400);
     return authJson({ error: { code: "internal_error" } }, 500);
   }
 }

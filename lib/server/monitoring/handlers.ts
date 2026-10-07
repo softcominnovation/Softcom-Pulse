@@ -1,17 +1,31 @@
 import "server-only";
 import { z } from "zod";
 import { hostKeySchema, uuidSchema, historyRangeSchema } from "../../config/resources.ts";
-import { createResource, updateResource, deleteResource, getPresentation, savePresentation, getResource } from "../config/repository.ts";
+import { createResource, updateResource, deleteResource, getPresentation, savePresentation, getResource, listResources } from "../config/repository.ts";
 import { jsonBody, protectedResponse, queryParams } from "../bff.ts";
 import { readHosts, readHost, readContainers, readProblems, readServices, readOverview, readHistory } from "./read.ts";
 import { templateKeySchema } from "../../config/templates.ts";
 import { listTemplateConfigs, saveTemplateConfig } from "../config/templates.ts";
 import { readTemplates } from "./templates.ts";
 import { readVmWorkloads } from "./vm-workloads.ts";
+import { vmKeySchema } from "../../config/vms.ts";
+import { resourceContextSchema } from "../../config/resource-context.ts";
+import { listVmConfigs, saveVmConfig } from "../config/vms.ts";
 
 type Params<K extends string> = { params: Promise<Record<K, string>> };
 const emptyQuery = z.strictObject({});
 const historyQuery = z.strictObject({ range: historyRangeSchema.default("1h") });
+
+export function vmConfigsGet(request: Request) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listVmConfigs() }; });
+}
+export function vmConfigPut(request: Request, context: Params<"vmKey">) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await saveVmConfig(vmKeySchema.parse((await context.params).vmKey), await jsonBody(request)) }; });
+}
+
+export function resourceConfigsGet(request: Request) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listResources() }; });
+}
 
 export function templatesGet(request: Request) {
   return protectedResponse(request, async () => readTemplates(queryParams(request, z.strictObject({ hostKey: hostKeySchema.optional() }))));
@@ -64,10 +78,10 @@ export function serviceGet(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readServices(uuidSchema.parse((await context.params).id)); });
 }
 export function servicePost(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await createResource(await jsonBody(request)) }; }, 201);
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); const { context, ...body } = z.object({ context: resourceContextSchema.optional() }).passthrough().parse(await jsonBody(request)); return { data: await createResource(body, context) }; }, 201);
 }
 export function servicePatch(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await updateResource(uuidSchema.parse((await context.params).id), await jsonBody(request)) }; });
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); const { context: origin, ...body } = z.object({ context: resourceContextSchema.optional() }).passthrough().parse(await jsonBody(request)); return { data: await updateResource(uuidSchema.parse((await context.params).id), body, origin) }; });
 }
 export function serviceDelete(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return deleteResource(uuidSchema.parse((await context.params).id)); }, 204);

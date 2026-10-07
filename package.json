@@ -43,6 +43,8 @@
     "collector": "node --conditions=react-server --env-file-if-exists=.env collector/index.mjs",
     "collector:once": "node --conditions=react-server --env-file-if-exists=.env collector/index.mjs --once",
     "collector:scope": "node --conditions=react-server --env-file-if-exists=.env collector/configure-scope.mjs",
+    "probe": "node --conditions=react-server --env-file-if-exists=.env collector/probe.mjs",
+    "probe:once": "node --conditions=react-server --env-file-if-exists=.env collector/probe.mjs --once",
     "check": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {

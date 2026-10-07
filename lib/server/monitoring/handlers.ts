@@ -11,6 +11,8 @@ import { readVmWorkloads } from "./vm-workloads.ts";
 import { vmKeySchema } from "../../config/vms.ts";
 import { resourceContextSchema } from "../../config/resource-context.ts";
 import { listVmConfigs, saveVmConfig } from "../config/vms.ts";
+import { externalServiceHistoryRangeSchema } from "../../config/external-services.ts";
+import { createExternalService, deleteExternalService, externalServiceHistory, listExternalServices, updateExternalService } from "../probe/repository.ts";
 
 type Params<K extends string> = { params: Promise<Record<K, string>> };
 const emptyQuery = z.strictObject({});
@@ -85,6 +87,21 @@ export function servicePatch(request: Request, context: Params<"id">) {
 }
 export function serviceDelete(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return deleteResource(uuidSchema.parse((await context.params).id)); }, 204);
+}
+export function externalServicesGet(request: Request) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listExternalServices() }; });
+}
+export function externalServicePost(request: Request) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await createExternalService(await jsonBody(request)) }; }, 201);
+}
+export function externalServicePatch(request: Request, context: Params<"id">) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await updateExternalService(uuidSchema.parse((await context.params).id), await jsonBody(request)) }; });
+}
+export function externalServiceDelete(request: Request, context: Params<"id">) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); await deleteExternalService(uuidSchema.parse((await context.params).id)); }, 204);
+}
+export function externalServiceHistoryGet(request: Request, context: Params<"id">) {
+  return protectedResponse(request, async () => ({ data: await externalServiceHistory(uuidSchema.parse((await context.params).id), queryParams(request, z.strictObject({ range: externalServiceHistoryRangeSchema.default("24h") })).range) }));
 }
 export function hostHistoryGet(request: Request, context: Params<"hostKey">) {
   return protectedResponse(request, async () => readHistory({ type: "host", hostKey: hostKeySchema.parse((await context.params).hostKey), reference: null }, queryParams(request, historyQuery).range, request.signal));

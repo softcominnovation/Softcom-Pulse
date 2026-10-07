@@ -10,7 +10,7 @@ for (const dev of [false, true]) {
     const web = dev ? "pulse-dev" : "pulse", db = dev ? "pulse_postgres_dev" : "pulse_postgres", cache = dev ? "pulse_redis_dev" : "pulse_redis";
     assert.equal(c.version, "3.8");
     assert.deepEqual(c.networks, { network_public: { external: true, name: "network_public" } });
-    assert.deepEqual(Object.keys(c.services), [web, web + "-collector", db, cache]);
+    assert.deepEqual(Object.keys(c.services), [web, web + "-collector", web + "-probe", db, cache]);
     for (const [name, service] of Object.entries(c.services)) {
       assert.deepEqual(service.networks, ["network_public"]);
       assert.equal(service.ports, undefined);
@@ -27,6 +27,12 @@ for (const dev of [false, true]) {
     assert.ok(app.environment.REDIS_URL.includes(cache));
     assert.equal(c.services[web + "-collector"].deploy.update_config.order, "stop-first");
     assert.deepEqual(c.services[web + "-collector"].command, ["node", "--conditions=react-server", "collector/index.mjs"]);
+    const probe = c.services[web + "-probe"];
+    assert.deepEqual(probe.command, ["node", "--conditions=react-server", "collector/probe.mjs"]);
+    assert.equal(probe.environment.PROBE_INTERVAL_MS, "${PROBE_INTERVAL_MS:-60000}");
+    assert.equal(probe.environment.ZABBIX_API_URL, undefined);
+    assert.equal(probe.environment.ZABBIX_API_TOKEN, undefined);
+    assert.equal(probe.deploy.labels, undefined);
     assert.deepEqual(c.services[cache].command, ["redis-server", "--appendonly", "yes"]);
     assert.ok(c.services[db].environment.POSTGRES_PASSWORD.includes(dev ? "POSTGRES_PASSWORD_DEV:" : "POSTGRES_PASSWORD:"));
     assert.ok(app.deploy.labels.includes("traefik.http.routers." + web + ".tls.certresolver=letsencryptresolver"));

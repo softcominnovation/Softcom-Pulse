@@ -17,6 +17,7 @@ import { queryHistory } from "../zabbix/history.ts";
 import { isVmTemplate, operationalHost, operationalProblems } from "./virtual-machines.ts";
 import { readDisplayNames } from "./display-names.ts";
 import { visibleMetric } from "../../services/presentation.ts";
+import { readProbeOverview } from "../probe/overview.ts";
 
 export function linkedMachineName(hostKey: string, hosts: Host[]) {
   const vm = hosts.flatMap(host => host.vms).find(item => item.linuxHostKey === hostKey);
@@ -130,7 +131,8 @@ export async function readOverview(screenId?: string) {
     const result = readResult(data, current.batch, keys);
     return { blockId: block.id, type: block.type, options: effectiveOptions(block), data, availability: !blockCatalog[block.type].available || (block.type === "resource_card" && !data) ? "unavailable" : result.availability, stale: result.stale, lastUpdated: result.lastUpdated };
   });
-  const data: Overview = { ...base, highlightedResources: resources, problems, screenId: screen.id, presentationRevision: presentation.data.revision, blocks };
+  const probe = await readProbeOverview(visibleBlocks.some(block => block.type === "uptime_list")).catch(() => ({ externalServices: [], uptimeBoard: [] }));
+  const data: Overview = { ...base, highlightedResources: resources, problems, screenId: screen.id, presentationRevision: presentation.data.revision, blocks, externalServices: probe.externalServices, uptimeBoard: probe.uptimeBoard };
   return { ...readResult(data, current.batch, current.keys), presentationStatus: names.status };
 }
 export async function readHistory(resource: History["resource"], window: History["window"] = "1h", signal?: AbortSignal) {

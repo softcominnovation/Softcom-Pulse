@@ -16,6 +16,11 @@ import { publishSnapshots, markSyncFailure, readSnapshotBatch, snapshotKeys as k
 import * as handlers from "../../lib/server/monitoring/handlers.ts";
 import { opaqueReference } from "../../lib/server/zabbix/observations.ts";
 import { saveVmConfig, listVmConfigs } from "../../lib/server/config/vms.ts";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { runProbeCycle } from "../../lib/server/probe/cycle.ts";
+import { listEnabledExternalServices, purgeExternalSamples } from "../../lib/server/probe/repository.ts";
+import { probeKeys } from "../../lib/server/probe/store.ts";
 
 function namedVmFixture(parentKey = "names-parent", id = "100", type = "qemu") {
   const parent = { ...host(parentKey), role: "hypervisor" };
@@ -187,7 +192,7 @@ test("migrated schema contains only human configuration and host uniqueness incl
   assert.equal((await getResource(a.id)).serviceType, null);
   await assert.rejects(createResource(hostConfig), error => error.status === 409);
   const { rows } = await getDatabase().query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name");
-  assert.deepEqual(rows.map(row => row.table_name), ["_prisma_migrations", "monitored_resource_config", "pulse_settings", "vm_display_config", "vm_template_config"]);
+  assert.deepEqual(rows.map(row => row.table_name), ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "pulse_settings", "vm_display_config", "vm_template_config"]);
   const invalid = [
     [randomUUID(), "host", "zabbix", "other", "exact_name", "x", {}],
     [randomUUID(), "docker_container", "zabbix", "other", null, null, {}],
@@ -647,4 +652,130 @@ test("resource creation needs current discovery, while existing preferences and 
   const response = await handlers.resourceConfigsGet(request()); assert.equal(response.status, 200); assert.ok((await response.json()).data.some(item => item.id === config.id));
   await assert.rejects(updateResource(config.id, { zabbixHostKey: "outside" }), error => error.code === "resource_inventory_unavailable");
   await deleteResource(config.id);
+});
+
+const appRoot = fileURLToPath(new URL("../..", import.meta.url));
+const externalInput = (path = "/health", extra = {}) => ({ displayName: "API externa", method: "GET", url: "https://1.1.1.1" + path, successMode: "http_status", authMode: "none", ...extra });
+function runProbeProcess(overrides = {}, unset = []) {
+  const env = { ...process.env, ...overrides };
+  for (const key of unset) delete env[key];
+  return new Promise(resolve => {
+    const child = spawn(process.execPath, ["--conditions=react-server", "collector/probe.mjs", "--once"], { cwd: appRoot, env });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", chunk => { stdout += chunk; });
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    child.on("close", code => resolve({ code, stdout, stderr }));
+  });
+}
+
+test("external services keep secrets out of reads and do not affect the Zabbix snapshot", async () => {
+  await publish({ [keys.hosts]: [host("probe-host")] });
+  const resource = await createResource({ ...hostConfig, zabbixHostKey: "probe-host", dashboardEnabled: true, displayOrder: 2 });
+  const before = await result(await handlers.overviewGet(request()));
+  const syncBefore = await cache.get(keys.sync);
+  const secret = "probe-secret-value";
+  const created = await result(await handlers.externalServicePost(request("/", "POST", externalInput("/json", { displayName: "Com segredo", successMode: "json_match", jsonPointer: "/status", expectedValue: "up", authMode: "header", headerName: "X-Api-Key", secret }))));
+  assert.equal(created.status, 201);
+  assert.equal(created.body.data.secretConfigured, true);
+  assert.equal(created.body.data.expectedValue, "up");
+  assert.equal(JSON.stringify(created.body).includes(secret), false);
+  const id = created.body.data.id;
+  touchedKeys.add(probeKeys.sync); touchedKeys.add(probeKeys.result(id));
+  const renamed = await result(await handlers.externalServicePatch(request("/", "PATCH", { expectedRevision: 1, displayName: "Nome novo" }), params({ id })));
+  assert.equal(renamed.status, 200); assert.equal(renamed.body.data.displayName, "Nome novo"); assert.equal(renamed.body.data.secretConfigured, true); assert.equal(renamed.body.data.revision, 2);
+  assert.equal(JSON.stringify(renamed.body).includes(secret), false);
+  assert.equal((await handlers.externalServicePatch(request("/", "PATCH", { expectedRevision: 1, displayName: "Atrasado" }), params({ id }))).status, 409);
+  const calls = [];
+  await runProbeCycle({ transport: async (url, method, headers) => { calls.push({ url: url.pathname, method, header: headers["X-Api-Key"] }); if (url.pathname.endsWith("/slow")) return { status: 200, body: "", latencyMs: 900, certNotAfter: null }; if (url.pathname.endsWith("/denied")) return { status: 401, body: secret, latencyMs: 15, certNotAfter: null }; if (url.pathname.endsWith("/json")) return { status: 200, body: JSON.stringify({ status: "up" }), latencyMs: 40, certNotAfter: "2030-01-01T00:00:00.000Z" }; throw Object.assign(new Error("timeout"), { code: "ETIMEDOUT" }); } });
+  assert.equal(calls.length, 1); assert.equal(calls[0].header, secret);
+  const stored = await cache.get(probeKeys.result(id));
+  assert.equal(stored.includes(secret), false); assert.equal(JSON.parse(stored).source, "probe"); assert.equal(JSON.parse(stored).data.reason, 0);
+  assert.equal(await cache.get(keys.sync), syncBefore);
+  const listed = await result(await handlers.externalServicesGet(request()));
+  assert.equal(JSON.stringify(listed.body).includes(secret), false);
+  const history = await result(await handlers.externalServiceHistoryGet(request("/?range=24h"), params({ id })));
+  assert.equal(history.status, 200); assert.equal(history.body.data.points.length, 1); assert.equal(history.body.data.points[0].reason, 0); assert.equal(JSON.stringify(history.body).includes(secret), false);
+  const column = await getDatabase().query("SELECT secret_ciphertext FROM external_service WHERE id = $1", [id]);
+  assert.equal(column.rows[0].secret_ciphertext.includes(secret), false);
+  const slow = await result(await handlers.externalServicePost(request("/", "POST", externalInput("/slow", { displayName: "Lento" }))));
+  const denied = await result(await handlers.externalServicePost(request("/", "POST", externalInput("/denied", { displayName: "Recusado" }))));
+  const down = await result(await handlers.externalServicePost(request("/", "POST", externalInput("/down", { displayName: "Caido" }))));
+  for (const item of [slow, denied, down]) touchedKeys.add(probeKeys.result(item.body.data.id));
+  await runProbeCycle({ transport: async (url) => { if (url.pathname.endsWith("/slow")) return { status: 200, body: "", latencyMs: 900, certNotAfter: null }; if (url.pathname.endsWith("/denied")) return { status: 401, body: "", latencyMs: 15, certNotAfter: null }; if (url.pathname.endsWith("/json")) return { status: 200, body: JSON.stringify({ status: "up" }), latencyMs: 40, certNotAfter: null }; throw Object.assign(new Error("timeout"), { code: "ETIMEDOUT" }); } });
+  const reasons = new Map((await getDatabase().query("SELECT url, reason FROM external_service_sample s JOIN external_service e ON e.id = s.service_id")).rows.map(row => [row.url, row.reason]));
+  assert.equal(Number(reasons.get("https://1.1.1.1/slow")), 1); assert.equal(Number(reasons.get("https://1.1.1.1/denied")), 2); assert.equal(Number(reasons.get("https://1.1.1.1/down")), 5);
+  await markSyncFailure();
+  assert.ok(await cache.get(probeKeys.result(id)));
+  const overview = await result(await handlers.overviewGet(request()));
+  assert.deepEqual(overview.body.data.highlightedResources.map(item => item.id), before.body.data.highlightedResources.map(item => item.id));
+  assert.equal(overview.body.stale, true);
+  assert.equal(overview.body.data.externalServices.length, 0);
+  assert.deepEqual(overview.body.data.uptimeBoard, []);
+  assert.equal((await handlers.externalServicePatch(request("/", "PATCH", { expectedRevision: 1, dashboardEnabled: true }), params({ id: slow.body.data.id }))).status, 200);
+  const highlighted = await result(await handlers.overviewGet(request()));
+  assert.deepEqual(highlighted.body.data.highlightedResources.map(item => item.id), before.body.data.highlightedResources.map(item => item.id));
+  assert.equal(highlighted.body.data.highlightedResources.some(item => item.id === slow.body.data.id), false);
+  assert.equal(highlighted.body.data.externalServices[0].id, slow.body.data.id);
+  assert.equal(highlighted.body.stale, true);
+  await getDatabase().query("ALTER TABLE external_service RENAME TO external_service_hidden_test");
+  try {
+    const isolated = await result(await handlers.overviewGet(request()));
+    assert.equal(isolated.status, 200);
+    assert.deepEqual(isolated.body.data.externalServices, []);
+    assert.deepEqual(isolated.body.data.highlightedResources.map(item => item.id), before.body.data.highlightedResources.map(item => item.id));
+  } finally { await getDatabase().query("ALTER TABLE external_service_hidden_test RENAME TO external_service"); }
+  assert.equal((await handlers.externalServiceDelete(request("/", "DELETE"), params({ id }))).status, 204);
+  assert.equal(Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM external_service_sample WHERE service_id = $1", [id])).rows[0].total), 0);
+  await getDatabase().query("DELETE FROM external_service");
+  await deleteResource(resource.id);
+});
+
+test("external history keeps one point per check and purge drops samples older than 30 days", async () => {
+  const created = await result(await handlers.externalServicePost(request("/", "POST", externalInput("/history", { displayName: "Historico" }))));
+  const id = created.body.data.id;
+  const recent = new Date();
+  const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+  await getPrisma().externalServiceSample.createMany({ data: [{ serviceId: id, checkedAt: recent, reason: 0, latencyMs: 100, httpStatus: 200 }, { serviceId: id, checkedAt: new Date(recent.getTime() - 1000), reason: 5, latencyMs: null, httpStatus: null }, { serviceId: id, checkedAt: new Date(recent.getTime() - 2000), reason: 2, latencyMs: 80, httpStatus: 401 }, { serviceId: id, checkedAt: old, reason: 0, latencyMs: 100, httpStatus: 200 }] });
+  const history = await result(await handlers.externalServiceHistoryGet(request("/?range=30d"), params({ id })));
+  assert.equal(history.body.data.points.length, 3);
+  assert.equal(history.body.data.summary.averageLatencyMs, 90);
+  assert.equal(history.body.data.summary.uptime30d.available, 1); assert.equal(history.body.data.summary.uptime30d.total, 3);
+  await purgeExternalSamples(new AbortController().signal);
+  const purged = await result(await handlers.externalServiceHistoryGet(request("/?range=30d"), params({ id })));
+  assert.equal(purged.body.data.points.length, 3);
+  assert.equal(Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM external_service_sample WHERE service_id = $1 AND checked_at < $2", [id, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)])).rows[0].total), 0);
+  assert.equal((await handlers.externalServiceHistoryGet(request("/?range=year"), params({ id }))).status, 400);
+  await handlers.externalServiceDelete(request("/", "DELETE"), params({ id }));
+});
+
+test("external registration rejects unsafe URLs and stops at 100 services", async () => {
+  for (const url of ["https://127.0.0.1/health", "https://localhost/health", "https://169.254.169.254/latest", "https://1.1.1.1/health?x=1"]) assert.equal((await handlers.externalServicePost(request("/", "POST", externalInput("", { url })))).status, 400);
+  await getDatabase().query("INSERT INTO external_service (display_name, method, url, success_mode, auth_mode) SELECT 'Limite ' || g, 'GET', 'https://1.1.1.1/limit/' || g, 'http_status', 'none' FROM generate_series(1, 100) AS g");
+  const limited = await result(await handlers.externalServicePost(request("/", "POST", externalInput("/one-more"))));
+  assert.equal(limited.status, 409); assert.equal(limited.body.error.code, "external_service_limit");
+  await getDatabase().query("DELETE FROM external_service");
+  const blocked = await getDatabase().query("INSERT INTO external_service (display_name, method, url, success_mode, auth_mode) VALUES ('Loop', 'GET', 'https://127.0.0.1/admin', 'http_status', 'none') RETURNING id");
+  let consulted = 0;
+  await runProbeCycle({ services: await listEnabledExternalServices(), transport: async () => { consulted += 1; return { status: 200, body: "", latencyMs: 1, certNotAfter: null }; } });
+  assert.equal(consulted, 0);
+  await getDatabase().query("DELETE FROM external_service WHERE id = $1", [blocked.rows[0].id]);
+});
+
+test("probe process defaults to 60s, refuses other intervals and does not take the template lock", async () => {
+  touchedKeys.add(probeKeys.sync);
+  const invalid = await runProbeProcess({ PROBE_INTERVAL_MS: "15000" });
+  assert.equal(invalid.code, 1); assert.match(invalid.stderr, /probe_configuration_invalid/); assert.equal(invalid.stdout.includes("probe_cycle"), false);
+  const fallback = await runProbeProcess({}, ["PROBE_INTERVAL_MS"]);
+  assert.equal(fallback.code, 0, fallback.stderr); assert.match(fallback.stdout, /"intervalMs":60000/);
+  const holder = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await holder.connect();
+  assert.equal((await holder.query("SELECT pg_try_advisory_lock(734021007::bigint) AS locked")).rows[0].locked, true);
+  try {
+    const second = await runProbeProcess({ PROBE_INTERVAL_MS: "45000" });
+    assert.equal(second.code, 1); assert.match(second.stderr, /probe_already_running/); assert.equal(second.stdout.includes("probe_cycle"), false);
+    const template = new pg.Client({ connectionString: process.env.DATABASE_URL });
+    await template.connect();
+    await template.query("BEGIN"); await template.query("SET LOCAL statement_timeout = '2000ms'");
+    await template.query("SELECT pg_advisory_xact_lock(734021005::bigint)"); await template.query("COMMIT"); await template.end();
+  } finally { await holder.query("SELECT pg_advisory_unlock(734021007::bigint)"); await holder.end(); }
 });

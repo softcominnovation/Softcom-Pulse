@@ -53,6 +53,47 @@ model VmDisplayConfig {
   @@map("vm_display_config")
 }
 
+model ExternalService {
+  id                 String   @id @default(uuid()) @db.Uuid
+  displayName        String   @map("display_name") @db.VarChar(120)
+  description        String?  @db.VarChar(240)
+  serviceType        String?  @map("service_type") @db.VarChar(40)
+  enabled            Boolean  @default(true)
+  dashboardEnabled   Boolean  @default(false) @map("dashboard_enabled")
+  critical           Boolean  @default(false)
+  displayOrder       Int      @default(0) @map("display_order")
+  revision           Int      @default(1)
+  method             String   @db.VarChar(8)
+  url                String   @db.VarChar(2048)
+  successMode        String   @map("success_mode") @db.VarChar(16)
+  expectedStatuses   Int[]    @default([200]) @map("expected_statuses")
+  jsonPointer        String?  @map("json_pointer") @db.VarChar(80)
+  expectedValue      String?  @map("expected_value") @db.VarChar(80)
+  bodyTemplate       String?  @map("body_template") @db.VarChar(2048)
+  authMode           String   @map("auth_mode") @db.VarChar(16)
+  headerName         String?  @map("header_name") @db.VarChar(40)
+  secretCiphertext   String?  @map("secret_ciphertext")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  samples            ExternalServiceSample[]
+
+  @@index([displayOrder, id])
+  @@map("external_service")
+}
+
+model ExternalServiceSample {
+  id         BigInt          @id @default(autoincrement())
+  serviceId  String          @map("service_id") @db.Uuid
+  service    ExternalService @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  checkedAt  DateTime        @map("checked_at") @db.Timestamptz(3)
+  reason     Int             @db.SmallInt
+  latencyMs  Int?            @map("latency_ms")
+  httpStatus Int?            @map("http_status") @db.SmallInt
+
+  @@index([serviceId, checkedAt])
+  @@map("external_service_sample")
+}
+
 model VmTemplateConfig {
   templateKey        String   @id @map("template_key") @db.VarChar(35)
   hostKey            String   @map("host_key") @db.VarChar(256)

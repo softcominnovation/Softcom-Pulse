@@ -88,9 +88,15 @@ export const configuredResourceSchema = z.object({ id: z.uuid(), config: resourc
 export const vmWorkloadsSchema = z.object({ vm: vmSchema, association: z.enum(["linked", "unlinked", "host_unavailable"]), containers: z.array(containerSchema), configuredServices: z.array(configuredResourceSchema) });
 export type VmWorkloads = z.infer<typeof vmWorkloadsSchema>;
 export type OverviewBlock = Omit<ReadResult<Summary | AsgardSummary | ConfiguredResource | ConfiguredResource[] | Problem[] | Host[] | Container[] | null>, "refreshAfterMs"> & { blockId: string; type: BlockType; options?: Record<string, unknown> };
+export type ProbeCard = {
+  id: string; displayName: string; description: string | null; serviceType: string | null; displayOrder: number; critical: boolean; dashboardEnabled: boolean;
+  reason: number | null; latencyMs: number | null; checkedAt: string | null; httpStatus: number | null; certNotAfter: string | null;
+  uptime24h: { available: number; total: number } | null; strip: number[];
+};
 export type Overview = {
   summary: Summary; highlightedResources: ConfiguredResource[]; problems: Problem[]; asgardSummary: AsgardSummary;
   screenId: string; presentationRevision: number; blocks: OverviewBlock[];
+  externalServices?: ProbeCard[]; uptimeBoard?: ProbeCard[];
 };
 export function emptySummary(): Summary {
   return { hostsKnown: null, hostsReachable: null, vms: null, containersRunning: null, containersStopped: null, problems: null, criticalAffected: null };

@@ -1,0 +1,122 @@
+import "server-only";
+import { Prisma } from "../../../generated/prisma/client.ts";
+import { ZodError } from "zod";
+import { externalServiceHistoryRangeSchema, externalServicePatchSchema, externalServiceWriteSchema, probeServiceLimit, serviceIssues, serviceNeedsSecret, type ExternalServiceInput } from "../../config/external-services.ts";
+import { BffError } from "../bff.ts";
+import { getPrisma } from "../prisma.ts";
+import { assertProbeDestination, parseProbeUrl } from "./network.ts";
+import { openProbeSecret, sealProbeSecret } from "./secret.ts";
+import { cacheOperation } from "../cache.ts";
+import { probeResultKey } from "./store.ts";
+
+type Row = {
+  id: string; displayName: string; description: string | null; serviceType: string | null; enabled: boolean; dashboardEnabled: boolean; critical: boolean; displayOrder: number; revision: number;
+  method: "GET" | "HEAD" | "POST"; url: string; successMode: "http_status" | "json_match"; expectedStatuses: number[]; jsonPointer: string | null; expectedValue: string | null;
+  bodyTemplate: string | null; authMode: "none" | "header"; headerName: string | null; secretCiphertext: string | null; createdAt: Date; updatedAt: Date;
+};
+const publicService = (row: Row) => {
+  const { secretCiphertext, createdAt, updatedAt, expectedValue, ...service } = row;
+  return { ...service, expectedValue: expectedValue === null ? null : JSON.parse(expectedValue) as string | number | boolean, secretConfigured: secretCiphertext !== null, createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() };
+};
+async function database<T>(action: () => Promise<T>) {
+  try { return await action(); }
+  catch (error) { if (error instanceof BffError || error instanceof ZodError) throw error; throw new BffError(503, "database_unavailable"); }
+}
+function checked(input: ExternalServiceInput, existingSecret: boolean) {
+  parseProbeUrl(input.url);
+  const issues = serviceIssues(input, existingSecret);
+  if (issues.length) throw new ZodError(issues.map(path => ({ code: "custom", path: [path], message: "Valor inválido." })));
+  return input;
+}
+export function listExternalServices() {
+  return database(async () => (await getPrisma().externalService.findMany({ orderBy: [{ displayOrder: "asc" }, { displayName: "asc" }, { id: "asc" }] })).map(row => publicService(row as Row)));
+}
+export function getExternalService(id: string) {
+  return database(async () => {
+    const row = await getPrisma().externalService.findUnique({ where: { id } });
+    if (!row) throw new BffError(404, "external_service_not_found");
+    return row as Row;
+  });
+}
+export async function createExternalService(body: unknown) {
+  const parsed = externalServiceWriteSchema.parse(body);
+  await assertProbeDestination(parsed.url);
+  const input = checked(parsed, false);
+  return database(() => getPrisma().$transaction(async tx => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(734021008::bigint)`;
+    if (await tx.externalService.count() >= probeServiceLimit) throw new BffError(409, "external_service_limit");
+    const row = await tx.externalService.create({ data: dataFor(input, input.secret ? sealProbeSecret(input.secret) : null) });
+    return publicService(row as Row);
+  }));
+}
+export async function updateExternalService(id: string, body: unknown) {
+  const patch = externalServicePatchSchema.parse(body);
+  if (patch.url !== undefined) await assertProbeDestination(patch.url);
+  return database(() => getPrisma().$transaction(async tx => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(734021008::bigint)`;
+    const current = await tx.externalService.findUnique({ where: { id } });
+    if (!current) throw new BffError(404, "external_service_not_found");
+    if (current.revision !== patch.expectedRevision) throw new BffError(409, "revision_conflict");
+    const { expectedRevision: _revision, secret, ...changes } = patch;
+    const currentRow = current as Row;
+    const merged = checked(externalServiceWriteSchema.parse({
+      displayName: currentRow.displayName, description: currentRow.description, serviceType: currentRow.serviceType, enabled: currentRow.enabled, dashboardEnabled: currentRow.dashboardEnabled,
+      critical: currentRow.critical, displayOrder: currentRow.displayOrder, method: currentRow.method, url: currentRow.url, successMode: currentRow.successMode, expectedStatuses: currentRow.expectedStatuses,
+      jsonPointer: currentRow.jsonPointer, expectedValue: currentRow.expectedValue === null ? null : JSON.parse(currentRow.expectedValue), bodyTemplate: currentRow.bodyTemplate, authMode: currentRow.authMode, headerName: currentRow.headerName,
+      ...changes, secret,
+    }), currentRow.secretCiphertext !== null && secret === undefined);
+    const nextSecret = !serviceNeedsSecret(merged) || secret === null ? null : secret === undefined ? current.secretCiphertext : sealProbeSecret(secret);
+    const row = await tx.externalService.update({ where: { id }, data: { ...dataFor(merged, nextSecret), revision: { increment: 1 } } });
+    return publicService(row as Row);
+  }));
+}
+export function deleteExternalService(id: string) {
+  return database(async () => {
+    const deleted = await getPrisma().externalService.deleteMany({ where: { id } });
+    if (!deleted.count) throw new BffError(404, "external_service_not_found");
+    await cacheOperation(client => client.del(probeResultKey(id))).catch(() => undefined);
+  });
+}
+export function listEnabledExternalServices() {
+  return database(async () => (await getPrisma().externalService.findMany({ where: { enabled: true }, orderBy: [{ displayOrder: "asc" }, { displayName: "asc" }, { id: "asc" }] })) as Row[]);
+}
+function dataFor(input: ExternalServiceInput, secretCiphertext: string | null): Prisma.ExternalServiceCreateInput {
+  const { secret: _secret, expectedValue, ...data } = input;
+  const serialized = expectedValue === null ? null : JSON.stringify(expectedValue);
+  if (serialized && serialized.length > 80) throw new ZodError([{ code: "custom", path: ["expectedValue"], message: "Valor inválido." }]);
+  return { ...data, expectedValue: serialized, secretCiphertext };
+}
+const windows = { "24h": 24, "7d": 24 * 7, "30d": 24 * 30 };
+export async function externalServiceHistory(id: string, range: string) {
+  const window = externalServiceHistoryRangeSchema.parse(range);
+  return database(async () => {
+    await getExternalService(id);
+    const since = new Date(Date.now() - windows[window] * 60 * 60 * 1000);
+    const points = await getPrisma().externalServiceSample.findMany({ where: { serviceId: id, checkedAt: { gte: since } }, orderBy: { checkedAt: "asc" }, select: { checkedAt: true, reason: true, latencyMs: true } });
+    const uptime = async (hours: number) => {
+      const rows = await getPrisma().$queryRaw<{ available: number; total: number }[]>`SELECT COUNT(*) FILTER (WHERE reason IN (0, 1))::int AS available, COUNT(*)::int AS total FROM external_service_sample WHERE service_id = ${id} AND checked_at >= ${new Date(Date.now() - hours * 60 * 60 * 1000)}`;
+      return rows[0] && Number(rows[0].total) ? { available: Number(rows[0].available), total: Number(rows[0].total) } : null;
+    };
+    const latencies = points.flatMap(point => point.latencyMs === null ? [] : [point.latencyMs]);
+    const latest = await getPrisma().externalServiceSample.findFirst({ where: { serviceId: id }, orderBy: { checkedAt: "desc" }, select: { latencyMs: true } });
+    return { serviceId: id, range: window, points: points.map(point => ({ checkedAt: point.checkedAt.toISOString(), reason: point.reason, latencyMs: point.latencyMs })), summary: {
+      currentLatencyMs: latest?.latencyMs ?? null, averageLatencyMs: latencies.length ? Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length) : null,
+      uptime24h: await uptime(24), uptime7d: await uptime(24 * 7), uptime30d: await uptime(24 * 30),
+    } };
+  });
+}
+export async function recordExternalSample(serviceId: string, checkedAt: Date, reason: number, latencyMs: number | null, httpStatus: number | null) {
+  return database(async () => {
+    await getPrisma().externalServiceSample.create({ data: { serviceId, checkedAt, reason, latencyMs, httpStatus } });
+    const [uptime] = await getPrisma().$queryRaw<{ available: number; total: number }[]>`SELECT COUNT(*) FILTER (WHERE reason IN (0, 1))::int AS available, COUNT(*)::int AS total FROM external_service_sample WHERE service_id = ${serviceId} AND checked_at >= ${new Date(checkedAt.getTime() - 24 * 60 * 60 * 1000)}`;
+    const recent = await getPrisma().externalServiceSample.findMany({ where: { serviceId }, orderBy: { checkedAt: "desc" }, take: 40, select: { reason: true } });
+    return { uptime24h: { available: Number(uptime?.available ?? 0), total: Number(uptime?.total ?? 0) }, strip: recent.reverse().map(item => item.reason) };
+  });
+}
+export async function purgeExternalSamples(signal: AbortSignal) {
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  while (!signal.aborted) {
+    const removed = await getPrisma().$executeRaw`DELETE FROM external_service_sample WHERE id IN (SELECT id FROM external_service_sample WHERE checked_at < ${cutoff} LIMIT 5000)`;
+    if (removed < 5000) return;
+  }
+}

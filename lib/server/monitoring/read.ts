@@ -115,6 +115,7 @@ export async function readOverview(screenId?: string) {
   base.asgardSummary = { host: base.asgardSummary.host ? names.host(operationalHost(base.asgardSummary.host)) : null, vms: base.asgardSummary.vms.filter(vm => !isVmTemplate(vm)).map(names.vm) };
   if (base.summary.vms !== null) base.summary.vms = current.batch.snapshots.get(snapshotKeys.hosts) ? current.hosts.reduce((n, host) => n + operationalHost(host).vms.length, 0) : null;
   if (base.summary.problems !== null) base.summary.problems = current.batch.snapshots.get(snapshotKeys.problems) ? problems.length : null;
+  const probe = await readProbeOverview(visibleBlocks.some(block => block.type === "uptime_list")).catch(() => ({ externalServices: [], uptimeBoard: [] }));
   const blocks: OverviewBlock[] = screen.blocks.filter(block => block.enabled).map(block => {
     let data: OverviewBlock["data"] = null;
     let keys: string[] = [];
@@ -128,10 +129,12 @@ export async function readOverview(screenId?: string) {
       data = resources.find(resource => resource.id === block.resourceConfigId) ?? null;
       keys = data ? resourceKeys(data.config) : [];
     }
+    const probeBlock = block.type === "uptime_list";
+    if (probeBlock) data = probe.uptimeBoard;
     const result = readResult(data, current.batch, keys);
-    return { blockId: block.id, type: block.type, options: effectiveOptions(block), data, availability: !blockCatalog[block.type].available || (block.type === "resource_card" && !data) ? "unavailable" : result.availability, stale: result.stale, lastUpdated: result.lastUpdated };
+    const checkedAt = probe.uptimeBoard.reduce<string | null>((latest, item) => item.checkedAt && (!latest || item.checkedAt > latest) ? item.checkedAt : latest, null);
+    return { blockId: block.id, type: block.type, options: effectiveOptions(block), data, availability: !blockCatalog[block.type].available || (block.type === "resource_card" && !data) ? "unavailable" : probeBlock ? (probe.uptimeBoard.length ? "ready" : "no_data") : result.availability, stale: probeBlock ? false : result.stale, lastUpdated: probeBlock ? checkedAt : result.lastUpdated };
   });
-  const probe = await readProbeOverview(visibleBlocks.some(block => block.type === "uptime_list")).catch(() => ({ externalServices: [], uptimeBoard: [] }));
   const data: Overview = { ...base, highlightedResources: resources, problems, screenId: screen.id, presentationRevision: presentation.data.revision, blocks, externalServices: probe.externalServices, uptimeBoard: probe.uptimeBoard };
   return { ...readResult(data, current.batch, current.keys), presentationStatus: names.status };
 }

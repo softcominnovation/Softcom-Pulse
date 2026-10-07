@@ -40,7 +40,7 @@ export const blockCatalog = {
   resource_card: { available: true, uiPhase: 5, label: "Recurso individual", options: blockOptionsSchemas.resource_card },
   host_inventory: { available: true, uiPhase: 6, label: "Hosts", options: blockOptionsSchemas.host_inventory },
   container_inventory: { available: true, uiPhase: 7, label: "Containers", options: blockOptionsSchemas.container_inventory },
-  uptime_list: { available: false, uiPhase: 2, label: "Uptime das aplicações", options: blockOptionsSchemas.uptime_list },
+  uptime_list: { available: true, uiPhase: 2, label: "Uptime das aplicações", options: blockOptionsSchemas.uptime_list },
 };
 const blockSchema = z.strictObject({
   id: uuidSchema, type: z.enum(blockTypes), enabled: z.boolean(), width: z.enum(["standard", "wide", "full"]),

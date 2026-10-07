@@ -2,7 +2,7 @@ import "server-only";
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
 import tls from "node:tls";
-import { probeTimeoutMs } from "../../config/external-services.ts";
+import { probeDefaultTimeoutMs } from "../../config/external-services.ts";
 import { BffError } from "../bff.ts";
 
 const blocked = new BlockList();
@@ -36,7 +36,7 @@ export async function assertProbeDestination(value: string) {
   const hostname = url.hostname.replace(/^\[|\]$/g, "");
   if (isIP(hostname)) return url;
   try {
-    const addresses = await resolveProbeHosts(hostname, AbortSignal.timeout(probeTimeoutMs));
+    const addresses = await resolveProbeHosts(hostname, AbortSignal.timeout(probeDefaultTimeoutMs));
     if (addresses.length === 0 || addresses.some(item => isBlockedAddress(item.address))) throw new Error("blocked");
   } catch (error) { if (error instanceof BffError) throw error; throw new BffError(400, "invalid_request"); }
   return url;

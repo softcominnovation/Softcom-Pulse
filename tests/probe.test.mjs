@@ -29,7 +29,9 @@ test("probe URLs reject query, userinfo, localhost, loopback and metadata before
 test("probe classification keeps the closed reason table", () => {
   const ok = { status: 200, body: "", latencyMs: 100 };
   assert.equal(classifyProbe("http_status", [200], null, null, ok).reason, 0);
-  assert.equal(classifyProbe("http_status", [200], null, null, { ...ok, latencyMs: 801 }).reason, 1);
+  assert.equal(classifyProbe("http_status", [200], null, null, { ...ok, latencyMs: 2501 }).reason, 1);
+  assert.equal(classifyProbe("http_status", [200], null, null, { ...ok, latencyMs: 8000 }, 20000).reason, 0);
+  assert.equal(classifyProbe("http_status", [200], null, null, { ...ok, latencyMs: 12000 }, 20000).reason, 1);
   assert.equal(classifyProbe("http_status", [200], null, null, { status: 401, body: "secret", latencyMs: 20 }).reason, 2);
   assert.equal(classifyProbe("http_status", [200], null, null, { status: 302, body: "", latencyMs: 20 }).reason, 3);
   assert.equal(classifyProbe("json_match", [200], "/status", JSON.stringify("up"), { status: 200, body: JSON.stringify({ status: "up" }), latencyMs: 20 }).reason, 0);

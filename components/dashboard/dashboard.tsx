@@ -103,7 +103,7 @@ export function Dashboard() {
         {result && screen.blocks.filter(block => block.enabled).map(block => {
           const payload = result.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
           return <div className={`dashboard-block width-${block.width} block-${block.type}`} key={block.id}>
-            {payload ? <DashboardBlock block={payload} failed={stale} /> : <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section>}
+            {payload ? <DashboardBlock block={payload} failed={stale} probes={result.data.externalServices ?? []} /> : <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section>}
           </div>;
         })}
       </div></EvidenceTimeContext>

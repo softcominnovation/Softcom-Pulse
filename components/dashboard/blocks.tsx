@@ -4,7 +4,7 @@ import { useContext, type CSSProperties, type ReactNode } from "react";
 import { effectiveOptions, indicatorKeys, type OptionsByType } from "@/lib/config/presentation";
 import { selectHighlights, selectProblems, sortInventory } from "@/lib/dashboard/block-options";
 import { EvidenceTimeContext } from "./metrics";
-import type { AsgardSummary, ConfiguredResource, Container, Host, OverviewBlock, Problem, Summary } from "@/lib/monitoring/contracts";
+import type { AsgardSummary, ConfiguredResource, Container, Host, OverviewBlock, ProbeCard, Problem, Summary } from "@/lib/monitoring/contracts";
 import { HostInventory } from "@/components/infrastructure/host-panels";
 import { number, timestamp } from "@/lib/dashboard/format";
 import { SeverityPill } from "@/components/services/states";
@@ -12,6 +12,8 @@ import { ContainerInventory } from "@/components/services/container-inventory";
 import { AsgardPanel } from "./asgard-panel";
 import { ResourceCard } from "./resource-card";
 import { ServiceAvailabilityCard } from "./service-availability-card";
+import { ProbeAvailabilityCard } from "./probe-card";
+import { UptimeList } from "./uptime-list";
 import "./availability.css";
 
 function Panel({ title, icon, children, note, rows }: { title: string; icon: ReactNode; children: ReactNode; note?: string; rows?: number }) {
@@ -26,7 +28,7 @@ function SummaryBlock({ data, stale, options }: { data: Summary; stale: boolean;
   ];
   return <section className={`dashboard-kpis ${stale ? "is-stale" : ""}`} aria-label="Indicadores da operação">{options.indicators.map(key => items[indicatorKeys.indexOf(key)]).map(item => <article className="dashboard-kpi" key={item.label}><div className="kpi-label"><h2>{item.label}</h2><span aria-hidden="true">{item.icon}</span></div><p className="kpi-value">{number(item.value)}</p><p>{item.value === null ? "Sem dados da origem" : stale ? "Dados desatualizados" : item.note}</p>{stale && <p>{item.note}</p>}</article>)}</section>;
 }
-export function DashboardBlock({ block, failed }: { block: OverviewBlock; failed: boolean }) {
+export function DashboardBlock({ block, failed, probes = [] }: { block: OverviewBlock; failed: boolean; probes?: ProbeCard[] }) {
   const stale = failed || block.stale, now = useContext(EvidenceTimeContext);
   if (block.availability === "unavailable" || block.data === null) return <Panel title="Bloco indisponível" icon={<TriangleAlert aria-hidden="true" />}><p className="panel-empty">Este bloco não está disponível na configuração atual.</p></Panel>;
   switch (block.type) {
@@ -43,9 +45,11 @@ export function DashboardBlock({ block, failed }: { block: OverviewBlock; failed
     }
     case "highlighted_resources": {
       const options = effectiveOptions({ ...block, type: "highlighted_resources" }), all = block.data as ConfiguredResource[], items = selectHighlights(all, options);
-      return <section className="dashboard-panel availability-panel" style={{ "--service-rows": Math.min(2, options.visibleRows) } as CSSProperties}><div className="panel-heading"><Box aria-hidden="true" /><h2>Disponibilidade de Serviços</h2><Link className="panel-link" href="/servicos">Todos os serviços <ArrowRight aria-hidden="true" /></Link></div>{items.length ? <div className="availability-grid" tabIndex={0} role="region" aria-label="Recursos destacados">{items.map(item => <ServiceAvailabilityCard key={item.id} item={item} stale={stale} />)}</div> : <p className="panel-empty">{all.length ? "Nenhum destaque corresponde ao filtro." : "Nenhum serviço destacado. Configure os recursos que deseja acompanhar."}</p>}<p className="panel-foot">{items.length !== all.length ? `${items.length} exibidos de ${all.length} destacados · ` : ""}Estado do recurso · CPU / RAM atuais · detalhes ao selecionar</p></section>;
+      const visible = items.length > 0 || probes.length > 0;
+      return <section className="dashboard-panel availability-panel" style={{ "--service-rows": Math.min(2, options.visibleRows) } as CSSProperties}><div className="panel-heading"><Box aria-hidden="true" /><h2>Disponibilidade de Serviços</h2><Link className="panel-link" href="/servicos">Todos os serviços <ArrowRight aria-hidden="true" /></Link></div>{visible ? <div className="availability-grid" tabIndex={0} role="region" aria-label="Recursos destacados">{items.map(item => <ServiceAvailabilityCard key={item.id} item={item} stale={stale} />)}{probes.map(item => <ProbeAvailabilityCard key={item.id} item={item} />)}</div> : <p className="panel-empty">{all.length ? "Nenhum destaque corresponde ao filtro." : "Nenhum serviço destacado. Configure os recursos que deseja acompanhar."}</p>}<p className="panel-foot">{items.length !== all.length ? `${items.length} exibidos de ${all.length} destacados · ` : ""}{items.length && probes.length ? "Estado do recurso · CPU / RAM na infraestrutura · latência nas aplicações" : items.length ? "Estado do recurso · CPU / RAM atuais · detalhes ao selecionar" : "Estado da consulta · latência atual · detalhes ao selecionar"}</p></section>;
     }
     case "resource_card": return <ResourceCard item={block.data as ConfiguredResource} stale={stale} />;
+    case "uptime_list": return <UptimeList items={block.data as ProbeCard[]} options={effectiveOptions({ ...block, type: "uptime_list" })} />;
     case "problems": {
       const options = effectiveOptions({ ...block, type: "problems" }), all = block.data as Problem[], problems = selectProblems(all, options);
       return <Panel title="Problemas ativos" icon={<TriangleAlert aria-hidden="true" />} rows={options.visibleRows} note={`${problems.length !== all.length ? `${problems.length} exibidos de ${all.length} · ` : ""}Última atualização: ${timestamp(block.lastUpdated)}${stale ? " · Dados desatualizados" : ""}`}>

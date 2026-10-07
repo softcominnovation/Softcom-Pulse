@@ -72,6 +72,8 @@ model ExternalService {
   bodyTemplate       String?  @map("body_template") @db.VarChar(2048)
   authMode           String   @map("auth_mode") @db.VarChar(16)
   headerName         String?  @map("header_name") @db.VarChar(40)
+  timeoutMs          Int      @default(5000) @map("timeout_ms")
+  progressStartedAt  DateTime? @map("progress_started_at") @db.Timestamptz(3)
   secretCiphertext   String?  @map("secret_ciphertext")
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)

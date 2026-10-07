@@ -1,5 +1,5 @@
 import "server-only";
-import { probeConcurrency, probeTimeoutMs } from "../../config/external-services.ts";
+import { probeConcurrency, probeDefaultTimeoutMs } from "../../config/external-services.ts";
 import { BffError } from "../bff.ts";
 import { classifyProbe, type ProbeObservation } from "./classify.ts";
 import { probeExchange, parseProbeUrl, type ProbeExchange } from "./network.ts";
@@ -27,11 +27,11 @@ async function checkOne(service: ServiceRow, transport: ProbeTransport, signal?:
   let observation: ProbeObservation;
   let certNotAfter: string | null = null;
   try {
-    const response = await transport(url, service.method, headers, body, probeTimeoutMs, signal);
+    const response = await transport(url, service.method, headers, body, service.timeoutMs ?? probeDefaultTimeoutMs, signal);
     observation = { status: response.status, body: response.body, latencyMs: response.latencyMs };
     certNotAfter = response.certNotAfter;
   } catch (error) { observation = observationError(error); }
-  const classified = classifyProbe(service.successMode, service.expectedStatuses, service.jsonPointer, service.expectedValue, observation);
+  const classified = classifyProbe(service.successMode, service.expectedStatuses, service.jsonPointer, service.expectedValue, observation, service.timeoutMs ?? probeDefaultTimeoutMs);
   const stats = await recordExternalSample(service.id, started, classified.reason, classified.latencyMs, classified.httpStatus);
   await publishProbeResult(service.id, started.toISOString(), { ...classified, certNotAfter, ...stats });
 }

@@ -23,6 +23,8 @@ export function errorText(error: unknown) {
     invalid_resource_reference: "Um recurso individual está desativado, fora do dashboard ou foi removido. Revise os blocos vinculados.",
     invalid_host_reference: "Um host selecionado não pertence ao escopo de monitoramento. Revise o filtro de containers.",
     invalid_request: "Confira os campos preenchidos e os limites indicados no formulário.",
+    external_service_limit: "O limite de 100 aplicações cadastradas foi atingido.",
+    external_service_not_found: "Esta aplicação não está mais cadastrada. Recarregue a lista.",
   };
   return messages[code] ?? "Não foi possível concluir. Seu rascunho foi mantido; tente novamente.";
 }

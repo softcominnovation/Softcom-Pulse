@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uuidSchema } from "./resources.ts";
 
 const control = /[\u0000-\u001F\u007F]/;
 const label = (max: number) => z.string().trim().min(1).max(max).refine(value => !control.test(value));
@@ -6,8 +7,12 @@ const optionalLabel = (max: number) => z.string().trim().max(max).transform(valu
 const reservedHeaders = new Set(["host", "content-length", "cookie", "connection", "transfer-encoding"]);
 const standardHeaders = new Set(["authorization", "x-api-key"]);
 export const probeReasons = { ok: 0, slow: 1, unauthorized: 2, status: 3, json: 4, timeout: 5, network: 6, tls: 7 } as const;
-export const probeTimeoutMs = 3000;
-export const probeDegradedAfterMs = 800;
+export const probeDefaultTimeoutMs = 5000;
+export const probeTimeoutMinMs = 1000;
+export const probeTimeoutMaxMs = 30000;
+export function probeSlowAfterMs(timeoutMs: number) {
+  return Math.floor(timeoutMs / 2);
+}
 export const probeConcurrency = 8;
 export const probeStripLength = 40;
 export const probeServiceLimit = 100;
@@ -29,6 +34,7 @@ export const externalServiceFields = {
   method: z.enum(["GET", "HEAD", "POST"]), url: z.string().max(2048), successMode: z.enum(["http_status", "json_match"]),
   expectedStatuses: z.array(z.number().int().min(200).max(299)).min(1).max(4).default([200]), jsonPointer: pointer.nullable().default(null), expectedValue: literal.nullable().default(null),
   bodyTemplate: z.string().max(2048).nullable().default(null), authMode: z.enum(["none", "header"]), headerName: z.string().trim().max(40).nullable().default(null),
+  timeoutMs: z.number().int().min(probeTimeoutMinMs).max(probeTimeoutMaxMs).default(probeDefaultTimeoutMs),
 };
 export const externalServiceWriteSchema = z.strictObject({ ...externalServiceFields, secret: secretValue.nullable().optional() });
 export type ExternalServiceInput = z.infer<typeof externalServiceWriteSchema>;
@@ -38,9 +44,29 @@ export const externalServicePatchSchema = z.strictObject({
   method: z.enum(["GET", "HEAD", "POST"]).optional(), url: z.string().max(2048).optional(), successMode: z.enum(["http_status", "json_match"]).optional(),
   expectedStatuses: z.array(z.number().int().min(200).max(299)).min(1).max(4).optional(), jsonPointer: pointer.nullable().optional(), expectedValue: literal.nullable().optional(),
   bodyTemplate: z.string().max(2048).nullable().optional(), authMode: z.enum(["none", "header"]).optional(), headerName: z.string().trim().max(40).nullable().optional(),
+  timeoutMs: z.number().int().min(probeTimeoutMinMs).max(probeTimeoutMaxMs).optional(),
   secret: secretValue.nullable().optional(),
 });
 export const externalServiceHistoryRangeSchema = z.enum(["24h", "7d", "30d"]);
+export const externalServiceUptimeSchema = z.object({
+  reason: z.number().int().min(0).max(7).nullable(), latencyMs: z.number().int().nonnegative().nullable(), checkedAt: z.string().nullable(),
+  uptime24h: z.object({ available: z.number().int().nonnegative(), total: z.number().int().nonnegative() }).nullable(),
+  strip: z.array(z.number().int().min(0).max(7)).max(40),
+});
+export type ExternalServiceUptime = z.infer<typeof externalServiceUptimeSchema>;
+export const externalServicePublicSchema = z.object({
+  id: uuidSchema, revision: z.number().int().positive(), secretConfigured: z.boolean(),
+  createdAt: z.iso.datetime({ offset: true }), updatedAt: z.iso.datetime({ offset: true }),
+  displayName: z.string(), description: z.string().nullable(), serviceType: z.string().nullable(),
+  enabled: z.boolean(), dashboardEnabled: z.boolean(), critical: z.boolean(), displayOrder: z.number().int(),
+  method: z.enum(["GET", "HEAD", "POST"]), url: z.string(), successMode: z.enum(["http_status", "json_match"]),
+  expectedStatuses: z.array(z.number().int()), jsonPointer: z.string().nullable(), expectedValue: literal.nullable(),
+  bodyTemplate: z.string().nullable(), authMode: z.enum(["none", "header"]), headerName: z.string().nullable(),
+  timeoutMs: z.number().int().min(probeTimeoutMinMs).max(probeTimeoutMaxMs).default(probeDefaultTimeoutMs),
+  progressStartedAt: z.iso.datetime({ offset: true }).nullable().default(null),
+  uptime: externalServiceUptimeSchema.optional(),
+});
+export type ExternalServicePublic = z.infer<typeof externalServicePublicSchema>;
 export function serviceNeedsSecret(value: { authMode: "none" | "header"; bodyTemplate: string | null }) {
   return value.authMode === "header" || value.bodyTemplate?.includes("{{secret}}") === true;
 }

@@ -1,4 +1,4 @@
-import { probeDegradedAfterMs, probeReasons } from "../../config/external-services.ts";
+import { probeDefaultTimeoutMs, probeReasons, probeSlowAfterMs } from "../../config/external-services.ts";
 
 export type ProbeObservation = { status?: number; body?: string; latencyMs?: number; error?: "timeout" | "network" | "tls" };
 export function pointerValue(value: unknown, pointer: string) {
@@ -10,7 +10,7 @@ export function pointerValue(value: unknown, pointer: string) {
   }
   return current;
 }
-export function classifyProbe(mode: "http_status" | "json_match", statuses: number[], pointer: string | null, expected: string | null, observation: ProbeObservation) {
+export function classifyProbe(mode: "http_status" | "json_match", statuses: number[], pointer: string | null, expected: string | null, observation: ProbeObservation, timeoutMs = probeDefaultTimeoutMs) {
   if (observation.error === "timeout") return { reason: probeReasons.timeout, latencyMs: null, httpStatus: null };
   if (observation.error === "tls") return { reason: probeReasons.tls, latencyMs: null, httpStatus: null };
   if (observation.error === "network" || observation.status === undefined || observation.latencyMs === undefined) return { reason: probeReasons.network, latencyMs: null, httpStatus: null };
@@ -22,5 +22,5 @@ export function classifyProbe(mode: "http_status" | "json_match", statuses: numb
     try { parsed = JSON.parse(observation.body ?? ""); } catch { return { reason: probeReasons.json, latencyMs, httpStatus }; }
     if (pointer === null || expected === null || JSON.stringify(pointerValue(parsed, pointer)) !== expected) return { reason: probeReasons.json, latencyMs, httpStatus };
   }
-  return { reason: latencyMs > probeDegradedAfterMs ? probeReasons.slow : probeReasons.ok, latencyMs, httpStatus };
+  return { reason: latencyMs > probeSlowAfterMs(timeoutMs) ? probeReasons.slow : probeReasons.ok, latencyMs, httpStatus };
 }

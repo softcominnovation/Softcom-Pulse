@@ -12,11 +12,11 @@ import { probeResultKey } from "./store.ts";
 type Row = {
   id: string; displayName: string; description: string | null; serviceType: string | null; enabled: boolean; dashboardEnabled: boolean; critical: boolean; displayOrder: number; revision: number;
   method: "GET" | "HEAD" | "POST"; url: string; successMode: "http_status" | "json_match"; expectedStatuses: number[]; jsonPointer: string | null; expectedValue: string | null;
-  bodyTemplate: string | null; authMode: "none" | "header"; headerName: string | null; secretCiphertext: string | null; createdAt: Date; updatedAt: Date;
+  bodyTemplate: string | null; authMode: "none" | "header"; headerName: string | null; timeoutMs: number; progressStartedAt: Date | null; secretCiphertext: string | null; createdAt: Date; updatedAt: Date;
 };
 const publicService = (row: Row) => {
-  const { secretCiphertext, createdAt, updatedAt, expectedValue, ...service } = row;
-  return { ...service, expectedValue: expectedValue === null ? null : JSON.parse(expectedValue) as string | number | boolean, secretConfigured: secretCiphertext !== null, createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() };
+  const { secretCiphertext, createdAt, updatedAt, progressStartedAt, expectedValue, ...service } = row;
+  return { ...service, progressStartedAt: progressStartedAt?.toISOString() ?? null, expectedValue: expectedValue === null ? null : JSON.parse(expectedValue) as string | number | boolean, secretConfigured: secretCiphertext !== null, createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() };
 };
 async function database<T>(action: () => Promise<T>) {
   try { return await action(); }
@@ -62,11 +62,12 @@ export async function updateExternalService(id: string, body: unknown) {
     const merged = checked(externalServiceWriteSchema.parse({
       displayName: currentRow.displayName, description: currentRow.description, serviceType: currentRow.serviceType, enabled: currentRow.enabled, dashboardEnabled: currentRow.dashboardEnabled,
       critical: currentRow.critical, displayOrder: currentRow.displayOrder, method: currentRow.method, url: currentRow.url, successMode: currentRow.successMode, expectedStatuses: currentRow.expectedStatuses,
-      jsonPointer: currentRow.jsonPointer, expectedValue: currentRow.expectedValue === null ? null : JSON.parse(currentRow.expectedValue), bodyTemplate: currentRow.bodyTemplate, authMode: currentRow.authMode, headerName: currentRow.headerName,
+      jsonPointer: currentRow.jsonPointer, expectedValue: currentRow.expectedValue === null ? null : JSON.parse(currentRow.expectedValue), bodyTemplate: currentRow.bodyTemplate, authMode: currentRow.authMode, headerName: currentRow.headerName, timeoutMs: currentRow.timeoutMs,
       ...changes, secret,
     }), currentRow.secretCiphertext !== null && secret === undefined);
     const nextSecret = !serviceNeedsSecret(merged) || secret === null ? null : secret === undefined ? current.secretCiphertext : sealProbeSecret(secret);
-    const row = await tx.externalService.update({ where: { id }, data: { ...dataFor(merged, nextSecret), revision: { increment: 1 } } });
+    const resumed = merged.enabled && !current.enabled;
+    const row = await tx.externalService.update({ where: { id }, data: { ...dataFor(merged, nextSecret), revision: { increment: 1 }, ...(resumed ? { progressStartedAt: new Date() } : {}) } });
     return publicService(row as Row);
   }));
 }
@@ -105,11 +106,35 @@ export async function externalServiceHistory(id: string, range: string) {
     } };
   });
 }
+export async function visualStrips(ids: string[]) {
+  if (!ids.length) return new Map<string, number[]>();
+  return database(async () => {
+    const samples = await getPrisma().$queryRaw<{ service_id: string; reason: number }[]>`
+      SELECT service_id, reason FROM (
+        SELECT s.service_id, s.reason, s.checked_at, row_number() OVER (PARTITION BY s.service_id ORDER BY s.checked_at DESC) AS n
+        FROM external_service_sample s
+        JOIN external_service e ON e.id = s.service_id
+        WHERE s.service_id IN (${Prisma.join(ids.map(id => Prisma.sql`${id}::uuid`))})
+          AND (e.progress_started_at IS NULL OR s.checked_at >= e.progress_started_at)
+      ) ranked
+      WHERE n <= 40
+      ORDER BY service_id, checked_at ASC
+    `;
+    const strips = new Map<string, number[]>();
+    for (const sample of samples) {
+      const strip = strips.get(sample.service_id) ?? [];
+      strip.push(Number(sample.reason));
+      strips.set(sample.service_id, strip);
+    }
+    return strips;
+  });
+}
 export async function recordExternalSample(serviceId: string, checkedAt: Date, reason: number, latencyMs: number | null, httpStatus: number | null) {
   return database(async () => {
     await getPrisma().externalServiceSample.create({ data: { serviceId, checkedAt, reason, latencyMs, httpStatus } });
     const [uptime] = await getPrisma().$queryRaw<{ available: number; total: number }[]>`SELECT COUNT(*) FILTER (WHERE reason IN (0, 1))::int AS available, COUNT(*)::int AS total FROM external_service_sample WHERE service_id = ${serviceId} AND checked_at >= ${new Date(checkedAt.getTime() - 24 * 60 * 60 * 1000)}`;
-    const recent = await getPrisma().externalServiceSample.findMany({ where: { serviceId }, orderBy: { checkedAt: "desc" }, take: 40, select: { reason: true } });
+    const started = await getPrisma().externalService.findUnique({ where: { id: serviceId }, select: { progressStartedAt: true } });
+    const recent = await getPrisma().externalServiceSample.findMany({ where: { serviceId, ...(started?.progressStartedAt ? { checkedAt: { gte: started.progressStartedAt } } : {}) }, orderBy: { checkedAt: "desc" }, take: 40, select: { reason: true } });
     return { uptime24h: { available: Number(uptime?.available ?? 0), total: Number(uptime?.total ?? 0) }, strip: recent.reverse().map(item => item.reason) };
   });
 }

@@ -87,9 +87,9 @@ export type ConfiguredResource = {
 export const configuredResourceSchema = z.object({ id: z.uuid(), config: resourceConfigSchema, resolved: z.boolean(), resolution: z.enum(["resolved", "missing", "ambiguous"]), resource: z.union([hostSchema, containerSchema]).nullable(), metrics: metricsSchema });
 export const vmWorkloadsSchema = z.object({ vm: vmSchema, association: z.enum(["linked", "unlinked", "host_unavailable"]), containers: z.array(containerSchema), configuredServices: z.array(configuredResourceSchema) });
 export type VmWorkloads = z.infer<typeof vmWorkloadsSchema>;
-export type OverviewBlock = Omit<ReadResult<Summary | AsgardSummary | ConfiguredResource | ConfiguredResource[] | Problem[] | Host[] | Container[] | null>, "refreshAfterMs"> & { blockId: string; type: BlockType; options?: Record<string, unknown> };
+export type OverviewBlock = Omit<ReadResult<Summary | AsgardSummary | ConfiguredResource | ConfiguredResource[] | Problem[] | Host[] | Container[] | ProbeCard[] | null>, "refreshAfterMs"> & { blockId: string; type: BlockType; options?: Record<string, unknown> };
 export type ProbeCard = {
-  id: string; displayName: string; description: string | null; serviceType: string | null; displayOrder: number; critical: boolean; dashboardEnabled: boolean;
+  id: string; displayName: string; description: string | null; serviceType: string | null; displayOrder: number; critical: boolean; dashboardEnabled: boolean; paused: boolean; progressStartedAt: string | null;
   reason: number | null; latencyMs: number | null; checkedAt: string | null; httpStatus: number | null; certNotAfter: string | null;
   uptime24h: { available: number; total: number } | null; strip: number[];
 };

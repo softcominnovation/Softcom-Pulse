@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import Link from "next/link";
 import { LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { AuthGate } from "@/components/auth/auth-gate";
@@ -39,7 +40,7 @@ export function AppShell({ children, dashboard = false }: { children: ReactNode;
       <div className={`min-h-dvh ${dashboard ? "dashboard-shell" : ""} ${dashboard && tvMode ? "tv-mode" : ""}`} data-presentation={presentationActive || undefined} data-display-scale={dashboard ? scale : undefined} style={dashboard ? { "--dashboard-scale": scale / 100 } as CSSProperties : undefined}>
         <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:z-10 focus:bg-background focus:p-4">Ir para o conteúdo</a>
         <header className="pulse-topbar">
-          <Brand className="dashboard-brand" size={presentationActive ? 57 : 37} />
+          <Link href="/" aria-label="Ir para a página inicial" className="inline-flex min-w-0 text-inherit no-underline"><Brand className="dashboard-brand" size={presentationActive ? 57 : 37} /></Link>
           <p className="text-xs text-muted-foreground">Central de monitoramento</p>
           <div className="pulse-top-actions">
             <Clock />

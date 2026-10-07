@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
+import { effectiveOptions } from "../../lib/config/presentation";
 import { presentation, overview, id } from "../fixtures/dashboard";
 import type { ConfiguredResource, Container } from "../../lib/monitoring/contracts";
 
@@ -80,6 +81,8 @@ test("configured host inventory renders from the aggregate without historical re
 test("growing inventories stay inside panels without losing rows or stretching the desktop page", async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 });
   const state = await mock(page);
+  state.document.schemaVersion = 2;
+  for (const block of state.document.screens[0].blocks) block.options = { ...effectiveOptions(block), ...((block.type === "asgard_summary" || block.type === "problems") ? { visibleRows: 10 } : {}) };
   state.transform = body => {
     const vms = body.data.asgardSummary.vms, host = body.data.asgardSummary.host!;
     const first = vms[1];
@@ -108,7 +111,7 @@ test("custom compositions keep their saved order and small heights use natural p
   const state = await mock(page);
   state.document.screens[0].blocks.reverse();
   await enter(page); await expect(page.getByRole("heading", {name:"Hosts monitorados"})).toBeVisible();
-  await expect(page.locator(".dashboard")).not.toHaveClass(/balanced/);
+  await expect(page.locator(".dashboard")).toHaveClass(/balanced/);
   const types = await page.locator(".dashboard-block").evaluateAll(nodes => nodes.map(node => [...node.classList].find(name => name.startsWith("block-"))));
   expect(types).toEqual(state.document.screens[0].blocks.map(block => "block-"+block.type));
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

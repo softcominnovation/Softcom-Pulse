@@ -33,8 +33,8 @@ Versão [SemVer](https://semver.org/lang/pt-BR/). A tag sem sufixo é produção
 
 | Tag | Branch | Imagem | Ambiente |
 |---|---|---|---|
-| `v1.2.3` | `main` | `1.2.3`, `1.2`, `1` e `latest` | https://pulse.hostsoftcom.cloud |
-| `v1.2.3-dev` | `develop` | `1.2.3-dev` e `dev` | https://dev-pulse.hostsoftcom.cloud |
+| `v1.2.3` | `main` | `1.2.3`, `1.2`, `1` e `latest` | https://pulse.softcomtecnologia.com |
+| `v1.2.3-dev` | `develop` | `1.2.3-dev` e `dev` | https://dev-pulse.softcomtecnologia.com |
 
 A action só dispara no push da tag, em `linux/amd64` e `linux/arm64`. Ela publica a imagem. Não faz deploy.
 

@@ -8,7 +8,6 @@ import { presentationDocumentSchema, type PresentationDocument } from "@/lib/con
 import type { Overview, ReadResult } from "@/lib/monitoring/contracts";
 import { createPlayerStore, playableScreens } from "@/lib/dashboard/player";
 import { timestamp } from "@/lib/dashboard/format";
-import { isBalancedComposition } from "@/lib/dashboard/layout";
 import { api } from "@/lib/client/api";
 import { useUiStore } from "@/store/ui.store";
 import { Button } from "@/components/ui/button";
@@ -86,7 +85,8 @@ export function Dashboard() {
   const hasData = result?.availability === "ready";
   const tone = stale ? "warn" : !hasData ? "unknown" : (result?.data.summary.criticalAffected ?? 0) > 0 ? "bad" : (problems ?? 0) > 0 ? "warn" : "unknown";
   const title = overview.failed ? "Falha na atualização" : result?.stale ? "Dados desatualizados" : !result ? "Carregando monitoramento" : !hasData ? "Aguardando dados do monitoramento" : partial ? "Há evidências desatualizadas" : (problems ?? 0) > 0 ? "A operação requer atenção" : "Monitoramento atualizado";
-  return <div className={`dashboard ${player.layoutOverride ?? screen?.layout ?? "overview"} ${screen && isBalancedComposition(screen.blocks) ? "balanced" : ""}`}>
+  const layout = player.layoutOverride ?? screen?.layout ?? "overview";
+  return <div className={`dashboard ${layout} ${layout === "overview" ? "balanced" : ""}`}>
     <PlayerToolbar store={store} />
     {configuration.failed && <div className="dashboard-banner banner-warn" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Não foi possível carregar a configuração</strong><p>{player.document ? "A última configuração válida foi mantida." : "Tente novamente para carregar as telas salvas."}</p></div><Button onClick={configuration.refresh}>Tentar novamente</Button></div>}
     {!player.document && !configuration.failed && <p className="panel-empty" role="status">Carregando as telas configuradas…</p>}

@@ -78,7 +78,7 @@ export function FullscreenHelp() {
           <p>Se a elevação exigir outra conta de usuário, solicite ao responsável a configuração de <strong>AutomaticFullscreenAllowedForUrls</strong> para o usuário do telão e os três endereços do comando. Bloqueios e políticas de máquina ou da organização podem prevalecer; o comando não os remove. Se o Chrome não carregar a política, será necessário aplicá-la pelo gerenciamento da organização.</p>
           <a href="https://chromeenterprise.google/policies/#AutomaticFullscreenAllowedForUrls" target="_blank" rel="noopener noreferrer">Documentação oficial do Chrome (abre em nova aba)</a>
         </details>
-        <p>O comando inclui somente http://localhost:3000, https://dev-pulse.hostsoftcom.cloud e https://pulse.hostsoftcom.cloud. Outros endereços ou portas não são adicionados automaticamente.</p>
+        <p>O comando inclui somente http://localhost:3000, https://dev-pulse.softcomtecnologia.com e https://pulse.softcomtecnologia.com. Outros endereços ou portas não são adicionados automaticamente.</p>
         <p>Depois da liberação, volte aqui e verifique a autorização. Salve a entrada por inatividade e a opção de tela cheia, volte ao dashboard e aguarde o tempo configurado. Salvar no Pulse não concede a permissão do Chrome.</p>
       </DialogBody>
       <DialogFooter><Button type="button" onClick={() => setOpen(false)}>Concluir</Button></DialogFooter>

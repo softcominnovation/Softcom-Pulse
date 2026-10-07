@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { chromeFullscreenPolicyCommand } from "../lib/client/chrome-fullscreen-policy.ts";
 
 test("policy commands keep the exact environment origin and reject paths, credentials and injected patterns", () => {
-  for (const origin of ["http://localhost:3000", "http://127.0.0.1:3000", "https://dev-pulse.hostsoftcom.cloud", "https://pulse.hostsoftcom.cloud", "http://[::1]:3000"]) {
+  for (const origin of ["http://localhost:3000", "http://127.0.0.1:3000", "https://dev-pulse.softcomtecnologia.com", "https://pulse.softcomtecnologia.com", "http://[::1]:3000"]) {
     const command = chromeFullscreenPolicyCommand([origin]);
     assert.ok(command.includes(`    '${origin}'`));
     assert.ok(command.includes("HKCU:\\Software\\Policies\\Google\\Chrome\\AutomaticFullscreenAllowedForUrls"));
@@ -20,7 +20,7 @@ test("PowerShell policy command appends, preserves existing entries and is idemp
   const command = chromeFullscreenPolicyCommand();
   const harness = `
 $ErrorActionPreference = 'Stop'
-$script:values = @{'1'='https://existing.example'; '3'='https://other.example'; '4'='https://DEV-PULSE.hostsoftcom.cloud'}
+$script:values = @{'1'='https://existing.example'; '3'='https://other.example'; '4'='https://DEV-PULSE.softcomtecnologia.com'}
 $script:exists = $true
 $script:creates = 0
 $script:writes = 0
@@ -46,11 +46,11 @@ function New-ItemProperty {
 }
 ${command} | Out-Null
 ${command} | Out-Null
-if ($script:values.Count -ne 5 -or $script:values['1'] -cne 'https://existing.example' -or $script:values['3'] -cne 'https://other.example' -or $script:values['4'] -cne 'https://DEV-PULSE.hostsoftcom.cloud' -or $script:values['2'] -cne 'http://localhost:3000' -or $script:values['5'] -cne 'https://pulse.hostsoftcom.cloud' -or $script:writes -ne 2 -or $script:creates -ne 0) { throw 'Merge/idempotence failed' }
+if ($script:values.Count -ne 5 -or $script:values['1'] -cne 'https://existing.example' -or $script:values['3'] -cne 'https://other.example' -or $script:values['4'] -cne 'https://DEV-PULSE.softcomtecnologia.com' -or $script:values['2'] -cne 'http://localhost:3000' -or $script:values['5'] -cne 'https://pulse.softcomtecnologia.com' -or $script:writes -ne 2 -or $script:creates -ne 0) { throw 'Merge/idempotence failed' }
 $script:exists = $false
 $script:values = @{}
 ${command} | Out-Null
-if ($script:values.Count -ne 3 -or $script:values['1'] -cne 'http://localhost:3000' -or $script:values['2'] -cne 'https://dev-pulse.hostsoftcom.cloud' -or $script:values['3'] -cne 'https://pulse.hostsoftcom.cloud' -or $script:creates -ne 1) { throw 'New policy failed' }
+if ($script:values.Count -ne 3 -or $script:values['1'] -cne 'http://localhost:3000' -or $script:values['2'] -cne 'https://dev-pulse.softcomtecnologia.com' -or $script:values['3'] -cne 'https://pulse.softcomtecnologia.com' -or $script:creates -ne 1) { throw 'New policy failed' }
 Write-Output 'policy-script-ok'
 `;
   const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", harness], { encoding: "utf8", windowsHide: true });

@@ -1,7 +1,7 @@
 export const pulseFullscreenOrigins = [
   "http://localhost:3000",
-  "https://dev-pulse.hostsoftcom.cloud",
-  "https://pulse.hostsoftcom.cloud",
+  "https://dev-pulse.softcomtecnologia.com",
+  "https://pulse.softcomtecnologia.com",
 ] as const;
 
 export function chromeFullscreenPolicyCommand(addresses: readonly string[] = pulseFullscreenOrigins) {

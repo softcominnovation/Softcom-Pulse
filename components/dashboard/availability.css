@@ -84,9 +84,9 @@
 :is(.probe-dialog, .app-monitor-detail) .history-tooltip dd { font-family: var(--font-numeric); margin-top: 3px; }
 .availability-no-metrics { font-size: 10px; color: var(--pulse-muted); }
 @media (min-width: 1201px) and (min-height: 740px) {
-  .dashboard.balanced .dashboard-blocks { grid-template-rows: max-content max-content minmax(150px, 1fr); }
+  .dashboard.balanced .dashboard-blocks { grid-template-rows: max-content max-content; grid-auto-rows: minmax(0, 1fr); }
   .dashboard-shell:not([data-display-scale="100"]) .dashboard.balanced .dashboard-blocks { min-height: 0; }
-  .balanced .availability-panel { height: auto; }
+  .dashboard.balanced .availability-panel { height: auto; overflow: visible; }
   .balanced .availability-grid { flex: none; }
 }
 @media (max-width: 600px) {

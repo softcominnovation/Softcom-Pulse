@@ -63,7 +63,7 @@ test("fullscreen help checks the current origin and copies all three Pulse origi
   await expect(page.locator("html")).toHaveAttribute("data-copied", new URL(page.url()).origin);
   await dialog.getByRole("button", { name: `Copiar ${commandLabel.toLocaleLowerCase("pt-BR")}` }).click();
   const instructions = await page.locator("html").getAttribute("data-copied");
-  for (const origin of ["http://localhost:3000", "https://dev-pulse.hostsoftcom.cloud", "https://pulse.hostsoftcom.cloud"]) {
+  for (const origin of ["http://localhost:3000", "https://dev-pulse.softcomtecnologia.com", "https://pulse.softcomtecnologia.com"]) {
     expect(instructions).toContain(`'${origin}'`);
   }
   expect(instructions).not.toContain(new URL(page.url()).origin);

@@ -39,7 +39,7 @@ services:
       labels:
         - traefik.enable=true
         - traefik.docker.network=network_public
-        - traefik.http.routers.pulse-dev.rule=Host(`dev-pulse.hostsoftcom.cloud`)
+        - traefik.http.routers.pulse-dev.rule=Host(`dev-pulse.softcomtecnologia.com`)
         - traefik.http.routers.pulse-dev.entrypoints=websecure
         - traefik.http.routers.pulse-dev.tls=true
         - traefik.http.routers.pulse-dev.tls.certresolver=letsencryptresolver

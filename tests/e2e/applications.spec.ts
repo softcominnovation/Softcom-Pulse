@@ -35,6 +35,9 @@ test("application form keeps an empty secret and deletion requires confirmation"
   await signIn(page);
   await page.setViewportSize({ width: 390, height: 800 });
   await page.goto("/admin/aplicacoes");
+  await page.getByRole("link", { name: "Ir para a página inicial", exact: true }).click();
+  await expect(page).toHaveURL("/");
+  await page.goto("/admin/aplicacoes");
   const overviewLink = page.getByRole("link", { name: "Visão geral", exact: true });
   const servicesLink = page.getByRole("link", { name: "Serviços", exact: true });
   const overviewBox = await overviewLink.boundingBox();

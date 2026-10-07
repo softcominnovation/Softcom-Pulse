@@ -37,7 +37,7 @@ for (const dev of [false, true]) {
     assert.ok(c.services[db].environment.POSTGRES_PASSWORD.includes(dev ? "POSTGRES_PASSWORD_DEV:" : "POSTGRES_PASSWORD:"));
     assert.ok(app.deploy.labels.includes("traefik.http.routers." + web + ".tls.certresolver=letsencryptresolver"));
     assert.ok(app.deploy.labels.includes("traefik.http.routers." + web + ".entrypoints=websecure"));
-    assert.ok(app.deploy.labels.some(label => label.includes("Host(`" + (dev ? "dev-" : "") + "pulse.hostsoftcom.cloud`)")));
+    assert.ok(app.deploy.labels.some(label => label.includes("Host(`" + (dev ? "dev-" : "") + "pulse.softcomtecnologia.com`)")));
     assert.deepEqual(Object.keys(c.volumes), [db + "_data", cache + "_data"]);
   });
   test((dev ? "dev" : "prod") + " workflow only publishes from the correct tags", () => {

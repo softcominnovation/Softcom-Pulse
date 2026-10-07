@@ -114,6 +114,37 @@ services:
         delay: 5s
         window: 120s
 
+  pulse-dev-vps-monitor:
+    image: ghcr.io/softcominnovation/softcom-pulse:dev
+    command: [node, --conditions=react-server, collector/vps-monitor.mjs]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Defina a URL PostgreSQL desta stack}
+      REDIS_URL: ${REDIS_URL:-redis://pulse_redis_dev:6379}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?Set a 32-byte base64 TOKEN_ENCRYPTION_KEY}
+      VPS_MONITOR_INTERVAL_MS: ${VPS_MONITOR_INTERVAL_MS:-60000}
+      SNAPSHOT_TTL_SECONDS: ${SNAPSHOT_TTL_SECONDS:-300}
+    networks: [network_public]
+    stop_grace_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits: {cpus: ".25", memory: 128M}
+        reservations: {cpus: ".05", memory: 32M}
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: stop-first
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        window: 120s
+
   pulse_postgres_dev:
     image: postgres:17-bookworm
     environment:

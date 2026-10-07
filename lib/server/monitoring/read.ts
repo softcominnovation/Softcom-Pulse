@@ -18,6 +18,7 @@ import { isVmTemplate, operationalHost, operationalProblems } from "./virtual-ma
 import { readDisplayNames } from "./display-names.ts";
 import { visibleMetric } from "../../services/presentation.ts";
 import { readProbeOverview } from "../probe/overview.ts";
+import { listHighlightedStandaloneVps } from "../vps/repository.ts";
 
 export function linkedMachineName(hostKey: string, hosts: Host[]) {
   const vm = hosts.flatMap(host => host.vms).find(item => item.linuxHostKey === hostKey);
@@ -116,6 +117,7 @@ export async function readOverview(screenId?: string) {
   if (base.summary.vms !== null) base.summary.vms = current.batch.snapshots.get(snapshotKeys.hosts) ? current.hosts.reduce((n, host) => n + operationalHost(host).vms.length, 0) : null;
   if (base.summary.problems !== null) base.summary.problems = current.batch.snapshots.get(snapshotKeys.problems) ? problems.length : null;
   const probe = await readProbeOverview(visibleBlocks.some(block => block.type === "uptime_list")).catch(() => ({ externalServices: [], uptimeBoard: [] }));
+  const standaloneVps = await listHighlightedStandaloneVps().catch(() => []);
   const blocks: OverviewBlock[] = screen.blocks.filter(block => block.enabled).map(block => {
     let data: OverviewBlock["data"] = null;
     let keys: string[] = [];
@@ -135,7 +137,7 @@ export async function readOverview(screenId?: string) {
     const checkedAt = probe.uptimeBoard.reduce<string | null>((latest, item) => item.checkedAt && (!latest || item.checkedAt > latest) ? item.checkedAt : latest, null);
     return { blockId: block.id, type: block.type, options: effectiveOptions(block), data, availability: !blockCatalog[block.type].available || (block.type === "resource_card" && !data) ? "unavailable" : probeBlock ? (probe.uptimeBoard.length ? "ready" : "no_data") : result.availability, stale: probeBlock ? false : result.stale, lastUpdated: probeBlock ? checkedAt : result.lastUpdated };
   });
-  const data: Overview = { ...base, highlightedResources: resources, problems, screenId: screen.id, presentationRevision: presentation.data.revision, blocks, externalServices: probe.externalServices, uptimeBoard: probe.uptimeBoard };
+  const data: Overview = { ...base, highlightedResources: resources, problems, screenId: screen.id, presentationRevision: presentation.data.revision, blocks, externalServices: probe.externalServices, uptimeBoard: probe.uptimeBoard, standaloneVps };
   return { ...readResult(data, current.batch, current.keys), presentationStatus: names.status };
 }
 export async function readHistory(resource: History["resource"], window: History["window"] = "1h", signal?: AbortSignal) {

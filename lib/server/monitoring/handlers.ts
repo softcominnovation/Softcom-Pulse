@@ -14,6 +14,8 @@ import { listVmConfigs, saveVmConfig } from "../config/vms.ts";
 import { externalServiceHistoryRangeSchema } from "../../config/external-services.ts";
 import { listExternalServicesWithUptime } from "../probe/overview.ts";
 import { createExternalService, deleteExternalService, externalServiceHistory, updateExternalService } from "../probe/repository.ts";
+import { vpsHistoryRangeSchema } from "../../config/standalone-vps.ts";
+import { createStandaloneVps, createVpsStack, deleteStandaloneVps, deleteVpsStack, listStandaloneVps, readStandaloneVps, updateStandaloneVps, updateVpsStack } from "../vps/repository.ts";
 
 type Params<K extends string> = { params: Promise<Record<K, string>> };
 const emptyQuery = z.strictObject({});
@@ -100,6 +102,38 @@ export function externalServicePatch(request: Request, context: Params<"id">) {
 }
 export function externalServiceDelete(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); await deleteExternalService(uuidSchema.parse((await context.params).id)); }, 204);
+}
+export function standaloneVpsGet(request: Request) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listStandaloneVps() }; });
+}
+export function standaloneVpsPost(request: Request) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await createStandaloneVps(await jsonBody(request)) }; }, 201);
+}
+export function standaloneVpsPatch(request: Request, context: Params<"id">) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await updateStandaloneVps(uuidSchema.parse((await context.params).id), await jsonBody(request)) }; });
+}
+export function standaloneVpsDelete(request: Request, context: Params<"id">) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); await deleteStandaloneVps(uuidSchema.parse((await context.params).id)); }, 204);
+}
+export function standaloneVpsDetailGet(request: Request, context: Params<"id">) {
+  return protectedResponse(request, async () => ({ data: await readStandaloneVps(uuidSchema.parse((await context.params).id), queryParams(request, z.strictObject({ range: vpsHistoryRangeSchema.default("24h") })).range) }));
+}
+export function vpsStackPost(request: Request, context: Params<"id">) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await createVpsStack(uuidSchema.parse((await context.params).id), await jsonBody(request)) }; }, 201);
+}
+export function vpsStackPatch(request: Request, context: Params<"id" | "stackId">) {
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const route = await context.params;
+    return { data: await updateVpsStack(uuidSchema.parse(route.id), uuidSchema.parse(route.stackId), await jsonBody(request)) };
+  });
+}
+export function vpsStackDelete(request: Request, context: Params<"id" | "stackId">) {
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const route = await context.params;
+    await deleteVpsStack(uuidSchema.parse(route.id), uuidSchema.parse(route.stackId));
+  }, 204);
 }
 export function externalServiceHistoryGet(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => ({ data: await externalServiceHistory(uuidSchema.parse((await context.params).id), queryParams(request, z.strictObject({ range: externalServiceHistoryRangeSchema.default("24h") })).range) }));

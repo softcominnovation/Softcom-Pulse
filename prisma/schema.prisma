@@ -96,6 +96,57 @@ model ExternalServiceSample {
   @@map("external_service_sample")
 }
 
+model StandaloneVps {
+  id                String    @id @default(uuid()) @db.Uuid
+  name              String    @db.VarChar(120)
+  provider          String?   @db.VarChar(120)
+  ip                String    @db.VarChar(45)
+  domain            String?   @db.VarChar(255)
+  managerUrl        String?   @map("manager_url") @db.VarChar(2048)
+  baseUrl           String?   @map("base_url") @db.VarChar(2048)
+  apiKeyCiphertext  String?   @map("api_key_ciphertext")
+  enabled           Boolean   @default(true)
+  dashboardEnabled  Boolean   @default(false) @map("dashboard_enabled")
+  timeoutMs         Int       @default(5000) @map("timeout_ms")
+  revision          Int       @default(1)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  stacks            VpsStack[]
+  samples           VpsMonitorSample[]
+
+  @@index([name, id])
+  @@map("standalone_vps")
+}
+
+model VpsStack {
+  id        String        @id @default(uuid()) @db.Uuid
+  vpsId     String        @map("vps_id") @db.Uuid
+  vps       StandaloneVps @relation(fields: [vpsId], references: [id], onDelete: Cascade)
+  name      String        @db.VarChar(120)
+  link      String?       @db.VarChar(2048)
+  notes     String?       @db.VarChar(2000)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([vpsId, name, id])
+  @@map("vps_stack")
+}
+
+model VpsMonitorSample {
+  id            BigInt        @id @default(autoincrement())
+  vpsId         String        @map("vps_id") @db.Uuid
+  vps           StandaloneVps @relation(fields: [vpsId], references: [id], onDelete: Cascade)
+  checkedAt     DateTime      @map("checked_at") @db.Timestamptz(3)
+  reason        Int           @db.SmallInt
+  latencyMs     Int?          @map("latency_ms")
+  cpuPercent    Decimal?      @map("cpu_percent") @db.Decimal(6, 2)
+  memoryPercent Decimal?      @map("memory_percent") @db.Decimal(6, 2)
+  diskPercent   Decimal?      @map("disk_percent") @db.Decimal(6, 2)
+
+  @@index([vpsId, checkedAt])
+  @@map("vps_monitor_sample")
+}
+
 model VmTemplateConfig {
   templateKey        String   @id @map("template_key") @db.VarChar(35)
   hostKey            String   @map("host_key") @db.VarChar(256)

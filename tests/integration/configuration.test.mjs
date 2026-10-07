@@ -21,6 +21,9 @@ import { fileURLToPath } from "node:url";
 import { runProbeCycle } from "../../lib/server/probe/cycle.ts";
 import { listEnabledExternalServices, purgeExternalSamples } from "../../lib/server/probe/repository.ts";
 import { probeKeys } from "../../lib/server/probe/store.ts";
+import { runVpsMonitorCycle } from "../../lib/server/vps/cycle.ts";
+import { purgeVpsSamples } from "../../lib/server/vps/repository.ts";
+import { vpsResultKey } from "../../lib/server/vps/store.ts";
 
 function namedVmFixture(parentKey = "names-parent", id = "100", type = "qemu") {
   const parent = { ...host(parentKey), role: "hypervisor" };
@@ -778,4 +781,113 @@ test("probe process defaults to 60s, refuses other intervals and does not take t
     await template.query("BEGIN"); await template.query("SET LOCAL statement_timeout = '2000ms'");
     await template.query("SELECT pg_advisory_xact_lock(734021005::bigint)"); await template.query("COMMIT"); await template.end();
   } finally { await holder.query("SELECT pg_advisory_unlock(734021007::bigint)"); await holder.end(); }
+});
+
+function runVpsMonitorProcess(overrides = {}, unset = []) {
+  const env = { ...process.env, ...overrides };
+  for (const key of unset) delete env[key];
+  return new Promise(resolve => {
+    const child = spawn(process.execPath, ["--conditions=react-server", "collector/vps-monitor.mjs", "--once"], { cwd: appRoot, env });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", chunk => { stdout += chunk; });
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    child.on("close", code => resolve({ code, stdout, stderr }));
+  });
+}
+const vpsInput = (extra = {}) => ({ name: "Lab", ip: "10.8.0.4", ...extra });
+
+test("standalone VPS registration keeps the monitor key local and does not change Zabbix resources", async () => {
+  const resourcesBefore = Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM monitored_resource_config")).rows[0].total);
+  const servicesBefore = Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM external_service")).rows[0].total);
+  const vmsBefore = Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM vm_display_config")).rows[0].total);
+  const syncBefore = await cache.get(keys.sync);
+  const overviewBefore = await result(await handlers.overviewGet(request()));
+  const secret = "vps-monitor-secret-value";
+  const created = await result(await handlers.standaloneVpsPost(request("/", "POST", vpsInput())));
+  assert.equal(created.status, 201);
+  assert.equal(created.body.data.provider, null);
+  assert.equal(created.body.data.monitorConfigured, false);
+  assert.equal(created.body.data.monitorState, "not_configured");
+  assert.deepEqual(created.body.data.strip, []);
+  assert.equal(JSON.stringify(created.body).includes(secret), false);
+  const id = created.body.data.id;
+  const incomplete = await result(await handlers.standaloneVpsPatch(request("/", "PATCH", { expectedRevision: 1, baseUrl: "http://10.8.0.4:9100/monitor" }), params({ id })));
+  assert.equal(incomplete.status, 422);
+  assert.equal(incomplete.body.error.code, "monitor_incomplete");
+  const monitored = await result(await handlers.standaloneVpsPatch(request("/", "PATCH", { expectedRevision: 1, baseUrl: "http://10.8.0.4:9100/monitor/", apiKey: secret, dashboardEnabled: true, provider: " Hostinger " }), params({ id })));
+  assert.equal(monitored.status, 200);
+  assert.equal(monitored.body.data.provider, "Hostinger");
+  assert.equal(monitored.body.data.baseUrl, "http://10.8.0.4:9100/monitor");
+  assert.equal(monitored.body.data.monitorConfigured, true);
+  assert.equal(monitored.body.data.monitorState, "pending");
+  assert.equal(JSON.stringify(monitored.body).includes(secret), false);
+  assert.equal((await handlers.standaloneVpsPatch(request("/", "PATCH", { expectedRevision: 1, name: "Atrasado" }), params({ id }))).status, 409);
+  const calls = [];
+  await runVpsMonitorCycle({ transport: async url => { calls.push(url); throw new Error("unreachable"); } });
+  assert.deepEqual(calls, ["http://10.8.0.4:9100/monitor/ping/latency"]);
+  const failed = await result(await handlers.standaloneVpsDetailGet(request("/?range=24h"), params({ id })));
+  assert.equal(failed.body.data.samples[0].reason, 5);
+  assert.equal(failed.body.data.monitorState, "down");
+  assert.equal(JSON.stringify(failed.body).includes(secret), false);
+  assert.equal(await cache.get(keys.sync), syncBefore);
+  const paused = await result(await handlers.standaloneVpsPost(request("/", "POST", vpsInput({ name: "Pausada", ip: "10.8.0.5", enabled: false, baseUrl: "http://10.8.0.5/monitor", apiKey: secret }))));
+  calls.length = 0;
+  await runVpsMonitorCycle({ transport: async url => { calls.push(url); return { status: 200, body: "", latencyMs: 10 }; } });
+  assert.equal(calls.some(url => url.includes("10.8.0.5")), false);
+  const pausedRead = await result(await handlers.standaloneVpsDetailGet(request(), params({ id: paused.body.data.id })));
+  assert.equal(pausedRead.body.data.monitorState, "inactive");
+  assert.deepEqual(pausedRead.body.data.strip, []);
+  const statusBody = JSON.stringify({ cpu: { load: "12,5%", cores: 2, coresLoad: [{ core: "0", load: "9%" }] }, memory: { total: "8 GB", used: "2 GB", free: "6 GB" }, disks: [{ device: "sda", use: "72%" }, { device: "sdb", use: "10%" }] });
+  await runVpsMonitorCycle({ transport: async url => url.endsWith("/status") ? { status: 200, body: statusBody, latencyMs: 20 } : { status: 200, body: "", latencyMs: 40 } });
+  touchedKeys.add(vpsResultKey(id));
+  const stored = await cache.get(vpsResultKey(id));
+  assert.equal(stored.includes(secret), false);
+  assert.equal(stored.includes("10.8.0.4"), false);
+  assert.equal(JSON.parse(stored).source, "vps");
+  const ready = await result(await handlers.standaloneVpsDetailGet(request("/?range=24h"), params({ id })));
+  assert.equal(ready.body.data.monitorState, "up");
+  assert.equal(ready.body.data.cpuPercent, 12.5);
+  assert.equal(ready.body.data.diskPercent, 72);
+  assert.equal(ready.body.data.result.cpu.cores, 2);
+  assert.equal(ready.body.data.result.disks.length, 2);
+  const stack = await result(await handlers.vpsStackPost(request("/", "POST", { name: "API", link: "https://10.8.0.4/api", notes: "fila principal" }), params({ id })));
+  assert.equal(stack.status, 201);
+  assert.equal((await handlers.vpsStackPatch(request("/", "PATCH", { notes: "fila nova" }), params({ id, stackId: stack.body.data.id }))).status, 200);
+  const overview = await result(await handlers.overviewGet(request()));
+  assert.equal(overview.body.data.standaloneVps.some(item => item.id === id), true);
+  assert.equal(overview.body.data.standaloneVps.some(item => item.id === paused.body.data.id), false);
+  assert.deepEqual(overview.body.data.externalServices.map(item => item.id), overviewBefore.body.data.externalServices.map(item => item.id));
+  assert.deepEqual(overview.body.data.problems.map(item => item.id ?? item.eventId ?? item), overviewBefore.body.data.problems.map(item => item.id ?? item.eventId ?? item));
+  const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+  await getPrisma().vpsMonitorSample.create({ data: { vpsId: id, checkedAt: old, reason: 0, latencyMs: 10 } });
+  await purgeVpsSamples(new AbortController().signal);
+  assert.equal(Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM vps_monitor_sample WHERE vps_id = $1 AND checked_at < $2", [id, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)])).rows[0].total), 0);
+  assert.equal((await handlers.vpsStackDelete(request("/", "DELETE"), params({ id, stackId: stack.body.data.id }))).status, 204);
+  assert.equal((await handlers.standaloneVpsDelete(request("/", "DELETE"), params({ id }))).status, 204);
+  assert.equal((await handlers.standaloneVpsDelete(request("/", "DELETE"), params({ id: paused.body.data.id }))).status, 204);
+  assert.equal(Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM monitored_resource_config")).rows[0].total), resourcesBefore);
+  assert.equal(Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM external_service")).rows[0].total), servicesBefore);
+  assert.equal(Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM vm_display_config")).rows[0].total), vmsBefore);
+  assert.equal(await cache.get(keys.sync), syncBefore);
+});
+
+test("standalone VPS registration stops at 100 rows and a second monitor process does not collect", async () => {
+  await getDatabase().query("INSERT INTO standalone_vps (name, ip) SELECT 'Limite ' || g, '10.9.0.' || ((g - 1) % 250 + 1) FROM generate_series(1, 100) AS g");
+  const limited = await result(await handlers.standaloneVpsPost(request("/", "POST", vpsInput({ name: "Extra", ip: "10.9.1.1" }))));
+  assert.equal(limited.status, 409);
+  assert.equal(limited.body.error.code, "standalone_vps_limit");
+  await getDatabase().query("DELETE FROM standalone_vps");
+  const invalid = await runVpsMonitorProcess({ VPS_MONITOR_INTERVAL_MS: "15000" });
+  assert.equal(invalid.code, 1);
+  assert.match(invalid.stderr, /vps_monitor_configuration_invalid/);
+  assert.equal(invalid.stdout.includes("vps_monitor_cycle"), false);
+  const holder = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await holder.connect();
+  assert.equal((await holder.query("SELECT pg_try_advisory_lock(734021009::bigint) AS locked")).rows[0].locked, true);
+  try {
+    const second = await runVpsMonitorProcess({ VPS_MONITOR_INTERVAL_MS: "45000" });
+    assert.equal(second.code, 1);
+    assert.match(second.stderr, /vps_monitor_already_running/);
+    assert.equal(second.stdout.includes("vps_monitor_cycle"), false);
+  } finally { await holder.query("SELECT pg_advisory_unlock(734021009::bigint)"); await holder.end(); }
 });

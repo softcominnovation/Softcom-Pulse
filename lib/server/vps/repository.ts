@@ -8,11 +8,11 @@ import {
 import { BffError } from "../bff.ts";
 import { getPrisma } from "../prisma.ts";
 import { deleteVpsResult, readVpsResult } from "./store.ts";
-import { sealVpsMonitorKey } from "./secret.ts";
+import { openVpsMonitorKey, sealVpsMonitorKey } from "./secret.ts";
 
 type VpsRow = {
   id: string; name: string; provider: string | null; ip: string; domain: string | null; managerUrl: string | null; baseUrl: string | null; apiKeyCiphertext: string | null;
-  enabled: boolean; dashboardEnabled: boolean; timeoutMs: number; revision: number; createdAt: Date; updatedAt: Date;
+  enabled: boolean; monitorPaused: boolean; progressStartedAt: Date | null; dashboardEnabled: boolean; timeoutMs: number; revision: number; createdAt: Date; updatedAt: Date;
 };
 type SampleRow = { reason: number; latencyMs: number | null; cpuPercent: Prisma.Decimal | null; memoryPercent: Prisma.Decimal | null; diskPercent: Prisma.Decimal | null; checkedAt: Date };
 const windows = { "24h": 24, "7d": 24 * 7, "30d": 24 * 30 };
@@ -27,13 +27,15 @@ function percent(value: Prisma.Decimal | number | null) {
 }
 function publicVps(row: VpsRow, sample: SampleRow | null, strip: number[]) {
   const monitorConfigured = row.baseUrl !== null;
+  const visible = row.enabled && monitorConfigured && !row.monitorPaused;
   return {
     id: row.id, name: row.name, provider: row.provider, ip: row.ip, domain: row.domain, managerUrl: row.managerUrl, baseUrl: row.baseUrl, monitorConfigured,
-    enabled: row.enabled, dashboardEnabled: row.dashboardEnabled, timeoutMs: row.timeoutMs, revision: row.revision,
-    monitorState: monitorState(row.enabled, monitorConfigured, sample?.reason ?? null),
-    reason: !row.enabled || !monitorConfigured ? null : sample?.reason ?? null,
+    enabled: row.enabled, monitorPaused: row.monitorPaused, progressStartedAt: row.progressStartedAt?.toISOString() ?? null, dashboardEnabled: row.dashboardEnabled, timeoutMs: row.timeoutMs, revision: row.revision,
+    monitorState: monitorState(row.enabled, monitorConfigured, sample?.reason ?? null, row.monitorPaused),
+    reason: visible ? sample?.reason ?? null : null,
     latencyMs: sample?.latencyMs ?? null, cpuPercent: percent(sample?.cpuPercent ?? null), memoryPercent: percent(sample?.memoryPercent ?? null), diskPercent: percent(sample?.diskPercent ?? null),
-    checkedAt: sample?.checkedAt.toISOString() ?? null, strip: !row.enabled || !monitorConfigured ? [] : strip,
+    checkedAt: visible ? sample?.checkedAt.toISOString() ?? null : null,
+    strip: visible ? strip : [],
     createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -49,8 +51,12 @@ async function strips(ids: string[]) {
   if (!ids.length) return new Map<string, number[]>();
   const rows = await getPrisma().$queryRaw<{ vps_id: string; reason: number }[]>`
     SELECT vps_id, reason FROM (
-      SELECT vps_id, reason, checked_at, row_number() OVER (PARTITION BY vps_id ORDER BY checked_at DESC) AS n
-      FROM vps_monitor_sample WHERE vps_id IN (${Prisma.join(ids.map(id => Prisma.sql`${id}::uuid`))})
+      SELECT s.vps_id, s.reason, s.checked_at, row_number() OVER (PARTITION BY s.vps_id ORDER BY s.checked_at DESC) AS n
+      FROM vps_monitor_sample s
+      JOIN standalone_vps v ON v.id = s.vps_id
+      WHERE s.vps_id IN (${Prisma.join(ids.map(id => Prisma.sql`${id}::uuid`))})
+        AND v.monitor_paused = false
+        AND (v.progress_started_at IS NULL OR s.checked_at >= v.progress_started_at)
     ) ranked WHERE n <= ${vpsStripLength} ORDER BY vps_id, checked_at ASC`;
   const map = new Map<string, number[]>();
   for (const row of rows) {
@@ -65,6 +71,10 @@ async function cards(rows: VpsRow[]) {
   const [samples, presence] = await Promise.all([latestSamples(monitored), strips(monitored)]);
   return rows.map(row => publicVps(row, samples.get(row.id) ?? null, presence.get(row.id) ?? []));
 }
+async function adminCards(rows: VpsRow[]) {
+  const items = await cards(rows);
+  return items.map((item, index) => ({ ...item, apiKey: rows[index].apiKeyCiphertext ? openVpsMonitorKey(rows[index].apiKeyCiphertext) : null }));
+}
 function monitorPair(baseUrl: string | null, hasKey: boolean) {
   if ((baseUrl !== null) !== hasKey) throw new BffError(422, "monitor_incomplete");
 }
@@ -77,14 +87,14 @@ function nextKey(current: string | null, apiKey: string | null | undefined, base
 }
 
 export function listStandaloneVps() {
-  return database(async () => cards(await getPrisma().standaloneVps.findMany({ orderBy: [{ name: "asc" }, { id: "asc" }] }) as VpsRow[]));
+  return database(async () => adminCards(await getPrisma().standaloneVps.findMany({ orderBy: [{ name: "asc" }, { id: "asc" }] }) as VpsRow[]));
 }
 export function listHighlightedStandaloneVps() {
-  return database(async () => (await listStandaloneVps()).filter(row => row.dashboardEnabled));
+  return database(async () => cards(await getPrisma().standaloneVps.findMany({ where: { dashboardEnabled: true }, orderBy: [{ name: "asc" }, { id: "asc" }] }) as VpsRow[]));
 }
 export function listEnabledMonitoredVps() {
   return database(async () => getPrisma().standaloneVps.findMany({
-    where: { enabled: true, baseUrl: { not: null }, apiKeyCiphertext: { not: null } },
+    where: { enabled: true, monitorPaused: false, baseUrl: { not: null }, apiKeyCiphertext: { not: null } },
     orderBy: [{ name: "asc" }, { id: "asc" }],
     select: { id: true, baseUrl: true, apiKeyCiphertext: true, timeoutMs: true },
   }));
@@ -96,8 +106,8 @@ export async function createStandaloneVps(body: unknown) {
     await lockWrites(tx);
     if (await tx.standaloneVps.count() >= standaloneVpsLimit) throw new BffError(409, "standalone_vps_limit");
     const row = await tx.standaloneVps.create({ data: dataFor(input, input.apiKey ? sealVpsMonitorKey(input.apiKey) : null) });
-    return publicVps(row as VpsRow, null, []);
-  }));
+    return row;
+  })).then(row => adminCards([row as VpsRow]).then(items => items[0]));
 }
 export async function updateStandaloneVps(id: string, body: unknown) {
   const patch = standaloneVpsPatchSchema.parse(body);
@@ -110,8 +120,9 @@ export async function updateStandaloneVps(id: string, body: unknown) {
     const baseUrl = changes.baseUrl !== undefined ? changes.baseUrl : current.baseUrl;
     const ciphertext = nextKey(current.apiKeyCiphertext, apiKey, baseUrl);
     monitorPair(baseUrl, ciphertext !== null);
-    return tx.standaloneVps.update({ where: { id }, data: { ...changes, baseUrl, apiKeyCiphertext: ciphertext, revision: { increment: 1 } } });
-  })).then(row => cards([row as VpsRow]).then(items => items[0]));
+    const resumed = patch.monitorPaused === false && current.monitorPaused;
+    return tx.standaloneVps.update({ where: { id }, data: { ...changes, baseUrl, apiKeyCiphertext: ciphertext, revision: { increment: 1 }, ...(resumed ? { progressStartedAt: new Date() } : {}) } });
+  })).then(row => adminCards([row as VpsRow]).then(items => items[0]));
 }
 export function deleteStandaloneVps(id: string) {
   return database(() => getPrisma().$transaction(async tx => {
@@ -126,7 +137,7 @@ export async function readStandaloneVps(id: string, range: string) {
     const row = await getPrisma().standaloneVps.findUnique({ where: { id }, include: { stacks: { orderBy: [{ name: "asc" }, { id: "asc" }] } } });
     if (!row) throw new BffError(404, "standalone_vps_not_found");
     const since = new Date(Date.now() - windows[window] * 60 * 60 * 1000);
-    const [card] = await cards([row as VpsRow]);
+    const [card] = await adminCards([row as VpsRow]);
     const samples = await getPrisma().vpsMonitorSample.findMany({ where: { vpsId: id, checkedAt: { gte: since } }, orderBy: { checkedAt: "asc" } });
     const result = row.enabled && row.baseUrl ? await readVpsResult(id).catch(() => null) : null;
     return { ...card, stacks: row.stacks.map(stack => ({ id: stack.id, vpsId: stack.vpsId, name: stack.name, link: stack.link, notes: stack.notes, createdAt: stack.createdAt.toISOString(), updatedAt: stack.updatedAt.toISOString() })), result, samples: samples.map(sample => ({ checkedAt: sample.checkedAt.toISOString(), reason: sample.reason, latencyMs: sample.latencyMs, cpuPercent: percent(sample.cpuPercent), memoryPercent: percent(sample.memoryPercent), diskPercent: percent(sample.diskPercent) })), range: window };

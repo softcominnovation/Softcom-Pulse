@@ -56,6 +56,8 @@ test("monitor state treats a missing monitor as not configured and an unusable s
   assert.equal(monitorState(true, true, 1), "up");
   assert.equal(monitorState(true, true, 4), "up");
   assert.equal(monitorState(true, true, 5), "down");
+  assert.equal(monitorState(true, true, 0, true), "paused");
+  assert.equal(monitorState(false, true, 0, true), "inactive");
   const down = classifyVpsCheck({ error: "timeout" }, null, 5000);
   assert.equal(down.reason, 5);
   assert.equal(down.latencyMs, null);

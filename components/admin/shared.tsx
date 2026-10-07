@@ -25,6 +25,11 @@ export function errorText(error: unknown) {
     invalid_request: "Confira os campos preenchidos e os limites indicados no formulário.",
     external_service_limit: "O limite de 100 aplicações cadastradas foi atingido.",
     external_service_not_found: "Esta aplicação não está mais cadastrada. Recarregue a lista.",
+    standalone_vps_limit: "O limite de 100 VPS cadastradas foi atingido.",
+    standalone_vps_not_found: "Esta VPS não está mais cadastrada. Recarregue a lista.",
+    monitor_incomplete: "Informe a URL base e a chave juntas, ou deixe as duas vazias.",
+    vps_stack_limit: "O limite de 50 serviços nesta VPS foi atingido.",
+    vps_stack_not_found: "Este serviço não está mais cadastrado. Recarregue a VPS.",
   };
   return messages[code] ?? "Não foi possível concluir. Seu rascunho foi mantido; tente novamente.";
 }
@@ -52,10 +57,10 @@ export function useMutation() {
   }
   return { run, busy };
 }
-export function Field({ label, children, hint, error, action }: { label: string; children: ReactNode; hint?: string; error?: string; action?: ReactNode }) {
+export function Field({ label, children, hint, error, action, className }: { label: string; children: ReactNode; hint?: string; error?: string; action?: ReactNode; className?: string }) {
   const id = useId();
   const control = cloneElement(children as ReactElement<{ id: string; "aria-describedby"?: string; "aria-invalid"?: boolean }>, { id, "aria-describedby": hint || error ? `${id}-hint` : undefined, "aria-invalid": !!error });
-  return <div className="admin-field"><label htmlFor={id}>{label}</label>{action ? <div className="admin-field-control">{control}{action}</div> : control}{(hint || error) && <small id={`${id}-hint`} className={error ? "admin-error" : undefined}>{error ?? hint}</small>}</div>;
+  return <div className={className ? `admin-field ${className}` : "admin-field"}><label htmlFor={id}>{label}</label>{action ? <div className="admin-field-control">{control}{action}</div> : control}{(hint || error) && <small id={`${id}-hint`} className={error ? "admin-error" : undefined}>{error ?? hint}</small>}</div>;
 }
 export function Check({ label, children }: { label: string; children: ReactNode }) { return <label className="admin-check">{children}<span>{label}</span></label>; }
 export function ReadError({ refresh, children }: { refresh: () => void; children: ReactNode }) {

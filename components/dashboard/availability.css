@@ -60,6 +60,10 @@
 .uptime-percent { font: 12px/16px var(--font-numeric); color: var(--pulse-text); }
 .uptime-strip { display: block; width: 100%; height: 8px; }
 .probe-dialog { width: 920px; max-width: calc(100% - 32px); }
+.vps-snapshot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin: 8px 0 14px; }
+.vps-snapshot span { display: block; color: var(--pulse-muted); font-size: 12px; }
+.vps-snapshot strong { display: block; margin-top: 2px; font: 22px/1.2 var(--font-numeric); font-variant-numeric: tabular-nums; color: var(--pulse-text); }
+.vps-snapshot .metric-meter { height: 4px; margin: 8px 0 0; }
 .probe-admin-link { display: inline-flex; margin-top: 10px; color: var(--pulse-green); font-size: 13px; font-weight: 650; text-decoration: none; }
 .probe-admin-link:hover { text-decoration: underline; }
 .probe-ranges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }

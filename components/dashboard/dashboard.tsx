@@ -92,18 +92,18 @@ export function Dashboard() {
     {!player.document && !configuration.failed && <p className="panel-empty" role="status">Carregando as telas configuradas…</p>}
     {player.document && !screen && <div className="dashboard-banner banner-warn" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Nenhuma composição utilizável</strong><p>A configuração precisa de uma tela habilitada com blocos disponíveis.</p></div><Button onClick={configuration.refresh}>Recarregar configuração</Button></div>}
     {screen && <>
-      <div className={`dashboard-banner dashboard-status-banner banner-${tone}`} role={overview.failed || result?.stale ? "alert" : "status"}>
+      {/* <div className={`dashboard-banner dashboard-status-banner banner-${tone}`} role={overview.failed || result?.stale ? "alert" : "status"}>
         {tone === "warn" || tone === "bad" ? <TriangleAlert aria-hidden="true" /> : <Activity aria-hidden="true" />}
         <div><strong>{title}</strong><p>{overview.failed ? result ? "A última leitura foi mantida. Os valores não representam confirmação do estado atual." : "Ainda não foi possível obter uma leitura. Tente novamente." : result?.presentationStatus === "unavailable" ? "Nomes personalizados indisponíveis; identificações técnicas preservadas." : partial ? "Confira a data e a qualidade de cada amostra." : !hasData ? "Os indicadores serão exibidos quando houver evidência disponível." : "Dados do Zabbix · estado e qualidade avaliados por recurso."}</p></div>
         <div className="banner-update"><span>Última atualização</span><time dateTime={result?.lastUpdated ?? undefined}>{timestamp(result?.lastUpdated)}</time></div>
         <Button size="icon" aria-label="Atualizar monitoramento" title={`Última atualização: ${timestamp(result?.lastUpdated)}`} onClick={overview.refresh}><RefreshCw aria-hidden="true" /></Button>
-      </div>
+      </div> */}
       <EvidenceTimeContext value={now}><div data-dashboard-content className="dashboard-blocks" aria-busy={overview.loading}>
         {!result && !overview.failed && <div className="dashboard-loading" role="status">Carregando os indicadores da tela…</div>}
         {result && screen.blocks.filter(block => block.enabled).map(block => {
           const payload = result.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
           return <div className={`dashboard-block width-${block.width} block-${block.type}`} key={block.id}>
-            {payload ? <DashboardBlock block={payload} failed={stale} probes={result.data.externalServices ?? []} /> : <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section>}
+            {payload ? <DashboardBlock block={payload} failed={stale} probes={result.data.externalServices ?? []} vps={result.data.standaloneVps ?? []} /> : <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section>}
           </div>;
         })}
       </div></EvidenceTimeContext>

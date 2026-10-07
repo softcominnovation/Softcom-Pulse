@@ -23,13 +23,13 @@ export function PlayerToolbar({ store }: { store: ReturnType<typeof createPlayer
     </div>
     <div className="dashboard-heading">
       <div><p className="dashboard-eyebrow">CENTRAL DE MONITORAMENTO</p><h1>Dashboard</h1><p className="dashboard-subtitle">Infraestrutura, serviços e evidências da operação.</p></div>
-      <div className="player-controls">
-        <Button variant="ghost" disabled={!canRotate} aria-pressed={player.rotating} title="Atalho R" onClick={() => player.rotating ? player.stop() : player.start()}>{player.rotating ? <Pause aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}{player.rotating ? "Parar alternância" : "Alternar telas"}</Button>
+      {(player.rotating && paused || !player.rotating && player.pending) && <div className="player-controls">
         {player.rotating && paused && <Button onClick={() => player.start()} disabled={player.hidden || player.dialog}><Play aria-hidden="true" />Continuar alternância</Button>}
         {!player.rotating && player.pending && <Button onClick={() => player.stop()}>Aplicar configuração atualizada</Button>}
-      </div>
+      </div>}
     </div>
     <div className="screen-controls">
+      <Button variant="ghost" disabled={!canRotate} aria-pressed={player.rotating} title="Atalho R" onClick={() => player.rotating ? player.stop() : player.start()}>{player.rotating ? <Pause aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}{player.rotating ? "Parar alternância" : "Alternar telas"}</Button>
       <label htmlFor="dashboard-screen">Tela {current ? screens.indexOf(current) + 1 : 0} de {screens.length}</label>
       <select id="dashboard-screen" value={player.screenId ?? ""} disabled={!current} onChange={event => player.select(event.target.value)} aria-label="Escolher tela">
         {!current && <option value="">Nenhuma tela disponível</option>}

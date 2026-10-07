@@ -153,7 +153,8 @@
 .tv-mode .metric-value strong { font-size: calc(15px * var(--dashboard-scale, 1)); }
 .tv-mode .problem-list li, .tv-mode .vm-summary th, .tv-mode .vm-summary td { font-size: calc(12px * var(--dashboard-scale, 1)); }
 .tv-mode .dashboard-footer { font-size: calc(11px * var(--dashboard-scale, 1)); }
-.tv-mode .monitoring-nav .admin-nav-link { display: none; }
+.tv-mode .monitoring-nav .admin-nav-link,
+.dashboard-shell[data-presentation="true"] .monitoring-nav .admin-nav-link { display: none; }
 .panel-link { margin-left: auto; display: inline-flex; align-items: center; gap: calc(6px * var(--dashboard-scale, 1)); min-height: calc(28px * var(--dashboard-scale, 1)); font-size: calc(11px * var(--dashboard-scale, 1)); color: var(--pulse-muted); white-space: nowrap; }
 .panel-link:hover, .details-back:hover { color: var(--pulse-green); }
 .panel-link svg { width: calc(14px * var(--dashboard-scale, 1)); height: calc(14px * var(--dashboard-scale, 1)); }

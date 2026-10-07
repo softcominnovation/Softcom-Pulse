@@ -820,7 +820,7 @@ test("standalone VPS registration keeps the monitor key local and does not chang
   assert.equal(monitored.body.data.baseUrl, "http://10.8.0.4:9100/monitor");
   assert.equal(monitored.body.data.monitorConfigured, true);
   assert.equal(monitored.body.data.monitorState, "pending");
-  assert.equal(JSON.stringify(monitored.body).includes(secret), false);
+  assert.equal(monitored.body.data.apiKey, secret);
   assert.equal((await handlers.standaloneVpsPatch(request("/", "PATCH", { expectedRevision: 1, name: "Atrasado" }), params({ id }))).status, 409);
   const calls = [];
   await runVpsMonitorCycle({ transport: async url => { calls.push(url); throw new Error("unreachable"); } });
@@ -828,7 +828,7 @@ test("standalone VPS registration keeps the monitor key local and does not chang
   const failed = await result(await handlers.standaloneVpsDetailGet(request("/?range=24h"), params({ id })));
   assert.equal(failed.body.data.samples[0].reason, 5);
   assert.equal(failed.body.data.monitorState, "down");
-  assert.equal(JSON.stringify(failed.body).includes(secret), false);
+  assert.equal(failed.body.data.apiKey, secret);
   assert.equal(await cache.get(keys.sync), syncBefore);
   const paused = await result(await handlers.standaloneVpsPost(request("/", "POST", vpsInput({ name: "Pausada", ip: "10.8.0.5", enabled: false, baseUrl: "http://10.8.0.5/monitor", apiKey: secret }))));
   calls.length = 0;
@@ -855,6 +855,7 @@ test("standalone VPS registration keeps the monitor key local and does not chang
   assert.equal((await handlers.vpsStackPatch(request("/", "PATCH", { notes: "fila nova" }), params({ id, stackId: stack.body.data.id }))).status, 200);
   const overview = await result(await handlers.overviewGet(request()));
   assert.equal(overview.body.data.standaloneVps.some(item => item.id === id), true);
+  assert.equal(JSON.stringify(overview.body).includes(secret), false);
   assert.equal(overview.body.data.standaloneVps.some(item => item.id === paused.body.data.id), false);
   assert.deepEqual(overview.body.data.externalServices.map(item => item.id), overviewBefore.body.data.externalServices.map(item => item.id));
   assert.deepEqual(overview.body.data.problems.map(item => item.id ?? item.eventId ?? item), overviewBefore.body.data.problems.map(item => item.id ?? item.eventId ?? item));

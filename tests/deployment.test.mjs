@@ -22,8 +22,11 @@ for (const dev of [false, true]) {
       if (name !== web) assert.equal(service.deploy.labels, undefined);
     }
     const app = c.services[web];
-    assert.match(app.image, dev ? /:dev$/ : /:latest$/);
-    assert.equal(app.environment.API_BASE_URL, "https://api.softcom.cloud");
+    const image = "ghcr.io/softcominnovation/softcom-pulse:${PULSE_VERSION:-" + (dev ? "dev" : "latest") + "}";
+    assert.equal(app.image, image);
+    for (const suffix of ["-collector", "-probe", "-vps-monitor"]) assert.equal(c.services[web + suffix].image, image);
+    assert.equal(app.environment.API_BASE_URL, "${API_BASE_URL:-https://api.softcom.cloud}");
+    assert.equal(c.services[web + "-collector"].environment.API_BASE_URL, "${API_BASE_URL:-https://api.softcom.cloud}");
     assert.ok(app.environment.REDIS_URL.includes(cache));
     assert.equal(c.services[web + "-collector"].deploy.update_config.order, "stop-first");
     assert.deepEqual(c.services[web + "-collector"].command, ["node", "--conditions=react-server", "collector/index.mjs"]);

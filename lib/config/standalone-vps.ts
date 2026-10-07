@@ -1,4 +1,3 @@
-import { isIP } from "node:net";
 import { z } from "zod";
 
 const control = /[\u0000-\u001F\u007F]/;
@@ -12,7 +11,7 @@ export const standaloneVpsLimit = 100;
 export const vpsStackLimit = 50;
 export const vpsSampleRetentionMs = 30 * 24 * 60 * 60 * 1000;
 export const vpsHistoryRangeSchema = z.enum(["24h", "7d", "30d"]);
-export type MonitorState = "inactive" | "not_configured" | "pending" | "up" | "down";
+export type MonitorState = "inactive" | "not_configured" | "pending" | "up" | "down" | "paused";
 
 export function vpsMonitorIntervalMs(value = process.env.VPS_MONITOR_INTERVAL_MS) {
   if (value === undefined || value.trim() === "") return 60000;
@@ -21,8 +20,9 @@ export function vpsMonitorIntervalMs(value = process.env.VPS_MONITOR_INTERVAL_MS
   return Number.isSafeInteger(interval) && interval >= 30000 && interval <= 120000 ? interval : null;
 }
 
-export function monitorState(enabled: boolean, monitorConfigured: boolean, reason: number | null): MonitorState {
+export function monitorState(enabled: boolean, monitorConfigured: boolean, reason: number | null, monitorPaused = false): MonitorState {
   if (!enabled) return "inactive";
+  if (monitorPaused) return "paused";
   if (!monitorConfigured) return "not_configured";
   if (reason === null) return "pending";
   if (reason === vpsMonitorReasons.ok || reason === vpsMonitorReasons.slow || reason === vpsMonitorReasons.json) return "up";
@@ -68,7 +68,14 @@ const optionalText = (max: number, missing: "null" | "keep") => z.string().trim(
   if (control.test(value)) { context.addIssue({ code: "custom", message: "Valor inválido." }); return z.NEVER; }
   return value;
 });
-const ip = z.string().trim().refine(value => !value.includes("/") && isIP(value) !== 0);
+function isStandaloneIp(value: string) {
+  if (!value || value.includes("/") || value.includes("%")) return false;
+  try {
+    const url = new URL(value.includes(":") ? `http://[${value}]` : `http://${value}`);
+    return url.port === "" && url.pathname === "/" && url.hostname === value;
+  } catch { return false; }
+}
+const ip = z.string().trim().refine(isStandaloneIp);
 const apiKey = z.string().max(4096).refine(value => value.trim().length > 0 && !control.test(value));
 
 export const standaloneVpsWriteSchema = z.strictObject({
@@ -93,6 +100,7 @@ export const standaloneVpsPatchSchema = z.strictObject({
   baseUrl: optionalHttp("reject", "keep"),
   apiKey: z.union([z.string().max(4096), z.null()]).optional(),
   enabled: z.boolean().optional(),
+  monitorPaused: z.boolean().optional(),
   dashboardEnabled: z.boolean().optional(),
   timeoutMs: z.number().int().min(1000).max(30000).optional(),
 });
@@ -117,6 +125,29 @@ export const vpsStackPatchSchema = z.strictObject({
 });
 
 export type StandaloneVpsInput = z.infer<typeof standaloneVpsWriteSchema>;
+const monitorStateSchema = z.enum(["inactive", "not_configured", "pending", "up", "down", "paused"]);
+export const standaloneVpsCardSchema = z.object({
+  id: z.uuid(), name: z.string(), provider: z.string().nullable(), ip: z.string(), domain: z.string().nullable(), managerUrl: z.string().nullable(), baseUrl: z.string().nullable(),
+  monitorConfigured: z.boolean(), enabled: z.boolean(), monitorPaused: z.boolean().default(false), dashboardEnabled: z.boolean(), timeoutMs: z.number(), revision: z.number(), monitorState: monitorStateSchema, apiKey: z.string().nullable().optional(),
+  progressStartedAt: z.string().nullable().optional(),
+  reason: z.number().nullable(), latencyMs: z.number().nullable(), cpuPercent: z.number().nullable(), memoryPercent: z.number().nullable(), diskPercent: z.number().nullable(),
+  checkedAt: z.string().nullable(), strip: z.array(z.number().int()), createdAt: z.string(), updatedAt: z.string(),
+});
+export type StandaloneVpsCard = z.infer<typeof standaloneVpsCardSchema>;
+const diskSchema = z.object({ device: z.string().nullable(), type: z.string().nullable(), mount: z.string().nullable(), size: z.string().nullable(), used: z.string().nullable(), available: z.string().nullable(), use: z.number().nullable() });
+export const standaloneVpsDetailSchema = standaloneVpsCardSchema.extend({
+  stacks: z.array(z.object({ id: z.uuid(), vpsId: z.uuid(), name: z.string(), link: z.string().nullable(), notes: z.string().nullable(), createdAt: z.string(), updatedAt: z.string() })),
+  result: z.object({
+    reason: z.number(), latencyMs: z.number().nullable(), cpuPercent: z.number().nullable(), memoryPercent: z.number().nullable(), diskPercent: z.number().nullable(), checkedAt: z.string(),
+    cpu: z.object({ cores: z.number().nullable(), speed: z.string().nullable(), coresLoad: z.array(z.object({ core: z.string(), load: z.number().nullable() })) }),
+    memory: z.object({ total: z.string().nullable(), used: z.string().nullable(), free: z.string().nullable() }),
+    disks: z.array(diskSchema),
+  }).nullable(),
+  samples: z.array(z.object({ checkedAt: z.string(), reason: z.number(), latencyMs: z.number().nullable(), cpuPercent: z.number().nullable(), memoryPercent: z.number().nullable(), diskPercent: z.number().nullable() })),
+  range: z.enum(["24h", "7d", "30d"]),
+});
+export type StandaloneVpsDetail = z.infer<typeof standaloneVpsDetailSchema>;
+export type VpsStackRecord = StandaloneVpsDetail["stacks"][number];
 export type VpsStackInput = z.infer<typeof vpsStackWriteSchema>;
 
 export function monitorEndpoint(baseUrl: string, path: "/ping/latency" | "/status") {

@@ -106,6 +106,8 @@ model StandaloneVps {
   baseUrl           String?   @map("base_url") @db.VarChar(2048)
   apiKeyCiphertext  String?   @map("api_key_ciphertext")
   enabled           Boolean   @default(true)
+  monitorPaused     Boolean   @default(false) @map("monitor_paused")
+  progressStartedAt DateTime? @map("progress_started_at") @db.Timestamptz(3)
   dashboardEnabled  Boolean   @default(false) @map("dashboard_enabled")
   timeoutMs         Int       @default(5000) @map("timeout_ms")
   revision          Int       @default(1)

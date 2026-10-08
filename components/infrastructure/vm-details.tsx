@@ -14,6 +14,7 @@ import { useHostContainers } from "./data";
 import { DevicePanel, MetricList } from "./host-panels";
 import { HistoryPanel } from "./history-panel";
 import { VmNameEditor } from "@/components/admin/vms";
+import { useCanEdit } from "@/store/auth.store";
 import { VmCpuCount } from "./vm-summary";
 
 function VmKpis({ vm, agent, stale }: { vm: VirtualMachine; agent?: Host; stale: boolean }) {
@@ -33,7 +34,7 @@ function VmKpis({ vm, agent, stale }: { vm: VirtualMachine; agent?: Host; stale:
 }
 
 export function VmDetails({ vm, agent, parentName, range, stale, controls }: { vm: VirtualMachine; agent?: Host; parentName: string; range: WindowRange; stale: boolean; controls: ReactNode }) {
-  const editNameButton = useRef<HTMLButtonElement>(null);
+  const editNameButton = useRef<HTMLButtonElement>(null), canEdit = useCanEdit();
   const [agentOpened, setAgentOpened] = useState(false), [editingName, setEditingName] = useState(false);
   const now = useContext(EvidenceTimeContext);
   const promoted = ["cpuUsagePercent", "provisionedCpuCount", "memoryUsagePercent", "memoryUsedBytes", "memoryTotalBytes"];
@@ -41,7 +42,7 @@ export function VmDetails({ vm, agent, parentName, range, stale, controls }: { v
   const metrics = Object.fromEntries(Object.entries(vm.metrics).filter(([key]) => !promoted.includes(key)));
   return <>
     <VmKpis vm={vm} agent={agent} stale={stale} />
-    <section className="vm-identity-panel"><div className="vm-identity-heading"><p>{displayName(vm) !== vm.name && <>Nome técnico: {vm.name} · </>}ID {vm.vmId ?? "não informado"}</p><Button ref={editNameButton} aria-expanded={editingName} onClick={() => setEditingName(value => !value)}>Editar nome</Button></div>{editingName && <VmNameEditor vm={vm} canCreate={!stale} onClose={() => { setEditingName(false); editNameButton.current?.focus(); }} />}</section>
+    <section className="vm-identity-panel"><div className="vm-identity-heading"><p>{displayName(vm) !== vm.name && <>Nome técnico: {vm.name} · </>}ID {vm.vmId ?? "não informado"}</p>{canEdit && <Button ref={editNameButton} aria-expanded={editingName} onClick={() => setEditingName(value => !value)}>Editar nome</Button>}</div>{canEdit && editingName && <VmNameEditor vm={vm} canCreate={!stale} onClose={() => { setEditingName(false); editNameButton.current?.focus(); }} />}</section>
     <HistoryPanel resource={{ type: "vm", hostKey: vm.parentHostKey, reference: vm.vmKey }} range={range} name={displayName(vm)} origin="VM · perspectiva do hipervisor" controls={controls} summary={<div className="selected-vm-current"><p className="history-origin">VM {vm.vmId ?? "sem ID informado"} · hipervisor {parentName} <Status value={vm.state} stale={evidenceExpired(vm, stale, now)} /></p><MetricList metrics={metrics} stale={stale} /></div>} />
     {vm.linuxHostKey && <section className="dashboard-panel agent-context"><Link href={hostUrl(vm.linuxHostKey, range)}>Detalhes do Agent</Link><details open={agentOpened} onToggle={event => setAgentOpened(event.currentTarget.open)}><summary>Perspectiva do Agent desta VM</summary>{agentOpened && (agent ? <><MetricList metrics={agent.metrics} stale={stale} /><DevicePanel title="Filesystems dentro da VM" devices={agent.filesystems} stale={stale} /><DevicePanel title="Rede da VM por interface" devices={agent.interfaces} stale={stale} network /><HistoryPanel resource={{ type: "host", hostKey: agent.hostKey, reference: null }} range={range} name={displayName(agent)} host={agent} origin="Linux · Agent · métricas internas" /></> : <p className="panel-empty">Agent associado sem dados disponíveis na coleta atual.</p>)}</details></section>}
   </>;

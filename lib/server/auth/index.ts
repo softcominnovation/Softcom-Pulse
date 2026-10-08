@@ -4,6 +4,7 @@ import { loginSchema } from "../../auth/contracts.ts";
 import { AuthError, authFailure, authJson } from "./errors.ts";
 import { openEnvelope } from "./envelope.ts";
 import { corporateRequest, issueSession } from "./corporate.ts";
+import { isEditor } from "./editors.ts";
 
 const refreshBody = z.object({ refreshToken: z.string().min(1).max(131072) });
 
@@ -48,6 +49,6 @@ export async function logout(request: Request) {
 export async function session(request: Request) {
   try {
     const envelope = requireSession(request);
-    return authJson({ user: envelope.user, expiresAt: envelope.expiresAt });
+    return authJson({ user: envelope.user, expiresAt: envelope.expiresAt, editor: isEditor(envelope.user.email) });
   } catch (error) { return authFailure(error); }
 }

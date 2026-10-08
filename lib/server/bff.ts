@@ -1,6 +1,7 @@
 import "server-only";
 import { z, ZodError } from "zod";
 import { requireSession } from "./auth/index.ts";
+import { isEditor } from "./auth/editors.ts";
 import { AuthError, authJson } from "./auth/errors.ts";
 
 export class BffError extends Error {
@@ -8,10 +9,12 @@ export class BffError extends Error {
   readonly code: string;
   constructor(status: number, code: string) { super(code); this.status = status; this.code = code; }
 }
-export async function protectedResponse(request: Request, action: () => Promise<unknown>, status = 200) {
+export async function protectedResponse(request: Request, action: (editor: boolean) => Promise<unknown>, status = 200) {
   try {
-    requireSession(request);
-    const body = await action();
+    const session = requireSession(request);
+    const editor = isEditor(session.user.email);
+    if (request.method !== "GET" && request.method !== "HEAD" && !editor) throw new BffError(403, "editor_required");
+    const body = await action(editor);
     return status === 204 ? new Response(null, { status, headers: { "Cache-Control": "no-store" } }) : authJson(body, status);
   } catch (error) {
     if (error instanceof AuthError || error instanceof BffError) return authJson({ error: { code: error.code } }, error.status);

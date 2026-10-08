@@ -92,7 +92,11 @@ export function serviceDelete(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return deleteResource(uuidSchema.parse((await context.params).id)); }, 204);
 }
 export function externalServicesGet(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listExternalServicesWithUptime() }; });
+  return protectedResponse(request, async editor => {
+    queryParams(request, emptyQuery);
+    const data = await listExternalServicesWithUptime();
+    return { data: editor ? data : data.map(({ bodyTemplate: _body, headerName: _header, expectedValue: _value, ...service }) => service) };
+  });
 }
 export function externalServicePost(request: Request) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await createExternalService(await jsonBody(request)) }; }, 201);
@@ -104,7 +108,11 @@ export function externalServiceDelete(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); await deleteExternalService(uuidSchema.parse((await context.params).id)); }, 204);
 }
 export function standaloneVpsGet(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listStandaloneVps() }; });
+  return protectedResponse(request, async editor => {
+    queryParams(request, emptyQuery);
+    const data = await listStandaloneVps();
+    return { data: editor ? data : data.map(({ apiKey: _apiKey, ...item }) => item) };
+  });
 }
 export function standaloneVpsPost(request: Request) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await createStandaloneVps(await jsonBody(request)) }; }, 201);
@@ -116,7 +124,12 @@ export function standaloneVpsDelete(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); await deleteStandaloneVps(uuidSchema.parse((await context.params).id)); }, 204);
 }
 export function standaloneVpsDetailGet(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => ({ data: await readStandaloneVps(uuidSchema.parse((await context.params).id), queryParams(request, z.strictObject({ range: vpsHistoryRangeSchema.default("24h") })).range) }));
+  return protectedResponse(request, async editor => {
+    const data = await readStandaloneVps(uuidSchema.parse((await context.params).id), queryParams(request, z.strictObject({ range: vpsHistoryRangeSchema.default("24h") })).range);
+    if (editor) return { data };
+    const { apiKey: _apiKey, ...item } = data;
+    return { data: item };
+  });
 }
 export function vpsStackPost(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await createVpsStack(uuidSchema.parse((await context.params).id), await jsonBody(request)) }; }, 201);

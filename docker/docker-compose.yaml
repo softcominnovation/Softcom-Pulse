@@ -7,6 +7,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Defina a URL PostgreSQL desta stack}
       REDIS_URL: ${REDIS_URL:-redis://pulse_redis:6379}
       API_BASE_URL: ${API_BASE_URL:-https://api.softcom.cloud}
+      PULSE_EDITOR_EMAILS: ${PULSE_EDITOR_EMAILS:-}
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?Set a 32-byte base64 TOKEN_ENCRYPTION_KEY}
       ZABBIX_API_URL: ${ZABBIX_API_URL:-}
       ZABBIX_API_TOKEN: ${ZABBIX_API_TOKEN:-}

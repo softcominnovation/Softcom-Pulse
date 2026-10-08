@@ -31,9 +31,12 @@ test("login trims email, forwards only credentials, and seals both tokens", asyn
   assert.equal(openEnvelope(data.accessToken, "access").token, "private-access");
   assert.equal(openEnvelope(data.refreshToken, "refresh").token, "private-refresh");
   assert.deepEqual(data.user, user);
+  const previousEditors = process.env.PULSE_EDITOR_EMAILS;
+  process.env.PULSE_EDITOR_EMAILS = "";
   const validation = await session(bearer(data.accessToken));
+  process.env.PULSE_EDITOR_EMAILS = previousEditors;
   assert.equal(validation.status, 200);
-  assert.deepEqual(await validation.json(), { user, expiresAt: data.expiresAt });
+  assert.deepEqual(await validation.json(), { user, expiresAt: data.expiresAt, editor: false });
 });
 test("invalid form never calls upstream and errors never echo upstream secrets", async () => {
   globalThis.fetch = () => { throw new Error("must not call"); };

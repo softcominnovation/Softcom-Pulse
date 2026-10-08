@@ -3,7 +3,7 @@ import { z } from "zod";
 import { sessionSchema, userSchema, REFRESH_SKEW_MS, type AuthSession, type LoginInput, type SessionView } from "../auth/contracts.ts";
 
 export type AuthStatus = "loading" | "anonymous" | "authenticated" | "unavailable";
-export type AuthState = { status: AuthStatus; session: AuthSession | null; issue: string | null };
+export type AuthState = { status: AuthStatus; session: AuthSession | null; editor: boolean; issue: string | null };
 const recordSchema = z.object({ version: z.literal(1), epoch: z.string(), session: sessionSchema.nullable() });
 type RecordValue = z.infer<typeof recordSchema>;
 export class SessionError extends Error {}
@@ -34,7 +34,7 @@ export function messageOf(error: unknown) {
 }
 
 export class AuthController {
-  readonly store = createStore<AuthState>(() => ({ status: "loading", session: null, issue: null }));
+  readonly store = createStore<AuthState>(() => ({ status: "loading", session: null, editor: false, issue: null }));
   private deps: Dependencies;
   private epoch = "";
   private controller = new AbortController();
@@ -93,7 +93,7 @@ export class AuthController {
   private async clear(issue: string | null = null, expectedEpoch?: string) {
     this.switchEpoch(this.deps.id());
     const epoch = this.epoch;
-    this.store.setState({ status: "anonymous", session: null, issue });
+    this.store.setState({ status: "anonymous", session: null, editor: false, issue });
     try {
       const cleared = await this.transaction(async () => {
         if (expectedEpoch && this.read()?.epoch !== expectedEpoch) return false;
@@ -123,7 +123,7 @@ export class AuthController {
       if (record.epoch !== this.epoch) this.switchEpoch(record.epoch);
       this.store.setState({ session: record.session, status: record.session ? "loading" : "anonymous" });
       if (record.session) await this.validate();
-    } catch (error) { this.store.setState({ status: "anonymous", session: null, issue: messageOf(error) }); }
+    } catch (error) { this.store.setState({ status: "anonymous", session: null, editor: false, issue: messageOf(error) }); }
   }
   async sync() {
     try {
@@ -142,8 +142,9 @@ export class AuthController {
       const response = await this.deps.transport.login(input, this.signal);
       const session = sessionSchema.parse(response);
       await this.save(session, epoch);
+      try { await this.loadEditor(epoch); } catch { if (this.epoch === epoch) this.store.setState({ editor: false }); }
     } catch (error) {
-      if (epoch === this.epoch) this.store.setState({ status: "anonymous", session: null, issue: messageOf(error) });
+      if (epoch === this.epoch) this.store.setState({ status: "anonymous", session: null, editor: false, issue: messageOf(error) });
       throw error;
     }
   }
@@ -157,6 +158,14 @@ export class AuthController {
   async invalidate() {
     if (this.read()?.epoch !== this.epoch) { await this.sync(); return; }
     await this.clear("Sua sessão expirou. Entre novamente.", this.epoch);
+  }
+
+  private async loadEditor(epoch: string) {
+    const token = await this.getAccessToken();
+    const view = await this.deps.transport.session(token, this.signal);
+    this.assertCurrent(epoch);
+    const parsed = z.object({ editor: z.boolean().default(false) }).parse(view);
+    if (this.epoch === epoch && this.read()?.session?.accessToken === token) this.store.setState({ editor: parsed.editor });
   }
 
   async getAccessToken() {
@@ -208,8 +217,11 @@ export class AuthController {
           const current = this.read()?.session;
           if (!current) throw new SessionError("Entre para continuar.");
           if (current.accessToken !== token) continue;
-          const validated = z.object({ user: userSchema, expiresAt: z.number().finite().positive() }).parse(view);
-          if (await this.save({ ...current, ...validated }, epoch, token)) return;
+          const validated = z.object({ user: userSchema, expiresAt: z.number().finite().positive(), editor: z.boolean().default(false) }).parse(view);
+          if (await this.save({ ...current, user: validated.user, expiresAt: validated.expiresAt }, epoch, token)) {
+            this.store.setState({ editor: validated.editor });
+            return;
+          }
         }
         throw new SessionError("A sessão está sendo atualizada. Tente novamente.");
       } catch (error) { await this.fail(error, epoch); }

@@ -33,7 +33,7 @@ O usuário é recebido no login/refresh. Não há consulta a `/me`, JWKS ou intr
 | `POST /api/auth/login` | JSON `{email, senha}` | `{accessToken, refreshToken, tokenType: "Bearer", expiresIn, expiresAt, user}` |
 | `POST /api/auth/refresh` | JSON `{refreshToken}`, cifrado | Mesmo contrato de sessão, com novo par |
 | `POST /api/auth/logout` | JSON `{refreshToken}`, cifrado | `{revoked: true}` quando o upstream confirma |
-| `GET /api/auth/session` | `Authorization: Bearer <access cifrado>` | `{user, expiresAt}` |
+| `GET /api/auth/session` | `Authorization: Bearer <access cifrado>` | `{user, expiresAt, editor}` |
 
 Todos os tokens expostos pelo Pulse são envelopes; nenhum JWT ou refresh corporativo original é devolvido ao browser. `expiresAt` é epoch em milissegundos calculado no BFF; `expiresIn` usa segundos. Todas as respostas de autenticação, inclusive erros, usam `Cache-Control: no-store`.
 

@@ -41,7 +41,9 @@ Aplicações fora do Zabbix ficam em `external_service` e nas amostras `external
 | `DELETE /api/monitoring/external-services/:id` | 204; remove o cadastro e as amostras |
 | `GET /api/monitoring/external-services/:id/history?range=24h\|7d\|30d` | `{data}` com um ponto `{checkedAt, reason, latencyMs}` por amostra da janela, sem downsampling, e o resumo `uptime24h`, `uptime7d`, `uptime30d` |
 
-VPS avulsas ficam em `standalone_vps`, `vps_stack` e `vps_monitor_sample`. Não entram em `monitored_resource_config` nem em `external_service`. A lista e o detalhe do cadastro devolvem `apiKey` para o formulário de edição. A visão geral não devolve a chave. A leitura também traz `monitorConfigured`. `provider` é texto opcional, até 120 caracteres; vazio fica nulo. URL base e chave entram juntas ou saem juntas; o par incompleto responde 422 `monitor_incomplete`. Há no máximo 100 VPS e 50 stacks por VPS.
+Gravação no BFF autenticado exige `editor: true` em `GET /api/auth/session`. O e-mail da sessão precisa estar em `PULSE_EDITOR_EMAILS`. Sem isso, POST, PATCH, PUT e DELETE respondem 403 `editor_required`. A lista de e-mails não sai na resposta. Quem não é editor lê a lista e o detalhe da VPS sem `apiKey`, e a aplicação sem `bodyTemplate`, `headerName` e `expectedValue`.
+
+VPS avulsas ficam em `standalone_vps`, `vps_stack` e `vps_monitor_sample`. Não entram em `monitored_resource_config` nem em `external_service`. A lista e o detalhe do cadastro devolvem `apiKey` para o editor, no formulário. A visão geral não devolve a chave. Quem não é editor também não recebe `apiKey`. A leitura também traz `monitorConfigured`. `provider` é texto opcional, até 120 caracteres; vazio fica nulo. URL base e chave entram juntas ou saem juntas; o par incompleto responde 422 `monitor_incomplete`. Há no máximo 100 VPS e 50 stacks por VPS.
 
 | Rota | Resultado |
 |---|---|

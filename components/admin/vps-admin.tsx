@@ -15,6 +15,7 @@ import { ConfirmationDialog } from "@/components/confirmation-dialog";
 import { probeLiveRefreshMs, ProbeStrip } from "@/components/dashboard/probe-strip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { useCanEdit } from "@/store/auth.store";
 import { Check, Field, ReadError, errorText, useAdminRead, useMutation } from "./shared";
 
 const parseList = (data: unknown) => z.object({ data: z.array(standaloneVpsCardSchema) }).parse(data).data;
@@ -80,7 +81,7 @@ export function VpsForm({ existing, onSaved, onCancel, onReload }: { existing?: 
   </form>;
 }
 export function VpsAdmin() {
-  const list = useAdminRead("/monitoring/standalone-vps", parseList), mutation = useMutation();
+  const list = useAdminRead("/monitoring/standalone-vps", parseList), mutation = useMutation(), editor = useCanEdit();
   const [query, setQuery] = useState(""), [draft, setDraft] = useState<StandaloneVpsCard | "new" | null>(null);
   const pendingId = useVpsSelectionStore(state => state.vpsId), consume = useVpsSelectionStore(state => state.consume);
   const items = list.data ?? [];
@@ -113,11 +114,11 @@ export function VpsAdmin() {
     list.refresh();
   }
   return <div className="admin-page">
-    <header className="admin-heading app-monitor-heading"><div><h1>VPS</h1><p>Cadastro das VPS avulsas. O monitor, quando existe, é consultado pelo Pulse. O navegador não chama essa URL.</p></div><Button type="button" variant="primary" onClick={() => setDraft("new")}>Nova VPS</Button></header>
+    <header className="admin-heading app-monitor-heading"><div><h1>VPS</h1><p>Cadastro das VPS avulsas. O monitor, quando existe, é consultado pelo Pulse. O navegador não chama essa URL.</p></div>{editor && <Button type="button" variant="primary" onClick={() => setDraft("new")}>Nova VPS</Button>}</header>
     <Field label="Buscar"><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Nome, IP, domínio ou provedor" /></Field>
     {list.failed && <ReadError refresh={list.refresh}>Não foi possível ler as VPS cadastradas.</ReadError>}
     {list.loading && !list.data && <p className="panel-empty">Carregando VPS…</p>}
-    {list.data && !items.length && <p className="panel-empty">Ainda não há VPS. Use o botão Nova VPS para cadastrar a primeira.</p>}
+    {list.data && !items.length && <p className="panel-empty">{editor ? "Ainda não há VPS. Use o botão Nova VPS para cadastrar a primeira." : "Ainda não há VPS."}</p>}
     {list.data && !!items.length && !visible.length && <p className="panel-empty">Nenhuma VPS corresponde à busca.</p>}
     {!!visible.length && <ul className="vps-grid">{visible.map(item => {
       const availability = vpsAvailability(item.enabled);
@@ -132,18 +133,18 @@ export function VpsAdmin() {
         <ProbeStrip reasons={vpsStrip(item.enabled, item.monitorConfigured, item.strip, item.monitorPaused)} colorFor={vpsReasonColor} />
         <div className="vps-card-toolbar">
           <Link className="vps-details-link" href={`/admin/vps/${item.id}`}>Detalhes</Link>
-          <div className="admin-actions app-monitor-actions">
+          {editor && <div className="admin-actions app-monitor-actions">
           <Button type="button" size="icon" aria-label={`Editar ${item.name}`} title="Editar" onClick={() => setDraft(item)}><Pencil aria-hidden="true" /></Button>
           {item.enabled
             ? <ConfirmationDialog trigger={<Button type="button" size="icon" aria-label={`Inativar ${item.name}`} title="Inativar"><Power aria-hidden="true" /></Button>} title="Inativar VPS?" description="A coleta desta VPS para na próxima rodada. O cadastro e os serviços permanecem. Nenhum recurso do Zabbix será alterado." confirmLabel="Inativar VPS" onConfirm={() => setEnabled(item, false)} />
             : <ConfirmationDialog trigger={<Button type="button" size="icon" aria-label={`Ativar ${item.name}`} title="Ativar"><Power aria-hidden="true" /></Button>} title="Ativar VPS?" description="A VPS volta a ficar disponível. Se houver monitor cadastrado, a coleta retoma na próxima rodada. Nenhum recurso do Zabbix será alterado." confirmLabel="Ativar VPS" onConfirm={() => setEnabled(item, true)} />}
           <ConfirmationDialog trigger={<Button type="button" size="icon" variant="destructive" aria-label={`Remover ${item.name}`} title="Remover"><Trash2 aria-hidden="true" /></Button>} title="Remover VPS?" description="A VPS, os serviços e as amostras serão apagados. Nenhum recurso do Zabbix será alterado." confirmLabel="Remover VPS" destructive onConfirm={() => remove(item)} />
-          </div>
+          </div>}
         </div>
       </article></li>;
     })}</ul>}
     <Dialog open={draft !== null} onOpenChange={open => { if (!open) setDraft(null); }}><DialogContent className="vps-dialog"><DialogHeader><DialogTitle>{draft && draft !== "new" ? "Editar VPS" : "Nova VPS"}</DialogTitle><DialogDescription>O cadastro fica no Pulse. A URL do manager, quando aberta, é só um link.</DialogDescription></DialogHeader><DialogBody>
-      {draft && <VpsForm key={draft === "new" ? "new" : `${draft.id}:${draft.revision}`} existing={draft === "new" ? undefined : draft} onSaved={() => { setDraft(null); list.refresh(); }} onCancel={() => setDraft(null)} onReload={() => { void reloadSaved(); }} />}
+      {editor && draft && <VpsForm key={draft === "new" ? "new" : `${draft.id}:${draft.revision}`} existing={draft === "new" ? undefined : draft} onSaved={() => { setDraft(null); list.refresh(); }} onCancel={() => setDraft(null)} onReload={() => { void reloadSaved(); }} />}
     </DialogBody></DialogContent></Dialog>
   </div>;
 }

@@ -29,3 +29,6 @@ export function getAuthController() {
 export function useAuthStore() {
   return useStore(getAuthController().store);
 }
+export function useCanEdit() {
+  return useStore(getAuthController().store, state => state.editor);
+}

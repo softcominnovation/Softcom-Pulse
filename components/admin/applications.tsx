@@ -13,13 +13,14 @@ import { ProbeHistoryPanel } from "@/components/dashboard/probe-details";
 import { probeLiveRefreshMs, ProbeStrip } from "@/components/dashboard/probe-strip";
 import { Button } from "@/components/ui/button";
 import { formatUptime, probePresence, probeStatus } from "@/lib/probe/status";
+import { useCanEdit } from "@/store/auth.store";
 import { useProbeSelectionStore } from "@/store/probe-selection.store";
 import { Check, Field, ReadError, errorText, useAdminRead, useMutation } from "./shared";
 
 const parseServices = (data: unknown) => z.object({ data: z.array(externalServicePublicSchema) }).parse(data).data;
 type Draft = { displayName: string; description: string; serviceType: string; enabled: boolean; dashboardEnabled: boolean; critical: boolean; displayOrder: number; method: "GET" | "HEAD" | "POST"; url: string; successMode: "http_status" | "json_match"; expectedStatuses: string; jsonPointer: string; expectedValue: string; bodyTemplate: string; authMode: "none" | "header"; headerName: string; timeoutSeconds: number; secret: string; removeSecret: boolean };
 const emptyDraft: Draft = { displayName: "", description: "", serviceType: "", enabled: true, dashboardEnabled: false, critical: false, displayOrder: 0, method: "GET", url: "", successMode: "http_status", expectedStatuses: "200", jsonPointer: "", expectedValue: "", bodyTemplate: "", authMode: "none", headerName: "", timeoutSeconds: 5, secret: "", removeSecret: false };
-function literalText(value: string | number | boolean | null) { return value === null ? "" : String(value); }
+function literalText(value: string | number | boolean | null | undefined) { return value == null ? "" : String(value); }
 function fromService(service: ExternalServicePublic): Draft {
   return { ...emptyDraft, displayName: service.displayName, description: service.description ?? "", serviceType: service.serviceType ?? "", enabled: service.enabled, dashboardEnabled: service.dashboardEnabled, critical: service.critical, displayOrder: service.displayOrder, method: service.method, url: service.url, successMode: service.successMode, expectedStatuses: service.expectedStatuses.join(", "), jsonPointer: service.jsonPointer ?? "", expectedValue: literalText(service.expectedValue), bodyTemplate: service.bodyTemplate ?? "", authMode: service.authMode, headerName: service.headerName ?? "", timeoutSeconds: Math.round(service.timeoutMs / 1000) };
 }
@@ -70,25 +71,31 @@ function ApplicationForm({ existing, onSaved, onCancel, onReload }: { existing?:
     </form></section>;
 }
 export function ApplicationsAdmin() {
-  const services = useAdminRead("/monitoring/external-services", parseServices), mutation = useMutation();
-  const [draft, setDraft] = useState<ExternalServicePublic | "new" | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const services = useAdminRead("/monitoring/external-services", parseServices), mutation = useMutation(), editor = useCanEdit();
   const pendingServiceId = useProbeSelectionStore(state => state.serviceId);
   const consumeSelection = useProbeSelectionStore(state => state.consume);
+  const [draft, setDraft] = useState<ExternalServicePublic | "new" | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(pendingServiceId);
+  const [seenPending, setSeenPending] = useState<string | null>(pendingServiceId);
+  if (pendingServiceId !== seenPending) {
+    setSeenPending(pendingServiceId);
+    if (pendingServiceId) {
+      setSelectedId(pendingServiceId);
+      setDraft(null);
+    }
+  }
   const items = services.data ?? [];
+  const refreshServices = services.refresh;
   const selected = items.find(item => item.id === selectedId) ?? items[0] ?? null;
   useEffect(() => {
-    if (!pendingServiceId) return;
-    setSelectedId(pendingServiceId);
-    setDraft(null);
-    consumeSelection();
+    if (pendingServiceId) consumeSelection();
   }, [pendingServiceId, consumeSelection]);
   useEffect(() => {
-    const tick = () => { if (!document.hidden) services.refresh(); };
+    const tick = () => { if (!document.hidden) refreshServices(); };
     const timer = setInterval(tick, probeLiveRefreshMs);
     document.addEventListener("visibilitychange", tick);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", tick); };
-  }, [services.refresh]);
+  }, [refreshServices]);
   const presence = selected && !selected.enabled ? { label: "Pausado", tone: "unknown" as const } : probePresence(selected?.uptime?.reason ?? null);
   const status = probeStatus(selected?.uptime?.reason ?? null);
   async function reloadSaved() {
@@ -114,7 +121,7 @@ export function ApplicationsAdmin() {
     services.refresh();
   }
   return <div className="admin-page">
-    <header className="admin-heading app-monitor-heading"><div><h1>Aplicações</h1><p>Cadastro das consultas HTTPS. O dashboard e o bloco de uptime leem o último resultado publicado, sem chamar essas URLs no navegador.</p></div><Button type="button" variant="primary" onClick={() => setDraft("new")}>Nova aplicação</Button></header>
+    <header className="admin-heading app-monitor-heading"><div><h1>Aplicações</h1><p>Cadastro das consultas HTTPS. O dashboard e o bloco de uptime leem o último resultado publicado, sem chamar essas URLs no navegador.</p></div>{editor && <Button type="button" variant="primary" onClick={() => setDraft("new")}>Nova aplicação</Button>}</header>
     {services.failed && <ReadError refresh={services.refresh}>Não foi possível ler as aplicações cadastradas.</ReadError>}
     {services.loading && !services.data && <p className="panel-empty">Carregando aplicações…</p>}
     {services.data && <div className="app-monitor">
@@ -129,16 +136,16 @@ export function ApplicationsAdmin() {
         </button></li>;
       })}{!items.length && <li className="app-monitor-empty">Nenhuma aplicação cadastrada.</li>}</ul>
       <div className="app-monitor-main">
-        {draft && <ApplicationForm key={draft === "new" ? "new" : `${draft.id}:${draft.revision}`} existing={draft === "new" ? undefined : draft} onSaved={id => { setSelectedId(id); setDraft(null); services.refresh(); }} onCancel={() => setDraft(null)} onReload={() => { void reloadSaved(); }} />}
-        {!draft && selected && <section className="dashboard-panel app-monitor-detail" aria-label={selected.displayName}>
+        {editor && draft && <ApplicationForm key={draft === "new" ? "new" : `${draft.id}:${draft.revision}`} existing={draft === "new" ? undefined : draft} onSaved={id => { setSelectedId(id); setDraft(null); services.refresh(); }} onCancel={() => setDraft(null)} onReload={() => { void reloadSaved(); }} />}
+        {(!draft || !editor) && selected && <section className="dashboard-panel app-monitor-detail" aria-label={selected.displayName}>
           <div className="panel-heading"><div><span className={`app-presence tone-${presence.tone}`}>{presence.label}</span><h2>{selected.displayName}</h2><p className="app-monitor-meta">{selected.method} {selected.url}</p><p className="app-monitor-meta">{selected.enabled ? status.label : "Pausada"} · {selected.serviceType || "Sem tipo"} · {selected.dashboardEnabled ? "Em destaque" : "Sem destaque"} · Segredo {selected.secretConfigured ? "configurado" : "não configurado"}</p></div>
-            <div className="admin-actions app-monitor-actions">
+            {editor && <div className="admin-actions app-monitor-actions">
               <Button type="button" size="icon" aria-label="Editar" title="Editar" onClick={() => setDraft(selected)}><Pencil aria-hidden="true" /></Button>
               {selected.enabled
                 ? <ConfirmationDialog trigger={<Button type="button" size="icon" aria-label="Pausar" title="Pausar"><Pause aria-hidden="true" /></Button>} title="Pausar aplicação?" description="A sonda deixa de consultar esta URL na próxima rodada. O cadastro e o histórico permanecem, e o card deixa de receber resultado novo enquanto estiver pausado. Nenhum recurso do Zabbix será alterado." confirmLabel="Pausar aplicação" onConfirm={() => setRunning(false)} />
                 : <ConfirmationDialog trigger={<Button type="button" size="icon" aria-label="Retomar" title="Retomar"><Play aria-hidden="true" /></Button>} title="Retomar aplicação?" description="A sonda volta a consultar esta URL na próxima rodada. O histórico já guardado permanece. Nenhum recurso do Zabbix será alterado." confirmLabel="Retomar aplicação" onConfirm={() => setRunning(true)} />}
               <ConfirmationDialog trigger={<Button type="button" size="icon" variant="destructive" aria-label="Remover" title="Remover"><Trash2 aria-hidden="true" /></Button>} title="Remover aplicação?" description="O cadastro e o histórico da aplicação serão apagados. Nenhum recurso do Zabbix será alterado." confirmLabel="Remover aplicação" destructive onConfirm={removeSelected} />
-            </div>
+            </div>}
           </div>
           <div className="app-monitor-body"><ProbeHistoryPanel serviceId={selected.id} paused={!selected.enabled} progressStartedAt={selected.progressStartedAt} /></div>
         </section>}

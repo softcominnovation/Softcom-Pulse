@@ -28,7 +28,7 @@ export const sessionSchema = z.object({
   user: userSchema,
 });
 export type AuthSession = z.infer<typeof sessionSchema>;
-export type SessionView = Pick<AuthSession, "user" | "expiresAt">;
+export type SessionView = Pick<AuthSession, "user" | "expiresAt"> & { editor: boolean };
 export const STORAGE_KEY = "pulse.auth.v1";
 export const REFRESH_LOCK = "pulse.auth.refresh.v1";
 export const STORAGE_LOCK = "pulse.auth.storage.v1";

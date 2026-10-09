@@ -100,6 +100,12 @@ export type Overview = {
   hostMetricsSources?: Record<string, "auto" | "agent" | "hypervisor">;
   externalServices?: ProbeCard[]; uptimeBoard?: ProbeCard[];
   standaloneVps?: import("../config/standalone-vps.ts").StandaloneVpsHighlight[];
+  signalCards?: {
+    id: string; displayName: string; description: string | null; critical: boolean; displayOrder: number;
+    state: number; latencyMs: number | null; readyStatus: string | null; workerStatus: string | null;
+    activeInstances: number | null; strip: number[];
+    uptime24h: { available: number; total: number } | null; checkedAt: string | null;
+  }[];
 };
 export function emptySummary(): Summary {
   return { hostsKnown: null, hostsReachable: null, vms: null, containersRunning: null, containersStopped: null, problems: null, criticalAffected: null };

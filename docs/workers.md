@@ -288,6 +288,7 @@ As travas de transação utilizadas nos cadastros evitam escritas concorrentes s
 | **Collector** | `collector/index.mjs` | API JSON-RPC do Zabbix 7.0 | `COLLECTOR_INTERVAL_MS`, 15000–30000, padrão 20000 | `734021004` | `pulse:snapshot:overview`, `pulse:inventory:hosts`, `pulse:problems:current`, `pulse:sync:last` | somente leitura da configuração |
 | **Sonda** | `collector/probe.mjs` | URL cadastrada em Aplicações | `PROBE_INTERVAL_MS`, ausente = 60000; preenchido = 30000–120000 | `734021007` | `pulse:probe:result:{id}`, `pulse:probe:sync` | `external_service_sample` |
 | **Monitor de VPS** | `collector/vps-monitor.mjs` | `baseUrl` da VPS, `/ping/latency` e `/status` | `VPS_MONITOR_INTERVAL_MS`, mesma regra da Sonda | `734021009` | `pulse:vps:result:{id}` | `vps_monitor_sample` |
+| **Monitor Signal** | `collector/signal-monitor.mjs` | `SIGNAL_API_BASE_URL` + paths env + alvos PG | `SIGNAL_MONITOR_INTERVAL_MS`, mesma regra da Sonda | `734021011` | `pulse:signal:result:{id}`, `pulse:signal:sync` | `signal_monitor_sample` |
 
 ---
 
@@ -531,6 +532,98 @@ Trava utilizada na escrita do cadastro de VPS avulsas:
 
 ---
 
+# Monitor Signal
+
+Processo:
+
+```text
+collector/signal-monitor.mjs
+```
+
+O Monitor Signal consulta a API pública do Softcom Signal.
+
+## Seleção dos alvos
+
+Ele consulta alvos `enabled = true` no PostgreSQL.
+
+Quando `SIGNAL_API_BASE_URL` está definida, o ciclo garante um alvo com essa base URL (seed). Ausente ou vazia, só entram os cadastros do banco.
+
+## Endpoints consultados
+
+A partir de:
+
+```text
+baseUrl
+```
+
+são consultados os paths de:
+
+```text
+SIGNAL_HEALTH_LIVE_PATH
+SIGNAL_HEALTH_READY_PATH
+```
+
+Defaults:
+
+```text
+/health/live
+/health/ready
+```
+
+Sem Authorization neste MVP. Sem seguir redirect.
+
+## Concorrência
+
+O limite atual é:
+
+```text
+4 alvos simultaneamente
+```
+
+## PostgreSQL
+
+As amostras são armazenadas em:
+
+```text
+signal_monitor_sample
+```
+
+Retenção de 30 dias, apagada no ciclo.
+
+## Redis
+
+O resultado recente é publicado em:
+
+```text
+pulse:signal:result:{id}
+pulse:signal:sync
+```
+
+O payload sanitiza `checks` (deps, worker, pipeline, knowledgeIndex). Não inclui headers, tokens nem corpo cru.
+
+Uma falha deste worker:
+
+- não grava `pulse:sync:last`;
+- não altera dados da Sonda;
+- não altera o Monitor de VPS;
+- não altera snapshots do Collector.
+
+## Travas
+
+Trava de sessão:
+
+```text
+734021011
+```
+
+Trava utilizada na escrita do cadastro de alvos Signal:
+
+```text
+734021012
+```
+
+---
+
 # Execução local dos workers
 
 Os processos podem ser iniciados individualmente.
@@ -551,6 +644,12 @@ npm run probe
 
 ```bash
 npm run vps-monitor
+```
+
+## Monitor Signal
+
+```bash
+npm run signal-monitor
 ```
 
 ---
@@ -615,7 +714,10 @@ Pulse
 ├── pulse-probe
 │   └── sem porta publicada
 │
-└── pulse-vps-monitor
+├── pulse-vps-monitor
+│   └── sem porta publicada
+│
+└── pulse-signal-monitor
     └── sem porta publicada
 ```
 
@@ -659,6 +761,8 @@ Não devem ser reutilizadas.
 | `734021008` | escrita de aplicações externas |
 | `734021009` | sessão do Monitor de VPS |
 | `734021010` | escrita de VPS avulsas |
+| `734021011` | sessão do Monitor Signal |
+| `734021012` | escrita de alvos Signal |
 
 Para novas funcionalidades, deve ser utilizado o próximo inteiro livre dentro do espaço reservado:
 

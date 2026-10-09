@@ -32,6 +32,8 @@ O schema contém as tabelas de configuração humana `monitored_resource_config`
 
 `npm run vps-monitor` consulta o monitor das VPS avulsas que estão ativas e têm URL base; `npm run vps-monitor:once` faz uma rodada e termina. Não chama o Zabbix, não escreve `pulse:sync:last` e não altera a sonda. Sem `VPS_MONITOR_INTERVAL_MS`, o intervalo é 60000 ms.
 
+`npm run signal-monitor` consulta os alvos Softcom Signal habilitados; `npm run signal-monitor:once` faz uma rodada e termina. Não chama o Zabbix, não escreve `pulse:sync:last` e não altera sonda nem monitor de VPS. Sem `SIGNAL_MONITOR_INTERVAL_MS`, o intervalo é 60000 ms. A base e os paths de health vêm de env (`SIGNAL_API_BASE_URL`, `SIGNAL_HEALTH_LIVE_PATH`, `SIGNAL_HEALTH_READY_PATH`); alvos adicionais ficam no PostgreSQL. Com `SIGNAL_API_BASE_URL` preenchida, o worker garante um alvo com essa URL.
+
 A configuração local usa URLs completas. Os campos antigos `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_PASSWORD`, `REDIS_HOST`, `REDIS_PORT` e `REDIS_PASSWORD`, se existirem num `.env` anterior, não substituem `DATABASE_URL` e `REDIS_URL`. Não imprimir credenciais em logs. `.env`, variações locais e artefatos de teste estão ignorados no Git; o contexto Docker exclui `.env*`.
 
 ## Variáveis
@@ -52,6 +54,10 @@ Web e collector recebem o mesmo contrato de ambiente. Autenticação utiliza a U
 | `PULSE_DISCOVERY_EVERY_N_CYCLES` | Collector | Não | A cada quantos ciclos roda o `host.get` leve de Agents candidatos. Inteiro 1–30, default `3`. Valor inválido cai no default |
 | `PROBE_INTERVAL_MS` | Processo da sonda | Não | Default `60000` se ausente ou vazia. Inteiro de 30000 a 120000. O collector não lê esta variável |
 | `VPS_MONITOR_INTERVAL_MS` | Processo do monitor de VPS | Não | Default `60000` se ausente ou vazia. Inteiro de 30000 a 120000. O collector e a sonda não leem esta variável |
+| `SIGNAL_MONITOR_INTERVAL_MS` | Processo do monitor Signal | Não | Default `60000` se ausente ou vazia. Inteiro de 30000 a 120000. O collector, a sonda e o monitor de VPS não leem esta variável |
+| `SIGNAL_API_BASE_URL` | Processo do monitor Signal | Não | Base HTTPS da API Softcom Signal (ex. `https://api-signal-squad-ia-01.hostsoftcom.cloud`). Ausente ou vazia: não faz seed; só alvos do PostgreSQL. Valor inválido impede o worker |
+| `SIGNAL_HEALTH_LIVE_PATH` | Processo do monitor Signal | Não | Path do live. Default `/health/live`. Deve começar com `/`, sem query/fragment |
+| `SIGNAL_HEALTH_READY_PATH` | Processo do monitor Signal | Não | Path do ready. Default `/health/ready`. Mesma regra do live |
 | `SNAPSHOT_TTL_SECONDS` | Helpers de snapshot: retenção por TTL | Não | Mesmo nome, default `300` |
 | `SNAPSHOT_STALE_AFTER_MS` | BFF/helpers de snapshot: limite de freshness | Não | Mesmo nome, default `60000` |
 | `POSTGRES_USER` | Container PostgreSQL | Não | Mesmo nome, default `postgres`; deve coincidir com o usuário da URL |
@@ -66,6 +72,10 @@ COLLECTOR_INTERVAL_MS aceita 15000–30000ms. SNAPSHOT_STALE_AFTER_MS deve ser p
 PROBE_INTERVAL_MS pertence só à sonda. Ausente ou vazia, vale 60000. Um inteiro de 30000 a 120000 é aceito. Fora dessa faixa a sonda não coleta. Os dois composes trazem `PROBE_INTERVAL_MS: ${PROBE_INTERVAL_MS:-60000}`. O collector do Zabbix não lê essa variável.
 
 VPS_MONITOR_INTERVAL_MS pertence só ao processo `vps-monitor`. Ausente ou vazia, vale 60000. Um inteiro de 30000 a 120000 é aceito. Fora dessa faixa o processo não coleta. Os dois composes trazem `VPS_MONITOR_INTERVAL_MS: ${VPS_MONITOR_INTERVAL_MS:-60000}`. O resultado recente usa o mesmo `SNAPSHOT_TTL_SECONDS` dos snapshots.
+
+SIGNAL_MONITOR_INTERVAL_MS pertence só ao processo `signal-monitor`. Ausente ou vazia, vale 60000. Um inteiro de 30000 a 120000 é aceito. Fora dessa faixa o processo não coleta. Os dois composes trazem `SIGNAL_MONITOR_INTERVAL_MS: ${SIGNAL_MONITOR_INTERVAL_MS:-60000}`.
+
+SIGNAL_API_BASE_URL, SIGNAL_HEALTH_LIVE_PATH e SIGNAL_HEALTH_READY_PATH também são só do `signal-monitor`. Os composes passam `${SIGNAL_API_BASE_URL:-}`, `${SIGNAL_HEALTH_LIVE_PATH:-/health/live}` e `${SIGNAL_HEALTH_READY_PATH:-/health/ready}`. Os arquivos Portainer trazem a base pública validada e os paths padrão. O resultado recente usa TTL longo próprio (`pulse:signal:*`).
 
 `PORT=3000`, `HOSTNAME=0.0.0.0`, `NODE_ENV=production` e `NEXT_TELEMETRY_DISABLED=1` são controles técnicos da imagem, não variáveis de produto que precisem ser preenchidas no Portainer. O comando local restringe o servidor a `127.0.0.1`.
 

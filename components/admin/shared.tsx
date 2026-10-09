@@ -37,11 +37,13 @@ export function errorText(error: unknown) {
 export function useAdminRead<T>(path: string, parse: (data: unknown) => T) {
   const [state, setState] = useState<{ path: string; data: T | null; failed: boolean; loading: boolean }>({ path, data: null, failed: false, loading: true });
   const [revision, setRevision] = useState(0);
+  const parseRef = useRef(parse);
+  parseRef.current = parse;
   if (state.path !== path) setState({ path, data: null, failed: false, loading: true });
   useEffect(() => {
     const controller = new AbortController();
     void api.get(path, { signal: controller.signal }).then(response => {
-      const data = parse(response.data);
+      const data = parseRef.current(response.data);
       if (!controller.signal.aborted) setState({ path, data, failed: false, loading: false });
     }).catch(error => {
       if (controller.signal.aborted || requestCanceled(error)) return;
@@ -50,7 +52,7 @@ export function useAdminRead<T>(path: string, parse: (data: unknown) => T) {
         : previous);
     });
     return () => controller.abort();
-  }, [path, parse, revision]);
+  }, [path, revision]);
   const current = state.path === path ? state : { data: null, failed: false, loading: true };
   return { data: current.data, failed: current.failed, loading: current.loading, refresh: useCallback(() => { setState(previous => ({ ...previous, loading: true })); setRevision(value => value + 1); }, []) };
 }

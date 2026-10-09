@@ -10,7 +10,7 @@ for (const dev of [false, true]) {
     const web = dev ? "pulse-dev" : "pulse", db = dev ? "pulse_postgres_dev" : "pulse_postgres", cache = dev ? "pulse_redis_dev" : "pulse_redis";
     assert.equal(c.version, "3.8");
     assert.deepEqual(c.networks, { network_public: { external: true, name: "network_public" } });
-    assert.deepEqual(Object.keys(c.services), [web, web + "-collector", web + "-probe", web + "-vps-monitor", db, cache]);
+    assert.deepEqual(Object.keys(c.services), [web, web + "-collector", web + "-probe", web + "-vps-monitor", web + "-signal-monitor", db, cache]);
     for (const [name, service] of Object.entries(c.services)) {
       assert.deepEqual(service.networks, ["network_public"]);
       assert.equal(service.ports, undefined);
@@ -24,7 +24,7 @@ for (const dev of [false, true]) {
     const app = c.services[web];
     const image = "ghcr.io/softcominnovation/softcom-pulse:${PULSE_VERSION:-" + (dev ? "dev" : "latest") + "}";
     assert.equal(app.image, image);
-    for (const suffix of ["-collector", "-probe", "-vps-monitor"]) assert.equal(c.services[web + suffix].image, image);
+    for (const suffix of ["-collector", "-probe", "-vps-monitor", "-signal-monitor"]) assert.equal(c.services[web + suffix].image, image);
     assert.equal(app.environment.API_BASE_URL, "${API_BASE_URL:-https://api.softcom.cloud}");
     assert.equal(app.environment.PULSE_EDITOR_EMAILS, "${PULSE_EDITOR_EMAILS:-}");
     assert.equal(app.environment.PULSE_PUBLIC_HOSTS, "${PULSE_PUBLIC_HOSTS:-}");
@@ -35,6 +35,8 @@ for (const dev of [false, true]) {
     assert.equal(c.services[web + "-probe"].environment.PULSE_PUBLIC_HOSTS, undefined);
     assert.equal(c.services[web + "-vps-monitor"].environment.PULSE_EDITOR_EMAILS, undefined);
     assert.equal(c.services[web + "-vps-monitor"].environment.PULSE_PUBLIC_HOSTS, undefined);
+    assert.equal(c.services[web + "-signal-monitor"].environment.PULSE_EDITOR_EMAILS, undefined);
+    assert.equal(c.services[web + "-signal-monitor"].environment.PULSE_PUBLIC_HOSTS, undefined);
     assert.ok(app.environment.REDIS_URL.includes(cache));
     assert.equal(c.services[web + "-collector"].deploy.update_config.order, "stop-first");
     assert.deepEqual(c.services[web + "-collector"].command, ["node", "--conditions=react-server", "collector/index.mjs"]);
@@ -50,6 +52,15 @@ for (const dev of [false, true]) {
     assert.equal(vps.environment.ZABBIX_API_URL, undefined);
     assert.equal(vps.environment.ZABBIX_API_TOKEN, undefined);
     assert.equal(vps.deploy.labels, undefined);
+    const signal = c.services[web + "-signal-monitor"];
+    assert.deepEqual(signal.command, ["node", "--conditions=react-server", "collector/signal-monitor.mjs"]);
+    assert.equal(signal.environment.SIGNAL_MONITOR_INTERVAL_MS, "${SIGNAL_MONITOR_INTERVAL_MS:-60000}");
+    assert.equal(signal.environment.SIGNAL_API_BASE_URL, "${SIGNAL_API_BASE_URL:-}");
+    assert.equal(signal.environment.SIGNAL_HEALTH_LIVE_PATH, "${SIGNAL_HEALTH_LIVE_PATH:-/health/live}");
+    assert.equal(signal.environment.SIGNAL_HEALTH_READY_PATH, "${SIGNAL_HEALTH_READY_PATH:-/health/ready}");
+    assert.equal(signal.environment.ZABBIX_API_URL, undefined);
+    assert.equal(signal.environment.ZABBIX_API_TOKEN, undefined);
+    assert.equal(signal.deploy.labels, undefined);
     assert.deepEqual(c.services[cache].command, ["redis-server", "--appendonly", "yes"]);
     assert.ok(c.services[db].environment.POSTGRES_PASSWORD.includes(dev ? "POSTGRES_PASSWORD_DEV:" : "POSTGRES_PASSWORD:"));
     assert.ok(app.deploy.labels.includes("traefik.http.routers." + web + ".tls.certresolver=letsencryptresolver"));

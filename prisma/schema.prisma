@@ -164,3 +164,63 @@ model VmTemplateConfig {
   @@unique([hostKey, virtualizationType, templateId])
   @@map("vm_template_config")
 }
+
+model SignalTarget {
+  id               String               @id @default(uuid()) @db.Uuid
+  displayName      String               @map("display_name") @db.VarChar(120)
+  description      String?              @db.VarChar(240)
+  baseUrl          String               @map("base_url") @db.VarChar(2048)
+  enabled          Boolean              @default(true)
+  dashboardEnabled Boolean              @default(false) @map("dashboard_enabled")
+  critical         Boolean              @default(false)
+  displayOrder     Int                  @default(0) @map("display_order")
+  timeoutMs        Int                  @default(5000) @map("timeout_ms")
+  revision         Int                  @default(1)
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  links            SignalInfraLink[]
+  samples          SignalMonitorSample[]
+
+  @@index([displayOrder, id])
+  @@map("signal_target")
+}
+
+model SignalInfraLink {
+  id            String       @id @default(uuid()) @db.Uuid
+  targetId      String       @map("target_id") @db.Uuid
+  target        SignalTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  role          String       @db.VarChar(16)
+  label         String?      @db.VarChar(80)
+  hostKey       String       @map("host_key") @db.VarChar(256)
+  vmKey         String?      @map("vm_key") @db.VarChar(35)
+  parentHostKey String?      @map("parent_host_key") @db.VarChar(256)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([targetId, id])
+  @@map("signal_infra_link")
+}
+
+model SignalMonitorSample {
+  id                  BigInt       @id @default(autoincrement())
+  targetId            String       @map("target_id") @db.Uuid
+  target              SignalTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  checkedAt           DateTime     @map("checked_at") @db.Timestamptz(3)
+  state               Int          @db.SmallInt
+  latencyMs           Int?         @map("latency_ms")
+  httpStatus          Int?         @map("http_status") @db.SmallInt
+  liveOk              Boolean?     @map("live_ok")
+  readyStatus         String?      @map("ready_status") @db.VarChar(16)
+  workerStatus        String?      @map("worker_status") @db.VarChar(32)
+  activeInstances     Int?         @map("active_instances")
+  outboxPending       Int?         @map("outbox_pending")
+  inboxPending        Int?         @map("inbox_pending")
+  outboxDead          Int?         @map("outbox_dead")
+  inboxDead           Int?         @map("inbox_dead")
+  oldestOutboxSeconds Float?       @map("oldest_outbox_seconds")
+  oldestInboxSeconds  Float?       @map("oldest_inbox_seconds")
+  checksJson          Json?        @map("checks_json")
+
+  @@index([targetId, checkedAt])
+  @@map("signal_monitor_sample")
+}

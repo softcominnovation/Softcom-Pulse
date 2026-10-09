@@ -26,10 +26,11 @@ const documentSchema = z.object({
     })),
   }),
 });
+const parseDocument = (data: unknown) => documentSchema.parse(data);
 
 export function VmAgentAssociateNotice({ vm }: { vm: VirtualMachine }) {
   const canEdit = useCanEdit();
-  const document = useAdminRead("/settings/monitoring-scope", data => documentSchema.parse(data));
+  const document = useAdminRead("/settings/monitoring-scope", parseDocument);
   const mutation = useMutation();
   const candidate = useMemo(() => {
     const list = document.data?.data.candidates ?? [];

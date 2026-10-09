@@ -63,6 +63,21 @@ VPS avulsas ficam em `standalone_vps`, `vps_stack` e `vps_monitor_sample`. Não 
 
 O overview ganha `standaloneVps` só com as linhas em destaque. VPS inativa ou sem monitor traz faixa vazia. Isso não altera `externalServices` nem os problemas do Zabbix.
 
+Alvos Softcom Signal ficam em `signal_target`, `signal_infra_link` e `signal_monitor_sample`. Não entram em `monitored_resource_config`, `external_service` nem `standalone_vps`. Não há token admin no MVP. Há no máximo 10 alvos e 20 vínculos de infraestrutura por alvo. PATCH e links exigem `expectedRevision` do alvo.
+
+| Rota | Resultado |
+|---|---|
+| `GET /api/monitoring/signal-targets` | `{data}` com estado atual, `strip`, `uptime24h`, `checks` sanitizados e `links` com `inventoryStatus` |
+| `POST /api/monitoring/signal-targets` | 201 `{data}`; acima do limite: 409 `signal_target_limit` |
+| `GET /api/monitoring/signal-targets/:id` | 200 `{data}` |
+| `PATCH /api/monitoring/signal-targets/:id` | 200 `{data}`; revisão divergente: 409 `revision_conflict` |
+| `DELETE /api/monitoring/signal-targets/:id` | 204; remove o alvo, os links e as amostras |
+| `GET /api/monitoring/signal-targets/:id/history?range=24h\|7d\|30d` | `{data}` com pontos `{checkedAt, state, latencyMs, readyStatus, workerStatus}` |
+| `POST /api/monitoring/signal-targets/:id/links` | 201 `{data}` do alvo; acima do limite: 409 `signal_infra_link_limit` |
+| `DELETE /api/monitoring/signal-targets/:id/links/:linkId` | 200 `{data}` do alvo; body com `expectedRevision` |
+
+O overview ganha `signalCards` só com alvos `enabled` e `dashboardEnabled`. Separado de `externalServices` e `standaloneVps`. Falha do Signal não altera `pulse:sync:last` do Zabbix.
+
 Seletores são sensíveis a maiúsculas/minúsculas. Prefixo `evolution_evolution` casa o nome exato ou tasks iniciadas em `evolution_evolution.`; também se aceita o prefixo com ponto explícito. Não casa `evolution_evolution_backup`. `name_contains` busca trecho literal. Regex usa [RE2JS](https://github.com/le0pard/re2js), versão fixada 2.8.6, com avaliação linear e limite de 256 caracteres no padrão e 512 no nome; não usa RegExp nativo com padrão do usuário. Sintaxe não suportada, incluindo backreferences, retorna 400.
 
 A resolução usa host + seletor: um candidato é resolved, zero é missing, vários são ambiguous. Na criação ou alteração efetiva de identidade/seletor, múltiplos candidatos retornam 400 selector_ambiguous; ausência do alvo retorna 400 resource_not_discovered; descoberta indisponível/stale retorna 409 resource_inventory_unavailable. Preferências de uma configuração existente continuam editáveis quando o alvo desaparece ou se torna ambíguo. Reenviar a mesma identidade não exige nova descoberta.

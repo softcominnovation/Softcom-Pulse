@@ -24,6 +24,9 @@ import { probeKeys } from "../../lib/server/probe/store.ts";
 import { runVpsMonitorCycle } from "../../lib/server/vps/cycle.ts";
 import { purgeVpsSamples } from "../../lib/server/vps/repository.ts";
 import { vpsResultKey } from "../../lib/server/vps/store.ts";
+import { runSignalMonitorCycle } from "../../lib/server/signal/cycle.ts";
+import { purgeSignalSamples } from "../../lib/server/signal/repository.ts";
+import { signalKeys } from "../../lib/server/signal/store.ts";
 
 function namedVmFixture(parentKey = "names-parent", id = "100", type = "qemu") {
   const parent = { ...host(parentKey), role: "hypervisor" };
@@ -128,7 +131,7 @@ const originalFetch = globalThis.fetch;
 const hostConfig = { resourceType: "host", zabbixHostKey: "asgard", dashboardEnabled: true };
 const editorEmail = "editor@pulse.test";
 const user = { id: 42, email: editorEmail, administrador: false, permissoes: [] };
-const publicTables = ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "pulse_settings", "standalone_vps", "vm_display_config", "vm_template_config", "vps_monitor_sample", "vps_stack"];
+const publicTables = ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "pulse_settings", "signal_infra_link", "signal_monitor_sample", "signal_target", "standalone_vps", "vm_display_config", "vm_template_config", "vps_monitor_sample", "vps_stack"];
 const request = (path = "/", method = "GET", body, auth = token) => new Request("http://localhost/api" + path, {
   method, headers: { "Content-Type": "application/json", ...(auth ? { Authorization: "Bearer " + auth } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
@@ -958,4 +961,101 @@ test("standalone VPS registration stops at 100 rows and a second monitor process
     assert.match(second.stderr, /vps_monitor_already_running/);
     assert.equal(second.stdout.includes("vps_monitor_cycle"), false);
   } finally { await holder.query("SELECT pg_advisory_unlock(734021009::bigint)"); await holder.end(); }
+});
+
+function runSignalMonitorProcess(overrides = {}, unset = []) {
+  const env = { ...process.env, ...overrides };
+  for (const key of unset) delete env[key];
+  return new Promise(resolve => {
+    const child = spawn(process.execPath, ["--conditions=react-server", "collector/signal-monitor.mjs", "--once"], { cwd: appRoot, env });
+    let stdout = "", stderr = "";
+    child.stdout.on("data", chunk => { stdout += chunk; });
+    child.stderr.on("data", chunk => { stderr += chunk; });
+    child.on("close", code => resolve({ code, stdout, stderr }));
+  });
+}
+const signalInput = (extra = {}) => ({ displayName: "Signal Squad", baseUrl: "https://api-signal-squad-ia-01.hostsoftcom.cloud", ...extra });
+
+test("Signal targets CRUD, cycle, overview cards and lock stay isolated from Zabbix sync", async () => {
+  const syncBefore = await cache.get(keys.sync);
+  const overviewBefore = await result(await handlers.overviewGet(request()));
+  const created = await result(await handlers.signalTargetPost(request("/", "POST", signalInput({ dashboardEnabled: true }))));
+  assert.equal(created.status, 201);
+  assert.equal(created.body.data.revision, 1);
+  assert.equal(created.body.data.state, 4);
+  const id = created.body.data.id;
+  const renamed = await result(await handlers.signalTargetPatch(request("/", "PATCH", { expectedRevision: 1, displayName: "Signal Squad IA" }), params({ id })));
+  assert.equal(renamed.status, 200);
+  assert.equal(renamed.body.data.revision, 2);
+  assert.equal((await handlers.signalTargetPatch(request("/", "PATCH", { expectedRevision: 1, displayName: "Atrasado" }), params({ id }))).status, 409);
+  const linked = await result(await handlers.signalInfraLinkPost(request("/", "POST", {
+    expectedRevision: 2, role: "manager", hostKey: "signal-unknown-host",
+  }), params({ id })));
+  assert.equal(linked.status, 201);
+  assert.equal(linked.body.data.revision, 3);
+  assert.equal(linked.body.data.links[0].inventoryStatus, "missing");
+  const reader = sealEnvelope({ type: "access", token: "reader", user: { id: 7, email: "reader@pulse.test" }, sessionId: randomUUID(), expiresAt: Date.now() + 600000 });
+  assert.equal((await handlers.signalTargetPost(request("/", "POST", signalInput({ displayName: "Reader" }), reader))).status, 403);
+  const disabled = await result(await handlers.signalTargetPost(request("/", "POST", signalInput({ displayName: "Off", enabled: false, baseUrl: "https://api-signal-off.example" }))));
+  const calls = [];
+  await runSignalMonitorCycle({
+    transport: async baseUrl => {
+      calls.push(baseUrl);
+      return {
+        live: { ok: true, status: 200, latencyMs: 10, body: { status: "ok" } },
+        ready: {
+          ok: true, status: 200, latencyMs: 20,
+          body: {
+            status: "ok",
+            checks: {
+              database: "up", redis: "up", objectStorage: "up", workdeskAudio: "up",
+              worker: { status: "up", activeInstances: 1, ageSeconds: 2 },
+              pipeline: { outbox_pending: 0, outbox_dead: 0, inbox_pending: 0, inbox_dead: 0, oldest_outbox_seconds: 0, oldest_inbox_seconds: 0 },
+              knowledgeIndex: { itemsFailed: 0, jobsFailedCurrent: 0, expiredLeases: 0, itemsWithoutActiveJob: 0 },
+            },
+          },
+        },
+      };
+    },
+  });
+  assert.deepEqual(calls, ["https://api-signal-squad-ia-01.hostsoftcom.cloud"]);
+  touchedKeys.add(signalKeys.result(id));
+  touchedKeys.add(signalKeys.sync);
+  const stored = JSON.parse(await cache.get(signalKeys.result(id)));
+  assert.equal(stored.source, "signal-monitor");
+  assert.equal(stored.data.state, 0);
+  assert.equal(Array.isArray(stored.data.strip), true);
+  assert.equal(stored.data.strip.length, 1);
+  const detail = await result(await handlers.signalTargetGet(request(), params({ id })));
+  assert.equal(detail.body.data.state, 0);
+  assert.equal(detail.body.data.workerStatus, "up");
+  const history = await result(await handlers.signalTargetHistoryGet(request("/?range=24h"), params({ id })));
+  assert.equal(history.body.data.points.length, 1);
+  const overview = await result(await handlers.overviewGet(request()));
+  assert.equal(overview.body.data.signalCards.some(item => item.id === id), true);
+  assert.equal(overview.body.data.signalCards.some(item => item.id === disabled.body.data.id), false);
+  assert.deepEqual(overview.body.data.externalServices.map(item => item.id), overviewBefore.body.data.externalServices.map(item => item.id));
+  assert.equal(await cache.get(keys.sync), syncBefore);
+  const old = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
+  await getPrisma().signalMonitorSample.create({ data: { targetId: id, checkedAt: old, state: 0, latencyMs: 10 } });
+  await purgeSignalSamples(new AbortController().signal);
+  assert.equal(Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM signal_monitor_sample WHERE target_id = $1 AND checked_at < $2", [id, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)])).rows[0].total), 0);
+  for (let i = 0; i < 8; i++) {
+    await handlers.signalTargetPost(request("/", "POST", signalInput({ displayName: "Extra " + i, baseUrl: "https://api-signal-" + i + ".example" })));
+  }
+  const limited = await result(await handlers.signalTargetPost(request("/", "POST", signalInput({ displayName: "Over", baseUrl: "https://api-signal-over.example" }))));
+  assert.equal(limited.status, 409);
+  assert.equal(limited.body.error.code, "signal_target_limit");
+  await getDatabase().query("DELETE FROM signal_target");
+  const invalid = await runSignalMonitorProcess({ SIGNAL_MONITOR_INTERVAL_MS: "15000" });
+  assert.equal(invalid.code, 1);
+  assert.match(invalid.stderr, /signal_monitor_configuration_invalid/);
+  const holder = new pg.Client({ connectionString: process.env.DATABASE_URL });
+  await holder.connect();
+  assert.equal((await holder.query("SELECT pg_try_advisory_lock(734021011::bigint) AS locked")).rows[0].locked, true);
+  try {
+    const second = await runSignalMonitorProcess({ SIGNAL_MONITOR_INTERVAL_MS: "45000" });
+    assert.equal(second.code, 1);
+    assert.match(second.stderr, /signal_monitor_already_running/);
+  } finally { await holder.query("SELECT pg_advisory_unlock(734021011::bigint)"); await holder.end(); }
 });

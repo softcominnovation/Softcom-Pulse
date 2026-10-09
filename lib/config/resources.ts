@@ -18,7 +18,10 @@ export const containerPresentationSchema = z.strictObject({
   ...commonPresentation, showHealth: z.boolean().default(false), showHealthTimeline: z.boolean().default(false),
   healthTimelineRange: historyRangeSchema.default("1h"),
 }).refine(value => !value.showHealthTimeline || value.showHealth, { path: ["showHealthTimeline"], message: "Timeline requires visible health" });
-export type ResourcePresentation = z.infer<typeof hostPresentationSchema> & Partial<z.infer<typeof containerPresentationSchema>>;
+/** Shared presentation shape: hosts carry metricsSource; containers must not (strict schema). */
+export type ResourcePresentation = Omit<z.infer<typeof hostPresentationSchema>, "metricsSource">
+  & { metricsSource?: z.infer<typeof cardMetricsSourceSchema> }
+  & Partial<z.infer<typeof containerPresentationSchema>>;
 
 const optionalText = (max: number) => z.string().refine(value => !/[\u0000-\u001f\u007f]/.test(value)).transform(value => value.trim()).pipe(z.string().max(max)).transform(value => value || null).nullable().default(null);
 

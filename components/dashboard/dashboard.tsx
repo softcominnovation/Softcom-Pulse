@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useStore } from "zustand";
-import { Activity, RefreshCw, TriangleAlert } from "lucide-react";
+import { TriangleAlert } from "lucide-react";
 import { isAxiosError } from "axios";
 import { presentationDocumentSchema, type PresentationDocument } from "@/lib/config/presentation";
 import type { Overview, ReadResult } from "@/lib/monitoring/contracts";
 import { createPlayerStore, playableScreens } from "@/lib/dashboard/player";
-import { timestamp } from "@/lib/dashboard/format";
 import { api } from "@/lib/client/api";
 import { useUiStore } from "@/store/ui.store";
 import { Button } from "@/components/ui/button";
@@ -84,8 +83,8 @@ export function Dashboard() {
   const partial = !!result && hasOldEvidence(result.data, now);
   const problems = result?.data.summary.problems;
   const hasData = result?.availability === "ready";
-  const tone = stale ? "warn" : !hasData ? "unknown" : (result?.data.summary.criticalAffected ?? 0) > 0 ? "bad" : (problems ?? 0) > 0 ? "warn" : "unknown";
-  const title = overview.failed ? "Falha na atualização" : result?.stale ? "Dados desatualizados" : !result ? "Carregando monitoramento" : !hasData ? "Aguardando dados do monitoramento" : partial ? "Há evidências desatualizadas" : (problems ?? 0) > 0 ? "A operação requer atenção" : "Monitoramento atualizado";
+  const _tone = stale ? "warn" : !hasData ? "unknown" : (result?.data.summary.criticalAffected ?? 0) > 0 ? "bad" : (problems ?? 0) > 0 ? "warn" : "unknown";
+  const _title = overview.failed ? "Falha na atualização" : result?.stale ? "Dados desatualizados" : !result ? "Carregando monitoramento" : !hasData ? "Aguardando dados do monitoramento" : partial ? "Há evidências desatualizadas" : (problems ?? 0) > 0 ? "A operação requer atenção" : "Monitoramento atualizado";
   const layout = player.layoutOverride ?? screen?.layout ?? "overview";
   return <div className={`dashboard ${layout} ${layout === "overview" ? "balanced" : ""}`}>
     <PlayerToolbar store={store} />

@@ -54,7 +54,9 @@ export function VpsDetail({ id }: { id: string }) {
   const [editing, setEditing] = useState(false), [stack, setStack] = useState<VpsStackRecord | "new" | null>(null), [viewing, setViewing] = useState<VpsStackRecord | null>(null);
   const item = detail.data;
   useEffect(() => { setEditing(false); setStack(null); setViewing(null); }, [id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (authenticated) detail.refresh(); }, [authenticated, detail.refresh]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const tick = () => { if (!document.hidden) detail.refresh(); };
     const timer = setInterval(tick, probeLiveRefreshMs);
@@ -104,7 +106,7 @@ function VpsBody({ item, editor, authenticated, publicRead, editing, setEditing,
   const monitor = vpsMonitorLabel(item.monitorState);
   const reading = item.result;
   const showMeters = item.enabled && !item.monitorPaused && item.monitorConfigured && item.monitorState !== "pending" && reading && (reading.cpuPercent !== null || reading.memoryPercent !== null || reading.diskPercent !== null || reading.disks.length > 0);
-  const tracksOnly = !showMeters;
+  const _tracksOnly = !showMeters;
   const busiest = reading?.disks.length ? reading.disks.reduce((best, disk) => (disk.use ?? -1) > (best.use ?? -1) ? disk : best) : undefined;
   return <>
     <section className="dashboard-panel app-monitor-detail" aria-label={item.name}>

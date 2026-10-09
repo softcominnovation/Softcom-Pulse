@@ -89,7 +89,9 @@ export function VpsAdmin() {
   const term = query.trim().toLocaleLowerCase("pt");
   const visible = items.filter(item => !term || [item.name, item.ip, item.domain ?? "", item.provider ?? ""].some(value => value.toLocaleLowerCase("pt").includes(term)));
   useEffect(() => { if (pendingId) consume(); }, [pendingId, consume]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (authenticated) list.refresh(); }, [authenticated, list.refresh]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const tick = () => { if (!document.hidden) list.refresh(); };
     const timer = setInterval(tick, probeLiveRefreshMs);

@@ -52,7 +52,8 @@ test("configured detail respects preferences and loads numeric history and acces
   await dialog.getByRole("button", { name: "24 horas", exact: true }).click(); await expect.poll(() => state.historyCalls.length).toBe(2);
   await page.clock.install(); await page.clock.runFor(61000); expect(state.historyCalls).toHaveLength(2);
   await page.keyboard.press("Escape"); await expect(dialog).toHaveCount(0); await expect(page.getByRole("button", { name: "Detalhes de Serviço 0", exact: true })).toBeFocused();
-  state.services[0].config.presentation = { metricsSource: "auto", showStatus: false, showCpu: false, showMemory: false, showDisk: false, showNetwork: false, showUptime: false, showHealth: false, showHealthTimeline: false };
+  // Container presentation is strict: host-only keys like metricsSource must not appear (see configuration.test.mjs).
+  state.services[0].config.presentation = { showStatus: false, showCpu: false, showMemory: false, showDisk: false, showNetwork: false, showUptime: false, showHealth: false, showHealthTimeline: false };
   await page.getByRole("button", { name: "Atualizar serviços configurados" }).click();
   const card = page.locator(".resource-card").filter({ has: page.getByRole("heading", { name: "Serviço 0", exact: true }) });
   await expect(card.getByText("Saudável", { exact: true })).toHaveCount(0);

@@ -9,13 +9,12 @@ const commonPresentation = {
   showStatus: z.boolean().default(true), showCpu: z.boolean().default(true), showMemory: z.boolean().default(true),
   showDisk: z.boolean().default(false), showNetwork: z.boolean().default(false), showUptime: z.boolean().default(false),
 };
-export const hostPresentationSchema = z.object({
+export const hostPresentationSchema = z.strictObject({
   ...commonPresentation,
   /** CPU/RAM on Disponibilidade + Infra host cards. Default = same source as the Asgard VM list. */
   metricsSource: cardMetricsSourceSchema.default("hypervisor"),
 });
-// object (not strict): container payloads may still carry host-only keys like metricsSource; strip unknowns.
-export const containerPresentationSchema = z.object({
+export const containerPresentationSchema = z.strictObject({
   ...commonPresentation, showHealth: z.boolean().default(false), showHealthTimeline: z.boolean().default(false),
   healthTimelineRange: historyRangeSchema.default("1h"),
 }).refine(value => !value.showHealthTimeline || value.showHealth, { path: ["showHealthTimeline"], message: "Timeline requires visible health" });

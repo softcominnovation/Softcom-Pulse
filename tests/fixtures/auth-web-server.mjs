@@ -38,7 +38,7 @@ try {
 const upstream = await startAuthUpstream(3102);
 const child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "--hostname", "127.0.0.1", "--port", "3100"], {
   windowsHide: true, stdio: "inherit",
-  env: { ...process.env, PULSE_E2E: "1", PULSE_EDITOR_EMAILS: [process.env.PULSE_EDITOR_EMAILS, "infra@example.test"].filter(Boolean).join(","), DATABASE_URL: db.href, REDIS_URL: redis.href, API_BASE_URL: upstream.url, TOKEN_ENCRYPTION_KEY: randomBytes(32).toString("base64") },
+  env: { ...process.env, PULSE_E2E: "1", PULSE_EDITOR_EMAILS: [process.env.PULSE_EDITOR_EMAILS, "infra@example.test", "dashboard@example.test"].filter(Boolean).join(","), DATABASE_URL: db.href, REDIS_URL: redis.href, API_BASE_URL: upstream.url, TOKEN_ENCRYPTION_KEY: randomBytes(32).toString("base64") },
 });
 async function close() { child.kill(); await upstream.close(); await cleanup(); }
 process.on("SIGTERM", () => { void close(); });

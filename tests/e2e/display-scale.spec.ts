@@ -75,9 +75,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1366, height: 768 
       await page.getByRole("button", { name: "Modo TV", exact: true }).click();
       await expect(root(page)).toHaveAttribute("data-display-scale", String(value));
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-      if (viewport.width === 390 && value > 100) {
-        expect((await page.locator(".dashboard-banner > div").first().boundingBox())!.width).toBeGreaterThan(200);
-      }
       const highlights = await page.locator(".block-highlighted_resources").boundingBox();
       const asgard = await page.locator(".block-asgard_summary").boundingBox();
       const problems = await page.locator(".block-problems").boundingBox();

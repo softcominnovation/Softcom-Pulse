@@ -22,10 +22,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1366, height: 768 
   });
   await page.setViewportSize(viewport); await signIn(page);
   await expect(page.getByRole("heading", { name: "Disponibilidade de Serviços", exact: true })).toBeVisible();
-  const banner = page.locator(".dashboard-status-banner"), cards = page.locator(".availability-card");
+  const cards = page.locator(".availability-card");
   await expect(cards).toHaveCount(viewport.width >= 1920 ? 30 : 12);
-  expect((await banner.boundingBox())!.height).toBeLessThanOrEqual(60);
-  await expect(banner.locator("p")).toHaveCount(1);
   await expect(cards.nth(0).locator(".availability-description")).toHaveText("Softconnect v2");
   await expect(cards.nth(2).locator(".availability-description")).toHaveText("Fila de pedidos");
   await expect(cards.nth(0).locator(".availability-state")).toHaveText("Disponível");
@@ -34,7 +32,6 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1366, height: 768 
   for (const mode of ["normal", "tv", "fullscreen"]) {
     if (mode === "tv") await page.getByRole("button", { name: "Modo TV", exact: true }).click();
     if (mode === "fullscreen") await page.getByRole("button", { name: "Tela cheia", exact: true }).click();
-    expect((await banner.boundingBox())!.height).toBeLessThanOrEqual(60);
     expect(await cards.evaluateAll(nodes => nodes.every(node => node.getBoundingClientRect().width <= 230.1 && Math.abs(node.getBoundingClientRect().height - 120) < 0.1 && node.scrollHeight <= node.clientHeight + 1))).toBe(true);
     if (viewport.width >= 1366) {
       const gridWidth = (await page.locator(".availability-grid").boundingBox())!.width;

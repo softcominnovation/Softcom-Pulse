@@ -32,6 +32,15 @@ export async function readScopeSettings() {
   } catch { throw new BffError(503, "monitoring_scope_invalid"); }
 }
 
+/** Fresh Postgres has no scope rows → UI GET 503 and discovery is skipped. Seed ASGARD-only once. */
+export async function ensureBootstrapMonitoringScope(asgardHostKey = "ASGARD") {
+  const current = await readScopeSettings();
+  if (current.scope && current.asgardHostKey) return current;
+  const key = hostKeySchema.parse(asgardHostKey);
+  const scope = monitoringScopeSchema.parse({ hostKeys: [key], vmLinks: [], revision: 1 });
+  return replaceMonitoringScope(key, scope);
+}
+
 export function selectScope(hosts: ZabbixHost[], configured: { scope: MonitoringScope | null; asgardHostKey: string | null }) {
   const explicit = configured.asgardHostKey;
   const candidates = hosts.filter(host => explicit ? host.host === explicit : host.host === "ASGARD" || tag(host.tags, "pulse.role") === "asgard");

@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { listResources } from "../config/repository.ts";
-import { readScopeSettings, selectScope, assertHypervisor } from "./scope.ts";
+import { readScopeSettings, selectScope, assertHypervisor, ensureBootstrapMonitoringScope } from "./scope.ts";
 import { zabbixCall } from "./client.ts";
 import { itemSchema, zabbixHostSchema, zabbixProblemSchema, type Rpc } from "./types.ts";
 import { needsValue } from "./mapping.ts";
@@ -42,7 +42,11 @@ export async function collectSnapshots(options: {
 } = {}) {
   const rpc = options.rpc ?? zabbixCall, signal = options.signal;
   const runDiscovery = options.discover !== false;
-  const settings = options.scope ?? await readScopeSettings();
+  let settings = options.scope ?? await readScopeSettings();
+  if (!options.scope && (!settings.scope || !settings.asgardHostKey)) {
+    const bootstrapped = await ensureBootstrapMonitoringScope();
+    settings = { scope: bootstrapped.scope, asgardHostKey: bootstrapped.asgardHostKey };
+  }
   const configs = options.configs ?? await listResources();
   const rawHosts = z.array(zabbixHostSchema).parse(await rpc("host.get", {
     output: hostOutput, ...(settings.scope ? { filter: { host: settings.scope.hostKeys } } : {}),

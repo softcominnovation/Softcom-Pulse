@@ -6,7 +6,8 @@ import { readAgentDiscovery } from "../cache/discovery.ts";
 import { readSnapshotBatch, readResult, snapshotData, snapshotKeys } from "../cache/snapshots.ts";
 import { virtualizationType } from "../monitoring/virtual-machines.ts";
 import {
-  linkAgentToScope, unlinkAgentFromScope, readScopeSettings, scopeLinkBodySchema, scopeUnlinkBodySchema,
+  linkAgentToScope, unlinkAgentFromScope, readScopeSettings, ensureBootstrapMonitoringScope,
+  scopeLinkBodySchema, scopeUnlinkBodySchema,
 } from "../zabbix/scope.ts";
 
 function sanitizeScope(asgardHostKey: string, scope: NonNullable<Awaited<ReturnType<typeof readScopeSettings>>["scope"]>) {
@@ -19,7 +20,11 @@ function sanitizeScope(asgardHostKey: string, scope: NonNullable<Awaited<ReturnT
 }
 
 export async function readMonitoringScopeDocument() {
-  const settings = await readScopeSettings();
+  let settings = await readScopeSettings();
+  if (!settings.scope || !settings.asgardHostKey) {
+    const bootstrapped = await ensureBootstrapMonitoringScope();
+    settings = { scope: bootstrapped.scope, asgardHostKey: bootstrapped.asgardHostKey };
+  }
   if (!settings.scope || !settings.asgardHostKey) throw new BffError(503, "monitoring_scope_required");
   const discovery = await readAgentDiscovery();
   const batch = await readSnapshotBatch([snapshotKeys.hosts]);
@@ -66,7 +71,11 @@ export async function readMonitoringScopeDocument() {
 
 export async function postMonitoringScopeLink(body: unknown) {
   const input = scopeLinkBodySchema.parse(body);
-  const settings = await readScopeSettings();
+  let settings = await readScopeSettings();
+  if (!settings.scope || !settings.asgardHostKey) {
+    const bootstrapped = await ensureBootstrapMonitoringScope(input.parentHostKey);
+    settings = { scope: bootstrapped.scope, asgardHostKey: bootstrapped.asgardHostKey };
+  }
   if (!settings.scope || !settings.asgardHostKey) throw new BffError(503, "monitoring_scope_required");
   const discovery = await readAgentDiscovery();
   const allowed = new Set([

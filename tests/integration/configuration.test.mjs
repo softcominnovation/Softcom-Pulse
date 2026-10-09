@@ -123,10 +123,12 @@ let admin, cache, token, databaseCreated = false, leaseOwned = false;
 const databaseName = "pulse_phase03_test_" + process.pid + "_" + Date.now();
 const leaseKey = "pulse:test:phase03:lease", lease = randomUUID();
 const touchedKeys = new Set();
-const originalEnv = { DATABASE_URL: process.env.DATABASE_URL, REDIS_URL: process.env.REDIS_URL, TOKEN_ENCRYPTION_KEY: process.env.TOKEN_ENCRYPTION_KEY };
+const originalEnv = { DATABASE_URL: process.env.DATABASE_URL, REDIS_URL: process.env.REDIS_URL, TOKEN_ENCRYPTION_KEY: process.env.TOKEN_ENCRYPTION_KEY, PULSE_EDITOR_EMAILS: process.env.PULSE_EDITOR_EMAILS };
 const originalFetch = globalThis.fetch;
 const hostConfig = { resourceType: "host", zabbixHostKey: "asgard", dashboardEnabled: true };
-const user = { id: 42, administrador: false, permissoes: [] };
+const editorEmail = "editor@pulse.test";
+const user = { id: 42, email: editorEmail, administrador: false, permissoes: [] };
+const publicTables = ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "pulse_settings", "standalone_vps", "vm_display_config", "vm_template_config", "vps_monitor_sample", "vps_stack"];
 const request = (path = "/", method = "GET", body, auth = token) => new Request("http://localhost/api" + path, {
   method, headers: { "Content-Type": "application/json", ...(auth ? { Authorization: "Bearer " + auth } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
@@ -153,6 +155,7 @@ before(async () => {
   assert.equal(await cache.set(leaseKey, lease, { NX: true, EX: 300 }), "OK", "Redis test DB 15 is in use"); leaseOwned = true;
   assert.equal(await cache.dbSize(), 1, "Redis DB 15 must be empty; no existing data will be deleted");
   process.env.TOKEN_ENCRYPTION_KEY = randomBytes(32).toString("base64");
+  process.env.PULSE_EDITOR_EMAILS = editorEmail;
   token = sealEnvelope({ type: "access", token: "test-only", user, sessionId: randomUUID(), expiresAt: Date.now() + 600000 });
   globalThis.fetch = () => { throw new Error("Monitoring must not call any upstream in this phase"); };
   await getPrisma().pulseSetting.upsert({ where: { key: "dashboardPresentation" }, update: { value: initialPresentation(randomUUID) }, create: { key: "dashboardPresentation", value: initialPresentation(randomUUID) } });
@@ -195,7 +198,7 @@ test("migrated schema contains only human configuration and host uniqueness incl
   assert.equal((await getResource(a.id)).serviceType, null);
   await assert.rejects(createResource(hostConfig), error => error.status === 409);
   const { rows } = await getDatabase().query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name");
-  assert.deepEqual(rows.map(row => row.table_name), ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "pulse_settings", "vm_display_config", "vm_template_config"]);
+  assert.deepEqual(rows.map(row => row.table_name), publicTables);
   const invalid = [
     [randomUUID(), "host", "zabbix", "other", "exact_name", "x", {}],
     [randomUUID(), "docker_container", "zabbix", "other", null, null, {}],

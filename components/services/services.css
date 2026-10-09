@@ -1,4 +1,5 @@
-.services-page, .service-content, .vm-workloads { min-width: 0; }
+.services-page, .service-content, .vm-workloads, .container-inventory, .container-host-group { min-width: 0; max-width: 100%; }
+.services-page .dashboard-panel { overflow-x: hidden; max-width: 100%; }
 .service-dialog { width: 920px; }
 .workloads-dialog { width: 1240px; }
 .service-dialog, .workloads-dialog { max-width: calc(100% - 32px); max-height: calc(100% - 32px); }
@@ -26,7 +27,7 @@
 .container-host-group + .container-host-group { border-top: 1px solid var(--pulse-line); }
 .container-host-group h3 { font-size: calc(13px * var(--dashboard-scale, 1)); overflow-wrap: anywhere; }
 .inventory-count { margin-left: auto; font-size: calc(10px * var(--dashboard-scale, 1)); color: var(--pulse-muted); white-space: nowrap; }
-.container-table-scroll { overflow: auto; }
+.container-table-scroll { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; max-height: min(70dvh, 560px); overflow: auto; overscroll-behavior-x: contain; contain: paint; }
 .container-scroll-hint { padding: 0 calc(16px * var(--dashboard-scale, 1)) calc(10px * var(--dashboard-scale, 1)); font-size: calc(10px * var(--dashboard-scale, 1)); color: var(--pulse-muted); }
 .container-table { width: 100%; min-width: calc(930px * var(--dashboard-scale, 1)); border-collapse: collapse; table-layout: fixed; font-size: calc(11px * var(--dashboard-scale, 1)); }
 .container-table th, .container-table td { padding: calc(12px * var(--dashboard-scale, 1)) calc(14px * var(--dashboard-scale, 1)); text-align: left; vertical-align: top; border-top: 1px solid var(--pulse-line); overflow-wrap: anywhere; }
@@ -58,7 +59,7 @@
 .resource-card > .resource-detail-action { margin-top: calc(10px * var(--dashboard-scale, 1)); }
 .services-page .dashboard-panel > .dashboard-banner { margin: 0 14px 16px; }
 .services-page .resource-grid {
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 360px));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), min(100%, 360px)));
   justify-content: start; max-height: none; overflow: visible;
 }
 .services-page .resource-card {

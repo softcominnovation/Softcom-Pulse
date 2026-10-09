@@ -1,4 +1,4 @@
-.monitoring-main { width: 100%; min-width: 0; max-width: 100%; overflow-x: clip; padding: 0 clamp(14px, 2vw, 42px) 28px; }
+.monitoring-main { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; overflow-x: hidden; padding: 0 clamp(14px, 2vw, 42px) 28px; }
 .infrastructure-details { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .infrastructure-details .dashboard-heading, .infrastructure-details .dashboard-banner { margin-bottom: 0; }
 .infrastructure-details h1, .infrastructure-details h2, .infrastructure-details h3 { overflow-wrap: anywhere; }
@@ -91,7 +91,7 @@
 .vm-name-link:hover, .vm-name-link:focus-visible { color: var(--pulse-green); text-decoration: underline; }
 .vm-selected { background: #192c29; }
 .vm-selected .vm-name-link { color: var(--pulse-green); }
-.vm-detail-panel .vm-table-scroll { max-height: none; margin: 0; }
+.vm-detail-panel .vm-table-scroll { max-height: min(70dvh, 560px); margin: 0; overflow: auto; }
 .vm-details-table { min-width: 1140px; table-layout: fixed; }
 .vm-details-table th, .vm-details-table td { font-size: 12px; padding: 10px 16px; }
 .vm-details-table th:first-child { width: 23%; }

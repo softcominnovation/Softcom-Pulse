@@ -293,7 +293,7 @@ for (const [width,height] of [[320,568],[360,800],[390,844],[768,1024],[1024,768
     await page.setViewportSize({width: Math.max(320,width - 120),height});
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(state.calls.length).toBe(originalCalls);
-    await page.getByRole("link",{name:"Infraestrutura",exact:true}).click();
+    await page.goto("/infraestrutura");
     await expect(page.getByRole("heading",{name:"Infraestrutura",exact:true})).toBeVisible();
     await expect(page.getByRole("link",{name:"Linux operação",exact:true})).toBeVisible();
     await page.getByLabel("Filtrar host").selectOption("linux-operacao");

@@ -243,7 +243,7 @@ test("standalone persists configuration across restarts and serves every protect
       });
       child.on("error", reject); child.on("exit", code => code === 0 ? resolve() : reject(new Error("Runtime test migration failed")));
     });
-    const environment = { DATABASE_URL: db.href, REDIS_URL: redisUrl.href, API_BASE_URL: upstream.url };
+    const environment = { DATABASE_URL: db.href, REDIS_URL: redisUrl.href, API_BASE_URL: upstream.url, PULSE_EDITOR_EMAILS: "bff-runtime@example.test" };
     await withServer(environment, async base => {
       const login = await fetch(base + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "bff-runtime@example.test", senha: "test-password" }) });
       assert.equal(login.status, 200); auth = { Authorization: "Bearer " + (await login.json()).accessToken, "Content-Type": "application/json" };

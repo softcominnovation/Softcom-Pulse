@@ -88,16 +88,15 @@ export function VpsAdmin() {
   const items = list.data ?? [];
   const term = query.trim().toLocaleLowerCase("pt");
   const visible = items.filter(item => !term || [item.name, item.ip, item.domain ?? "", item.provider ?? ""].some(value => value.toLocaleLowerCase("pt").includes(term)));
+  const refreshList = list.refresh;
   useEffect(() => { if (pendingId) consume(); }, [pendingId, consume]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (authenticated) list.refresh(); }, [authenticated, list.refresh]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (authenticated) refreshList(); }, [authenticated, refreshList]);
   useEffect(() => {
-    const tick = () => { if (!document.hidden) list.refresh(); };
+    const tick = () => { if (!document.hidden) refreshList(); };
     const timer = setInterval(tick, probeLiveRefreshMs);
     document.addEventListener("visibilitychange", tick);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", tick); };
-  }, [list.refresh]);
+  }, [refreshList]);
   async function reloadSaved() {
     const response = await api.get("/monitoring/standalone-vps");
     const next = parseList(response.data);

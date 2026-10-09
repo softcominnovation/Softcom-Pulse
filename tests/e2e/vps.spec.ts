@@ -12,7 +12,8 @@ type Row = {
 };
 
 function card(row: Row) {
-  const { stacks: _stacks, ...publicCard } = row;
+  const { stacks, ...publicCard } = row;
+  void stacks;
   return publicCard;
 }
 function detail(row: Row, range = "24h") {
@@ -56,7 +57,8 @@ async function installVps(page: Page) {
       return route.fulfill({ status: 204 });
     }
     const body = request.postDataJSON() as Record<string, unknown>;
-    const { apiKey: nextKey, expectedRevision: _revision, ...changes } = body;
+    const { apiKey: nextKey, expectedRevision, ...changes } = body;
+    void expectedRevision;
     Object.assign(row, changes, { revision: row.revision + 1, updatedAt: at });
     if (typeof nextKey === "string") row.apiKey = nextKey || row.apiKey;
     if ("baseUrl" in body && !row.baseUrl) row.apiKey = null;

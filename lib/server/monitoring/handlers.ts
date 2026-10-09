@@ -95,7 +95,11 @@ export function externalServicesGet(request: Request) {
   return protectedResponse(request, async editor => {
     queryParams(request, emptyQuery);
     const data = await listExternalServicesWithUptime();
-    return { data: editor ? data : data.map(({ bodyTemplate: _body, headerName: _header, expectedValue: _value, ...service }) => service) };
+    return { data: editor ? data : data.map(service => {
+      const { bodyTemplate, headerName, expectedValue, ...publicService } = service;
+      void bodyTemplate; void headerName; void expectedValue;
+      return publicService;
+    }) };
   });
 }
 export function externalServicePost(request: Request) {
@@ -111,7 +115,11 @@ export function standaloneVpsGet(request: Request) {
   return protectedResponse(request, async editor => {
     queryParams(request, emptyQuery);
     const data = await listStandaloneVps();
-    return { data: editor ? data : data.map(({ apiKey: _apiKey, ...item }) => item) };
+    return { data: editor ? data : data.map(item => {
+      const { apiKey, ...publicItem } = item;
+      void apiKey;
+      return publicItem;
+    }) };
   });
 }
 export function standaloneVpsPost(request: Request) {
@@ -128,7 +136,8 @@ export function standaloneVpsDetailGet(request: Request, context: Params<"id">) 
     const query = queryParams(request, vpsDetailQuerySchema);
     const data = await readStandaloneVps(uuidSchema.parse((await context.params).id), { range: query.range, samples: query.samples === "1" });
     if (editor) return { data };
-    const { apiKey: _apiKey, ...item } = data;
+    const { apiKey, ...item } = data;
+    void apiKey;
     return { data: item };
   });
 }

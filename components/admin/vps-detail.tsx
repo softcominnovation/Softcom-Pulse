@@ -51,18 +51,23 @@ export function VpsDetail({ id }: { id: string }) {
   const detail = useAdminRead(`/monitoring/standalone-vps/${id}`, parseDetail), mutation = useMutation(), router = useRouter(), editor = useCanEdit(), place = usePlaceHref();
   const publicRead = isPublicPath(usePathname());
   const authenticated = useAuthStore(state => state.status === "authenticated");
+  const [panelId, setPanelId] = useState(id);
   const [editing, setEditing] = useState(false), [stack, setStack] = useState<VpsStackRecord | "new" | null>(null), [viewing, setViewing] = useState<VpsStackRecord | null>(null);
+  if (panelId !== id) {
+    setPanelId(id);
+    setEditing(false);
+    setStack(null);
+    setViewing(null);
+  }
   const item = detail.data;
-  useEffect(() => { setEditing(false); setStack(null); setViewing(null); }, [id]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (authenticated) detail.refresh(); }, [authenticated, detail.refresh]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const refreshDetail = detail.refresh;
+  useEffect(() => { if (authenticated) refreshDetail(); }, [authenticated, refreshDetail]);
   useEffect(() => {
-    const tick = () => { if (!document.hidden) detail.refresh(); };
+    const tick = () => { if (!document.hidden) refreshDetail(); };
     const timer = setInterval(tick, probeLiveRefreshMs);
     document.addEventListener("visibilitychange", tick);
     return () => { clearInterval(timer); document.removeEventListener("visibilitychange", tick); };
-  }, [detail.refresh]);
+  }, [refreshDetail]);
   async function setPaused(paused: boolean) {
     if (!item) return;
     const updated = await mutation.run(signal => api.patch(`/monitoring/standalone-vps/${item.id}`, { monitorPaused: paused, expectedRevision: item.revision }, { signal }));
@@ -106,7 +111,6 @@ function VpsBody({ item, editor, authenticated, publicRead, editing, setEditing,
   const monitor = vpsMonitorLabel(item.monitorState);
   const reading = item.result;
   const showMeters = item.enabled && !item.monitorPaused && item.monitorConfigured && item.monitorState !== "pending" && reading && (reading.cpuPercent !== null || reading.memoryPercent !== null || reading.diskPercent !== null || reading.disks.length > 0);
-  const _tracksOnly = !showMeters;
   const busiest = reading?.disks.length ? reading.disks.reduce((best, disk) => (disk.use ?? -1) > (best.use ?? -1) ? disk : best) : undefined;
   return <>
     <section className="dashboard-panel app-monitor-detail" aria-label={item.name}>

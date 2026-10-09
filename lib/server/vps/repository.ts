@@ -124,7 +124,8 @@ export async function updateStandaloneVps(id: string, body: unknown) {
     const current = await tx.standaloneVps.findUnique({ where: { id } });
     if (!current) throw new BffError(404, "standalone_vps_not_found");
     if (current.revision !== patch.expectedRevision) throw new BffError(409, "revision_conflict");
-    const { expectedRevision: _revision, apiKey, ...changes } = patch;
+    const { expectedRevision, apiKey, ...changes } = patch;
+    void expectedRevision;
     const baseUrl = changes.baseUrl !== undefined ? changes.baseUrl : current.baseUrl;
     const ciphertext = nextKey(current.apiKeyCiphertext, apiKey, baseUrl);
     monitorPair(baseUrl, ciphertext !== null);
@@ -190,7 +191,8 @@ function publicStack(stack: { id: string; vpsId: string; name: string; link: str
   return { id: stack.id, vpsId: stack.vpsId, name: stack.name, link: stack.link, notes: stack.notes, createdAt: stack.createdAt.toISOString(), updatedAt: stack.updatedAt.toISOString() };
 }
 function dataFor(input: StandaloneVpsInput, apiKeyCiphertext: string | null): Prisma.StandaloneVpsCreateInput {
-  const { apiKey: _apiKey, ...data } = input;
+  const { apiKey, ...data } = input;
+  void apiKey;
   return { ...data, apiKeyCiphertext };
 }
 export async function recordVpsSample(vpsId: string, checkedAt: Date, reason: number, latencyMs: number | null, cpuPercent: number | null, memoryPercent: number | null, diskPercent: number | null) {

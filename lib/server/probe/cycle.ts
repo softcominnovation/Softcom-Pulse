@@ -5,7 +5,7 @@ import { classifyProbe, type ProbeObservation } from "./classify.ts";
 import { probeExchange, parseProbeUrl, type ProbeExchange } from "./network.ts";
 import { listEnabledExternalServices, purgeExternalSamples, recordExternalSample } from "./repository.ts";
 import { openProbeSecret } from "./secret.ts";
-import { publishProbeResult, publishProbeSync } from "./store.ts";
+import { publishProbeResult } from "./store.ts";
 
 type ServiceRow = Awaited<ReturnType<typeof listEnabledExternalServices>>[number];
 export type ProbeTransport = (url: URL, method: string, headers: Record<string, string>, body: string | undefined, timeoutMs: number, signal?: AbortSignal) => Promise<ProbeExchange>;

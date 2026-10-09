@@ -6,7 +6,7 @@ import { downsampleProbeHistoryPoints, probeHistoryChartMaxPoints } from "../../
 import { BffError } from "../bff.ts";
 import { getPrisma } from "../prisma.ts";
 import { assertProbeDestination, parseProbeUrl } from "./network.ts";
-import { openProbeSecret, sealProbeSecret } from "./secret.ts";
+import { sealProbeSecret } from "./secret.ts";
 import { cacheOperation } from "../cache.ts";
 import { probeResultKey } from "./store.ts";
 
@@ -58,7 +58,8 @@ export async function updateExternalService(id: string, body: unknown) {
     const current = await tx.externalService.findUnique({ where: { id } });
     if (!current) throw new BffError(404, "external_service_not_found");
     if (current.revision !== patch.expectedRevision) throw new BffError(409, "revision_conflict");
-    const { expectedRevision: _revision, secret, ...changes } = patch;
+    const { expectedRevision, secret, ...changes } = patch;
+    void expectedRevision;
     const currentRow = current as Row;
     const merged = checked(externalServiceWriteSchema.parse({
       displayName: currentRow.displayName, description: currentRow.description, serviceType: currentRow.serviceType, enabled: currentRow.enabled, dashboardEnabled: currentRow.dashboardEnabled,
@@ -83,7 +84,8 @@ export function listEnabledExternalServices() {
   return database(async () => (await getPrisma().externalService.findMany({ where: { enabled: true }, orderBy: [{ displayOrder: "asc" }, { displayName: "asc" }, { id: "asc" }] })) as Row[]);
 }
 function dataFor(input: ExternalServiceInput, secretCiphertext: string | null): Prisma.ExternalServiceCreateInput {
-  const { secret: _secret, expectedValue, ...data } = input;
+  const { secret, expectedValue, ...data } = input;
+  void secret;
   const serialized = expectedValue === null ? null : JSON.stringify(expectedValue);
   if (serialized && serialized.length > 80) throw new ZodError([{ code: "custom", path: ["expectedValue"], message: "Valor inválido." }]);
   return { ...data, expectedValue: serialized, secretCiphertext };

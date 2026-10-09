@@ -64,12 +64,16 @@ function LatencyChart({ points }: { points: Point[] }) {
 }
 export function ProbeHistoryPanel({ serviceId, certNotAfter = null, paused = false, strip = [] }: { serviceId: string; certNotAfter?: string | null; paused?: boolean; strip?: number[] }) {
   const [range, setRange] = useState<Range>("24h");
+  const [queryKey, setQueryKey] = useState(`${serviceId}:${range}`);
   const [state, setState] = useState<{ loading: boolean; failed: boolean; data: History | null }>({ loading: true, failed: false, data: null });
+  const nextKey = `${serviceId}:${range}`;
+  if (queryKey !== nextKey) {
+    setQueryKey(nextKey);
+    setState({ loading: true, failed: false, data: null });
+  }
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined, alive = true;
-    // Drop the previous service's samples as soon as the selection or window changes.
-    setState({ loading: true, failed: false, data: null });
     const schedule = (initial: boolean, delay: number) => { clearTimeout(timer); timer = setTimeout(() => load(initial), delay); };
     const load = (initial: boolean) => {
       clearTimeout(timer);

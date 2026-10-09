@@ -32,7 +32,8 @@ export function vpsResultPayload(checkedAt: string, reason: number, latencyMs: n
   };
 }
 export async function publishVpsResult(id: string, checkedAt: string, reason: number, latencyMs: number | null, reading: MonitorReading | null) {
-  const { checkedAt: _checkedAt, ...data } = vpsResultPayload(checkedAt, reason, latencyMs, reading);
+  const { checkedAt: publishedAt, ...data } = vpsResultPayload(checkedAt, reason, latencyMs, reading);
+  void publishedAt;
   const payload = JSON.stringify({ data, updatedAt: isoSchema.parse(checkedAt), source: "vps", generation: randomUUID() });
   const ttl = snapshotTiming().ttl;
   await cacheOperation(client => client.set(vpsResultKey(id), payload, { EX: ttl }));

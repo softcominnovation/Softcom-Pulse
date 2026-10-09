@@ -34,7 +34,11 @@ function InfrastructureContent() {
   const [state, setState] = useState<VmStateFilter>("");
   const [sortBy, setSortBy] = useState<VmSortBy>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  const result = hosts.data, visible = result?.data.filter(host => !filter || host.hostKey === filter) ?? [];
+  const result = hosts.data;
+  const visible = useMemo(
+    () => result?.data.filter(host => !filter || host.hostKey === filter) ?? [],
+    [result?.data, filter],
+  );
   const stale = hosts.failed || !!result?.stale;
   const hypervisors = useMemo(() => visible.filter(host => host.role === "hypervisor"), [visible]);
   const totalVms = useMemo(() => hypervisors.reduce((count, host) => count + host.vms.length, 0), [hypervisors]);

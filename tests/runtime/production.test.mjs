@@ -259,8 +259,26 @@ test("standalone persists configuration across restarts and serves every protect
       const put = await fetch(base + "/api/settings/presentation", { method: "PUT", headers: auth, body: JSON.stringify({ expectedRevision: revision, settings }) });
       assert.equal(put.status, 200); saved = await put.json();
       assert.equal((await fetch(base + "/api/settings/presentation", { method: "PUT", headers: auth, body: JSON.stringify({ expectedRevision: revision, settings }) })).status, 409);
-      const post = await fetch(base + "/api/monitoring/services", { method: "POST", headers: auth, body: JSON.stringify({ resourceType: "host", zabbixHostKey: "runtime-host", displayName: "Runtime" }) });
-      assert.equal(post.status, 201); resourceId = (await post.json()).data.id;
+      // createResource requires a ready hosts snapshot; seed briefly then clear so later GETs still see no_data.
+      const observedAt = new Date().toISOString(), generation = randomUUID();
+      const hostsKey = "pulse:inventory:hosts", syncKey = "pulse:sync:last";
+      const wrap = data => JSON.stringify({ data, updatedAt: observedAt, source: "zabbix", generation });
+      const runtimeHost = {
+        hostKey: "runtime-host", name: "runtime-host", role: "unknown", availability: "reachable",
+        metrics: { cpuUsagePercent: { value: 0, unit: "percent", observedAt, quality: "fresh" } },
+        storages: [], filesystems: [], interfaces: [], vms: [], evidence: { source: "zabbix", observedAt, basis: "item" },
+      };
+      const inventory = createClient({ url: redisUrl.href }); inventory.on("error", () => {});
+      await inventory.connect();
+      try {
+        await inventory.set(hostsKey, wrap([runtimeHost]), { EX: 300 });
+        await inventory.set(syncKey, wrap({ status: "ok", lastSuccessfulAt: observedAt, lastAttemptAt: observedAt, error: null, keys: [hostsKey] }), { EX: 300 });
+        const post = await fetch(base + "/api/monitoring/services", { method: "POST", headers: auth, body: JSON.stringify({ resourceType: "host", zabbixHostKey: "runtime-host", displayName: "Runtime" }) });
+        assert.equal(post.status, 201, await post.clone().text()); resourceId = (await post.json()).data.id;
+      } finally {
+        await inventory.del([hostsKey, syncKey]);
+        await inventory.quit();
+      }
       const edit = await fetch(base + "/api/monitoring/services/" + resourceId, { method: "PATCH", headers: auth, body: JSON.stringify({ displayName: "Persistido" }) }); assert.equal(edit.status, 200);
       for (const path of ["/monitoring/templates", "/monitoring/hosts", "/monitoring/containers", "/monitoring/problems", "/monitoring/services", "/monitoring/services/" + resourceId, "/monitoring/services/" + resourceId + "/history"]) {
         const response = await fetch(base + "/api" + path, { headers: auth }); assert.equal(response.status, 200, path);

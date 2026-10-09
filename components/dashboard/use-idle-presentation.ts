@@ -49,21 +49,25 @@ export function useIdlePresentation(settings: IdlePresentation | undefined) {
       if (next === blocked) return;
       blocked = next; schedule();
     };
+    const rearm = () => { consumed = false; dismiss(); schedule(); };
     const unsubscribe = useUiStore.subscribe((state, previous) => {
-      if (previous.tvMode && !state.tvMode || previous.isFullscreen && !state.isFullscreen) {
-        consumed = false; dismiss(); schedule();
-      } else if (state.isFullscreen) dismiss();
+      if (previous.tvMode && !state.tvMode || previous.isFullscreen && !state.isFullscreen) rearm();
+      else if (state.isFullscreen) dismiss();
     });
+    // Also re-arm from the native event so exitFullscreen is not lost if the store update lags.
+    const onFullscreen = () => { if (!document.fullscreenElement) rearm(); else dismiss(); };
     const observer = new MutationObserver(suspension);
     observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "data-state", "role"] });
     const events = ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "touchmove", "scroll", "focusin"];
     for (const event of events) document.addEventListener(event, activity, { capture: true, passive: true });
     document.addEventListener("visibilitychange", suspension);
+    document.addEventListener("fullscreenchange", onFullscreen);
     schedule();
     return () => {
       disposed = true; clearTimeout(timer); dismiss(); unsubscribe(); observer.disconnect();
       for (const event of events) document.removeEventListener(event, activity, true);
       document.removeEventListener("visibilitychange", suspension);
+      document.removeEventListener("fullscreenchange", onFullscreen);
     };
   }, [enabled, afterMinutes, requestFullscreen]);
 }

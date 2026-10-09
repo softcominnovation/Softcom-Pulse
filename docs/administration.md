@@ -1,6 +1,10 @@
 # Administração da visualização
 
-As rotas `/admin/recursos` e `/admin/configuracoes` usam a sessão corporativa existente. Qualquer colaborador autenticado pode editar preferências compartilhadas. Os links ficam na navegação normal e são ocultos no modo TV. Não há cadastro de usuários, permissão nova nem ação operacional no Zabbix/Proxmox.
+As rotas `/admin/recursos` e `/admin/configuracoes` usam a sessão corporativa existente. Em Recursos, o bloco **Escopo Zabbix** (associar Agents) aparece só para editor (`PULSE_EDITOR_EMAILS`). Configurações exige editor para escrita. Os links ficam na navegação normal e são ocultos no modo TV. Não há cadastro de usuários, permissão nova nem ação operacional no Zabbix/Proxmox.
+
+## Escopo Zabbix
+
+Em `/admin/recursos`, abaixo das configurações salvas, o editor vê o escopo atual (`hostKeys` / `vmLinks`) e os Agents prontos no Zabbix ainda fora do escopo. Associar grava no PostgreSQL; o próximo ciclo do Collector inclui o host. Desassociar remove o vínculo com a VM; remover do escopo tira o host da coleta. Não há rota dedicada. Detalhes da API e da descoberta: [Zabbix](zabbix.md).
 
 ## Recursos destacados
 

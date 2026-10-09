@@ -16,6 +16,7 @@ import { HistoryPanel } from "./history-panel";
 import { VmNameEditor } from "@/components/admin/vms";
 import { useCanEdit } from "@/store/auth.store";
 import { VmCpuCount } from "./vm-summary";
+import { VmAgentAssociateNotice } from "@/components/admin/scope-associate";
 
 function VmKpis({ vm, agent, stale }: { vm: VirtualMachine; agent?: Host; stale: boolean }) {
   const now = useContext(EvidenceTimeContext);
@@ -42,6 +43,7 @@ export function VmDetails({ vm, agent, parentName, range, stale, controls }: { v
   const metrics = Object.fromEntries(Object.entries(vm.metrics).filter(([key]) => !promoted.includes(key)));
   return <>
     <VmKpis vm={vm} agent={agent} stale={stale} />
+    {!vm.linuxHostKey && <VmAgentAssociateNotice vm={vm} />}
     <section className="vm-identity-panel"><div className="vm-identity-heading"><p>{displayName(vm) !== vm.name && <>Nome técnico: {vm.name} · </>}ID {vm.vmId ?? "não informado"}</p>{canEdit && <Button ref={editNameButton} aria-expanded={editingName} onClick={() => setEditingName(value => !value)}>Editar nome</Button>}</div>{canEdit && editingName && <VmNameEditor vm={vm} canCreate={!stale} onClose={() => { setEditingName(false); editNameButton.current?.focus(); }} />}</section>
     <HistoryPanel resource={{ type: "vm", hostKey: vm.parentHostKey, reference: vm.vmKey }} range={range} name={displayName(vm)} origin="VM · perspectiva do hipervisor" controls={controls} summary={<div className="selected-vm-current"><p className="history-origin">VM {vm.vmId ?? "sem ID informado"} · hipervisor {parentName} <Status value={vm.state} stale={evidenceExpired(vm, stale, now)} /></p><MetricList metrics={metrics} stale={stale} /></div>} />
     {vm.linuxHostKey && <section className="dashboard-panel agent-context"><PlaceLink href={hostUrl(vm.linuxHostKey, range)}>Detalhes do Agent</PlaceLink><details open={agentOpened} onToggle={event => setAgentOpened(event.currentTarget.open)}><summary>Perspectiva do Agent desta VM</summary>{agentOpened && (agent ? <><MetricList metrics={agent.metrics} stale={stale} /><DevicePanel title="Filesystems dentro da VM" devices={agent.filesystems} stale={stale} /><DevicePanel title="Rede da VM por interface" devices={agent.interfaces} stale={stale} network /><HistoryPanel resource={{ type: "host", hostKey: agent.hostKey, reference: null }} range={range} name={displayName(agent)} host={agent} origin="Linux · Agent · métricas internas" /></> : <p className="panel-empty">Agent associado sem dados disponíveis na coleta atual.</p>)}</details></section>}

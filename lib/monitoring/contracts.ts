@@ -96,6 +96,8 @@ export type ProbeCard = {
 export type Overview = {
   summary: Summary; highlightedResources: ConfiguredResource[]; problems: Problem[]; asgardSummary: AsgardSummary;
   screenId: string; presentationRevision: number; blocks: OverviewBlock[];
+  /** Per hostKey preference for CPU/RAM on Infra host-cards (from host resource presentation). */
+  hostMetricsSources?: Record<string, "auto" | "agent" | "hypervisor">;
   externalServices?: ProbeCard[]; uptimeBoard?: ProbeCard[];
   standaloneVps?: import("../config/standalone-vps.ts").StandaloneVpsHighlight[];
 };

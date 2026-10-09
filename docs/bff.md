@@ -22,6 +22,9 @@ Prisma gerencia `monitored_resource_config`, `pulse_settings` e `vm_template_con
 | Rota | Resultado |
 |---|---|
 | `GET /api/settings/resources` | `{data: ResourceConfig[]}` ordenado por displayOrder/UUID, independente do Redis; usado pela administração de preferências existentes |
+| `GET /api/settings/monitoring-scope` | Escopo atual + candidatos Redis + VMs sem Agent; colaborador autenticado lê |
+| `POST /api/settings/monitoring-scope/links` | Associa Agent↔VM no escopo; só editor; revisão otimista |
+| `DELETE /api/settings/monitoring-scope/links` | Remove vínculo (e opcionalmente o host do escopo); só editor |
 | `GET /api/monitoring/services` | Envelope de leitura com `data: ConfiguredResource[]`, incluindo configurações desabilitadas e alvos ausentes |
 | `GET /api/monitoring/services/:id` | Envelope com `data: ConfiguredResource`; UUID inexistente: 404 |
 | `POST /api/monitoring/services` | JSON da configuração, sem id/timestamps; 201 `{data: ResourceConfig}` |

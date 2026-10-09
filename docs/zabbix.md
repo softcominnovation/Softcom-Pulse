@@ -13,7 +13,15 @@ npm run collector
 
 O primeiro comando executa um ciclo e termina. O segundo mantém o loop, com intervalo padrão de 20s, sem sobreposição e sem servidor HTTP. `--once` retorna código 1 quando a coleta falha. Logs contêm eventos, sucesso, duração e códigos controlados; não imprimem erros brutos do Axios/Zabbix. Ctrl+C encerra o processo.
 
-Quando tags não comprovam o escopo/vínculo, uma pessoa deve fornecer a decisão. O arquivo de entrada abaixo é um exemplo de formato: substituir os nomes/IDs por escolhas confirmadas. Mantê-lo fora do versionamento, por exemplo em `.cache/monitoring-scope.json`.
+### Caminho normal — UI
+
+Em `/admin/recursos` (bloco Escopo Zabbix, só editor), o Pulse lista Agents com interface Zabbix `available=1` ainda fora do escopo e permite **Associar ao Pulse**. A gravação usa `POST /api/settings/monitoring-scope/links` (revisão otimista). O detalhe da VM no Asgard mostra o mesmo atalho quando há candidato sugerido. Leitura: `GET /api/settings/monitoring-scope` (colaborador autenticado). Escrita e UI do bloco: só editor (`PULSE_EDITOR_EMAILS`).
+
+O Collector, após a coleta do escopo, faz um `host.get` leve (metadados/interfaces, sem `item.get` dos candidatos) e publica `pulse:discovery:agent-candidates` no Redis. Essa descoberta **não** roda em todo ciclo: padrão a cada `PULSE_DISCOVERY_EVERY_N_CYCLES` ciclos (default `3`, ~60s com intervalo 20s). Nos ciclos intermediários só a coleta pesada do escopo segue. Hosts já em `hostKeys` são excluídos na classificação (não viram candidato de novo). Falha da descoberta **não** impede o snapshot do escopo. Auto-link (`PULSE_SCOPE_AUTO_LINK`) permanece desligado por padrão e fora do MVP.
+
+### Fallback ops — CLI
+
+Quando tags não comprovam o escopo/vínculo, ou a UI não estiver disponível, uma pessoa pode gravar a decisão por arquivo. Mantê-lo fora do versionamento, por exemplo em `.cache/monitoring-scope.json`.
 
 ```json
 {
@@ -22,7 +30,8 @@ Quando tags não comprovam o escopo/vínculo, uma pessoa deve fornecer a decisã
     "hostKeys": ["ASGARD", "linux-host"],
     "vmLinks": [
       { "hostKey": "linux-host", "parentHostKey": "ASGARD", "vmId": "qemu/101" }
-    ]
+    ],
+    "revision": 1
   }
 }
 ```
@@ -31,7 +40,7 @@ Quando tags não comprovam o escopo/vínculo, uma pessoa deve fornecer a decisã
 npm run collector:scope -- .cache/monitoring-scope.json
 ```
 
-O comando valida e salva somente `pulse_settings.asgardHostKey` e `pulse_settings.monitoringScope`, numa transação. Substitui a seleção anterior, preservando apresentação e cadastros de recursos. O próximo ciclo lê a nova decisão. Cada banco de ambiente precisa de sua própria configuração; a seleção do banco local não é enviada à VPS pela imagem. Dentro da imagem, o equivalente é `node --conditions=react-server collector/configure-scope.mjs CAMINHO_DO_JSON`.
+O comando valida e salva `pulse_settings.asgardHostKey` e `pulse_settings.monitoringScope` (com `revision` incrementada), numa transação. Substitui a seleção anterior, preservando apresentação e cadastros de recursos. O próximo ciclo lê a nova decisão. Cada banco de ambiente precisa de sua própria configuração; a seleção do banco local não é enviada à VPS pela imagem. Dentro da imagem, o equivalente é `node --conditions=react-server collector/configure-scope.mjs CAMINHO_DO_JSON`.
 
 Sem seleção persistida, aceita apenas o host técnico `ASGARD` (ou um único host com tag `pulse.role=asgard`) e hosts cuja tag `pulse.parent` aponte explicitamente para ele. Um vínculo VM/Agent por metadados exige também `pulse.vm=qemu/ID` ou `lxc/ID`. Nenhum host entra só porque está visível ao token, no grupo Linux servers ou porque tem nome parecido. A seleção explícita ausente do inventário falha com `monitoring_scope_unavailable`; não publica geração parcial.
 
@@ -49,7 +58,8 @@ Na inicialização, `apiinfo.version` confirma compatibilidade com 7.0.x. Depois
 2. `item.get`: metadados, cadência, dependência, discovery e value map; limite de 20000 itens.
 3. `item.get`: valores somente dos itens mapeados/escalares necessários, num lote. Não solicita valores brutos de `docker.container_info[...,full]`, JSON de containers, URLs de itens, headers, macros de credenciais ou configurações Proxmox.
 4. `problem.get`: problemas atuais do escopo, com limite de 5000.
-5. `trigger.get`, quando há problemas: associa em lote os itens/hosts desses eventos aos recursos públicos.
+5. `trigger.get`, quando há problemas: uma chamada em lote (`triggerid` + `status`, hosts/itens). Só entram no snapshot ativo triggers com `status=0` (enabled); desabilitados ou ausentes são omitidos — alinhado ao Zabbix Web após LLD disable.
+6. `host.get` de descoberta (leve, sem filtro de escopo): candidatos a Agent; limite 500; publica Redis separado; erro isolado.
 
 Ultrapassar um limite, perder um item entre metadados/valores, receber formato inválido ou falhar uma chamada impede a publicação do ciclo inteiro. Não existe request por host/container/métrica nem escrita remota. Parâmetros de [host.get](https://www.zabbix.com/documentation/7.0/en/manual/api/reference/host/get), [item.get](https://www.zabbix.com/documentation/7.0/en/manual/api/reference/item/get) e [problem.get](https://www.zabbix.com/documentation/7.0/en/manual/api/reference/problem/get).
 

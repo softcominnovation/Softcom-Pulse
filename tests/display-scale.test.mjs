@@ -18,6 +18,14 @@ test("saved presentations without a reading scale default to 110 without changin
   }
 });
 
+test("saved presentations without showStatusBanner default to hidden", () => {
+  const legacy = initialPresentation(randomUUID);
+  delete legacy.showStatusBanner;
+  const result = presentationDocumentSchema.parse(legacy);
+  assert.equal(result.showStatusBanner, false);
+  assert.equal(legacy.showStatusBanner, undefined);
+});
+
 test("presentation writes accept only supported numeric reading scales", () => {
   const { revision, ...settings } = initialPresentation(randomUUID);
   for (const value of [100, 110, 120, 125]) {

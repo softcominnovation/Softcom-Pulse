@@ -52,7 +52,7 @@ test("configured detail respects preferences and loads numeric history and acces
   await dialog.getByRole("button", { name: "24 horas", exact: true }).click(); await expect.poll(() => state.historyCalls.length).toBe(2);
   await page.clock.install(); await page.clock.runFor(61000); expect(state.historyCalls).toHaveLength(2);
   await page.keyboard.press("Escape"); await expect(dialog).toHaveCount(0); await expect(page.getByRole("button", { name: "Detalhes de Serviço 0", exact: true })).toBeFocused();
-  state.services[0].config.presentation = { showStatus: false, showCpu: false, showMemory: false, showDisk: false, showNetwork: false, showUptime: false, showHealth: false, showHealthTimeline: false };
+  state.services[0].config.presentation = { metricsSource: "auto", showStatus: false, showCpu: false, showMemory: false, showDisk: false, showNetwork: false, showUptime: false, showHealth: false, showHealthTimeline: false };
   await page.getByRole("button", { name: "Atualizar serviços configurados" }).click();
   const card = page.locator(".resource-card").filter({ has: page.getByRole("heading", { name: "Serviço 0", exact: true }) });
   await expect(card.getByText("Saudável", { exact: true })).toHaveCount(0);
@@ -167,7 +167,9 @@ for (const [width, height] of [[320,568],[360,800],[390,844],[768,1024],[1024,76
   test(`services and VM modal retain fields, actions and scroll at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height }); const state = await servicesFixture(page); await signIn(page); await page.goto("/servicos");
     await expect(page.locator(".container-table tbody tr")).toHaveCount(9);
+    console.log(await page.evaluate(() => [...document.querySelectorAll("main *")].filter(node => node.getBoundingClientRect().right > innerWidth).slice(0, 8).map(node => [node.className, node.getBoundingClientRect().width, getComputedStyle(node).overflowX])));
     if (width === 390) await page.screenshot({ path: ".cache/services-overflow.png", fullPage: true });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), JSON.stringify(await page.evaluate(() => [...document.querySelectorAll("main *")].filter(node => node.getBoundingClientRect().right > innerWidth && !node.closest(".container-table-scroll")).slice(0, 10).map(node => [node.className, node.getBoundingClientRect().width])))).toBe(true);
     if (width === 1366 || width === 390) { await mkdir(".cache/screenshots", { recursive: true }); await page.screenshot({ path: `.cache/screenshots/services-${width}.png`, fullPage: true }); }
     await page.goto("/asgard?hostKey=ASGARD");
     await page.getByRole("button", { name: `Serviços e containers de ${state.infrastructure.hosts[0].vms[0].name}`, exact: true }).click();

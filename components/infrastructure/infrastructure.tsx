@@ -2,10 +2,12 @@
 
 import { displayName } from "@/lib/monitoring/display-names";
 import { filterAndSortVms, type VmSortBy, type VmStateFilter } from "@/lib/infrastructure/vm-list";
+import { hostMetricsPreference, type CardMetricsPreference } from "@/lib/monitoring/card-metrics";
 
 import { Server } from "lucide-react";
 import { useContext, useMemo, useState } from "react";
 import { EvidenceTimeContext } from "@/components/dashboard/metrics";
+import { useServices } from "@/components/services/data";
 import { EvidenceClock, ReadNotice, useHosts, useProblems } from "./data";
 import { HostInventory, VmTable } from "./host-panels";
 import { ProblemsPanel } from "./problems-panel";
@@ -27,7 +29,7 @@ function VmListToolbar({
 }
 
 function InfrastructureContent() {
-  const hosts = useHosts(), problems = useProblems();
+  const hosts = useHosts(), problems = useProblems(), services = useServices();
   const now = useContext(EvidenceTimeContext);
   const [filter, setFilter] = useState("");
   const [query, setQuery] = useState("");
@@ -35,11 +37,17 @@ function InfrastructureContent() {
   const [sortBy, setSortBy] = useState<VmSortBy>("name");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const result = hosts.data;
-  const visible = useMemo(
-    () => result?.data.filter(host => !filter || host.hostKey === filter) ?? [],
-    [result?.data, filter],
-  );
+  const visible = useMemo(() => result?.data.filter(host => !filter || host.hostKey === filter) ?? [], [result?.data, filter]);
   const stale = hosts.failed || !!result?.stale;
+  const metricsSources = useMemo(() => {
+    const map: Record<string, CardMetricsPreference> = {};
+    for (const item of services.data?.data ?? []) {
+      if (item.config.resourceType === "host" && item.config.enabled) {
+        map[item.config.zabbixHostKey] = hostMetricsPreference(item.config.presentation);
+      }
+    }
+    return map;
+  }, [services.data]);
   const hypervisors = useMemo(() => visible.filter(host => host.role === "hypervisor"), [visible]);
   const totalVms = useMemo(() => hypervisors.reduce((count, host) => count + host.vms.length, 0), [hypervisors]);
   const listed = useMemo(() => hypervisors.map(host => ({
@@ -52,7 +60,7 @@ function InfrastructureContent() {
     <div className="dashboard-heading"><div><h1>Infraestrutura</h1><p className="dashboard-subtitle">Hosts e VMs do escopo monitorado · evidências do Zabbix.</p></div><label className="resource-select-label" htmlFor="host-filter">Filtrar host<select id="host-filter" value={filter} onChange={event => setFilter(event.target.value)}><option value="">Todos os hosts</option>{result?.data.map(host => <option key={host.hostKey} value={host.hostKey}>{displayName(host)}</option>)}</select></label></div>
     <ReadNotice result={result} failed={hosts.failed} refresh={hosts.refresh} label="infraestrutura" />
     {result && <>
-      <HostInventory hosts={visible} stale={stale} />
+      <HostInventory hosts={visible} inventoryHosts={result.data} stale={stale} metricsSources={metricsSources} />
       {hypervisors.length > 0 && <VmListToolbar query={query} state={state} sortBy={sortBy} sortDirection={sortDirection} total={totalVms} visible={visibleVms} onQuery={setQuery} onState={setState} onSortBy={value => { setSortBy(value); setSortDirection(value === "name" ? "asc" : "desc"); }} onSortDirection={setSortDirection} />}
       {listed.map(({ host, vms }) => <section className="dashboard-panel vm-detail-panel" key={host.hostKey}><div className="panel-heading"><Server aria-hidden="true" /><h2>VMs de {displayName(host)}</h2></div>{!vms.length && (query || state) ? <p className="panel-empty">Nenhuma VM corresponde à busca ou ao filtro de estado.</p> : <VmTable vms={vms} hosts={result.data} stale={stale} detailed />}</section>)}
       <ProblemsPanel poll={problems} hostKeys={visible.map(host => host.hostKey)} />

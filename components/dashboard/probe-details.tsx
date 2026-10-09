@@ -62,7 +62,7 @@ function LatencyChart({ points }: { points: Point[] }) {
     </div>}
   </div>;
 }
-export function ProbeHistoryPanel({ serviceId, certNotAfter = null, paused = false, strip = [] }: { serviceId: string; certNotAfter?: string | null; paused?: boolean; strip?: number[] }) {
+export function ProbeHistoryPanel({ serviceId, certNotAfter = null, paused = false }: { serviceId: string; certNotAfter?: string | null; paused?: boolean; strip?: number[] }) {
   const [range, setRange] = useState<Range>("24h");
   const [queryKey, setQueryKey] = useState(`${serviceId}:${range}`);
   const [state, setState] = useState<{ loading: boolean; failed: boolean; data: History | null }>({ loading: true, failed: false, data: null });
@@ -113,7 +113,7 @@ export function ProbeHistoryPanel({ serviceId, certNotAfter = null, paused = fal
     {certificate && <p className="probe-cert">{certificate}</p>}
     {state.loading && <p className="panel-empty">Carregando consultas…</p>}
     {state.failed && <p className="admin-error" role="alert">Não foi possível ler o histórico. Os cards do dashboard não foram alterados.</p>}
-    <section className="probe-uptime-block"><h3 className="probe-section-title">Uptime</h3><UptimeTrack reasons={paused ? [] : strip} /></section>
+    <section className="probe-uptime-block"><h3 className="probe-section-title">Uptime</h3><UptimeTrack reasons={paused ? [] : points.map(point => point.reason)} /></section>
     {summary && <>
       <div className="probe-summary">
         <div><span>Disponibilidade 24 h</span><strong>{formatUptime(summary.uptime24h)}</strong></div>

@@ -114,8 +114,9 @@ test("blocked fullscreen stays truthful, prompts once and enters native fullscre
   await expect(page.getByRole("button", { name: "Sair da tela cheia", exact: true })).toBeVisible();
   expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
   await page.evaluate(() => document.exitFullscreen());
-  await page.waitForFunction(() => !document.fullscreenElement);
-  await page.clock.fastForward(61000);
+  await page.clock.fastForward(59000);
+  await expect(page.locator("html")).toHaveAttribute("data-fullscreen-attempts", "2");
+  await page.clock.fastForward(2000);
   await expect(page.locator("html")).toHaveAttribute("data-fullscreen-attempts", "3");
 });
 

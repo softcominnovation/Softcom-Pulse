@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { hostKeySchema } from "../lib/config/resources.ts";
-import { monitoringScopeSchema } from "../lib/server/zabbix/scope.ts";
+import { monitoringScopeSchema, replaceMonitoringScope } from "../lib/server/zabbix/scope.ts";
 import { getPrisma } from "../lib/server/prisma.ts";
 import { getDatabase } from "../lib/server/database.ts";
 
@@ -11,11 +11,8 @@ try {
   const content = await readFile(process.argv[2], "utf8");
   if (Buffer.byteLength(content) > 65536) throw new Error();
   const config = schema.parse(JSON.parse(content));
-  await getPrisma().$transaction(async tx => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(734021003::bigint)`;
-    for (const [key, value] of [["asgardHostKey", config.asgardHostKey], ["monitoringScope", config.scope]]) await tx.pulseSetting.upsert({ where: { key }, create: { key, value }, update: { value } });
-  });
-  console.log("Monitoring scope saved. It will apply to the next collection cycle.");
+  const saved = await replaceMonitoringScope(config.asgardHostKey, config.scope);
+  console.log(JSON.stringify({ event: "monitoring_scope_saved", revision: saved.scope.revision }));
 } catch {
   console.error("Could not save monitoring scope. Provide one valid JSON file and check the database configuration.");
   process.exitCode = 1;

@@ -9,7 +9,7 @@ import { ServiceDetailsTrigger } from "@/components/services/service-details";
 
 function Reading({ label, metric, stale, now }: { label: string; metric?: Metric; stale: boolean; now: number }) {
   const valid = currentMetric(metric, stale, now);
-  return <span className="availability-reading"><span>{label}<strong>{valid ? metricValue(metric) : "—"}</strong></span><span className={label === "RAM" ? "availability-meter memory" : "availability-meter"} aria-hidden="true"><i style={{ width: valid && metric?.unit === "percent" ? Math.max(0, Math.min(100, metric.value!)) + "%" : "0%" }} /></span></span>;
+  return <span className="availability-reading"><span>{label}<strong>{metricValue(metric)}</strong></span><span className={label === "RAM" ? "availability-meter memory" : "availability-meter"} aria-hidden="true"><i style={{ width: valid && metric?.unit === "percent" ? Math.max(0, Math.min(100, metric.value!)) + "%" : "0%" }} /></span></span>;
 }
 export function ServiceAvailabilityCard({ item, stale, preview = false }: { item: ConfiguredResource; stale: boolean; preview?: boolean }) {
   const now = useContext(EvidenceTimeContext), status = serviceAvailability(item, stale, now);
@@ -22,7 +22,7 @@ export function ServiceAvailabilityCard({ item, stale, preview = false }: { item
     <strong className="availability-name">{name}</strong>
     <span className="availability-description">{item.config.description?.trim() || item.linkedVmName || item.config.zabbixHostKey}</span>
     <span className="availability-readings">{p.showCpu && <Reading label="CPU" metric={item.metrics.cpuUsagePercent} stale={stale} now={now} />}{p.showMemory && <Reading label="RAM" metric={item.metrics.memoryUsagePercent ?? item.metrics.memoryUsedBytes} stale={stale} now={now} />}{!p.showCpu && !p.showMemory && <span className="availability-no-metrics">Ver detalhes</span>}</span>
-    <span className="availability-footer"><span>{item.config.serviceType ?? (item.config.resourceType === "host" ? "Host" : "Container")}</span><strong>{footer}</strong></span>
+    <span className="availability-footer"><span>{item.config.serviceType ?? (item.config.resourceType === "host" ? (item.resource && !("reference" in item.resource) && item.resource.role === "linux" ? "Host · Agent" : "Host") : "Container")}</span><strong>{footer}</strong></span>
   </>;
   return preview ? <article className="availability-card">{content}</article> : <ServiceDetailsTrigger item={item} trigger={<button type="button" className="availability-card" aria-label={`Detalhes de ${name}: ${status.label}`}>{content}</button>} />;
 }

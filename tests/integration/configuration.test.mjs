@@ -703,13 +703,17 @@ test("external services keep secrets out of reads and do not affect the Zabbix s
   assert.equal(history.status, 200); assert.equal(history.body.data.points.length, 1); assert.equal(history.body.data.points[0].reason, 0); assert.equal(JSON.stringify(history.body).includes(secret), false);
   const column = await getDatabase().query("SELECT secret_ciphertext FROM external_service WHERE id = $1", [id]);
   assert.equal(column.rows[0].secret_ciphertext.includes(secret), false);
-  const slow = await result(await handlers.externalServicePost(request("/", "POST", externalInput("/slow", { displayName: "Lento" }))));
+  const slow = await result(await handlers.externalServicePost(request("/", "POST", externalInput("/slow", { displayName: "Lento", timeoutMs: 5000 }))));
   const denied = await result(await handlers.externalServicePost(request("/", "POST", externalInput("/denied", { displayName: "Recusado" }))));
   const down = await result(await handlers.externalServicePost(request("/", "POST", externalInput("/down", { displayName: "Caido" }))));
+  assert.equal(slow.status, 201); assert.equal(denied.status, 201); assert.equal(down.status, 201);
   for (const item of [slow, denied, down]) touchedKeys.add(probeKeys.result(item.body.data.id));
-  await runProbeCycle({ transport: async (url) => { if (url.pathname.endsWith("/slow")) return { status: 200, body: "", latencyMs: 3000, certNotAfter: null }; if (url.pathname.endsWith("/denied")) return { status: 401, body: "", latencyMs: 15, certNotAfter: null }; if (url.pathname.endsWith("/json")) return { status: 200, body: JSON.stringify({ status: "up" }), latencyMs: 40, certNotAfter: null }; throw Object.assign(new Error("timeout"), { code: "ETIMEDOUT" }); } });
-  const reasons = new Map((await getDatabase().query("SELECT url, reason FROM external_service_sample s JOIN external_service e ON e.id = s.service_id")).rows.map(row => [row.url, row.reason]));
-  assert.equal(Number(reasons.get("https://1.1.1.1/slow")), 1); assert.equal(Number(reasons.get("https://1.1.1.1/denied")), 2); assert.equal(Number(reasons.get("https://1.1.1.1/down")), 5);
+  await getDatabase().query("DELETE FROM external_service_sample");
+  await runProbeCycle({ transport: async (url) => { if (url.pathname.endsWith("/slow")) return { status: 200, body: "", latencyMs: 4000, certNotAfter: null }; if (url.pathname.endsWith("/denied")) return { status: 401, body: "", latencyMs: 15, certNotAfter: null }; if (url.pathname.endsWith("/json")) return { status: 200, body: JSON.stringify({ status: "up" }), latencyMs: 40, certNotAfter: null }; throw Object.assign(new Error("timeout"), { code: "ETIMEDOUT" }); } });
+  const latestReason = async serviceId => Number((await getDatabase().query("SELECT reason FROM external_service_sample WHERE service_id = $1 ORDER BY checked_at DESC, id DESC LIMIT 1", [serviceId])).rows[0]?.reason);
+  assert.equal(await latestReason(slow.body.data.id), 1);
+  assert.equal(await latestReason(denied.body.data.id), 2);
+  assert.equal(await latestReason(down.body.data.id), 5);
   await markSyncFailure();
   assert.ok(await cache.get(probeKeys.result(id)));
   const overview = await result(await handlers.overviewGet(request()));
@@ -876,6 +880,63 @@ test("standalone VPS registration keeps the monitor key local and does not chang
   assert.equal(Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM external_service")).rows[0].total), servicesBefore);
   assert.equal(Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM vm_display_config")).rows[0].total), vmsBefore);
   assert.equal(await cache.get(keys.sync), syncBefore);
+});
+
+test("monitoring scope link adds host and VM, bumps revision, rejects stale write and non-editor", async () => {
+  const { publishAgentDiscovery, discoveryKey } = await import("../../lib/server/cache/discovery.ts");
+  const parent = { ...host("ASGARD"), role: "hypervisor", name: "ASGARD" };
+  const vm = {
+    vmKey: opaqueReference("vm", "ASGARD", "qemu/9003001"), vmId: "9003001", name: "vm-squad-ia-01",
+    parentHostKey: "ASGARD", linuxHostKey: null, state: "running", metrics: {}, evidence: evidence(),
+  };
+  parent.vms = [vm];
+  await getPrisma().pulseSetting.upsert({ where: { key: "asgardHostKey" }, update: { value: "ASGARD" }, create: { key: "asgardHostKey", value: "ASGARD" } });
+  await getPrisma().pulseSetting.upsert({
+    where: { key: "monitoringScope" },
+    update: { value: { hostKeys: ["ASGARD"], vmLinks: [], revision: 1 } },
+    create: { key: "monitoringScope", value: { hostKeys: ["ASGARD"], vmLinks: [], revision: 1 } },
+  });
+  await publish({ [keys.hosts]: [parent], [keys.host("ASGARD")]: parent });
+  await publishAgentDiscovery({
+    asgardHostKey: "ASGARD",
+    candidates: [{ hostKey: "vm-squad-ia-01", displayName: "vm-squad-ia-01", agentAvailable: true, suggestedVm: { parentHostKey: "ASGARD", vmId: "qemu/9003001", vmKey: vm.vmKey, vmName: vm.name, match: "exact_name" } }],
+  });
+  touchedKeys.add(discoveryKey);
+
+  const read = await result(await handlers.monitoringScopeGet(request("/settings/monitoring-scope")));
+  assert.equal(read.status, 200);
+  assert.equal(read.body.data.revision, 1);
+  assert.equal(read.body.data.candidates.length, 1);
+  assert.equal(read.body.data.unlinkedVms.length, 1);
+
+  const linked = await result(await handlers.monitoringScopeLinkPost(request("/settings/monitoring-scope/links", "POST", {
+    hostKey: "vm-squad-ia-01", parentHostKey: "ASGARD", vmId: "qemu/9003001", expectedRevision: 1,
+  })));
+  assert.equal(linked.status, 200);
+  assert.equal(linked.body.data.revision, 2);
+  assert.deepEqual(linked.body.data.hostKeys.sort(), ["ASGARD", "vm-squad-ia-01"]);
+  assert.deepEqual(linked.body.data.vmLinks, [{ hostKey: "vm-squad-ia-01", parentHostKey: "ASGARD", vmId: "qemu/9003001" }]);
+
+  const conflict = await result(await handlers.monitoringScopeLinkPost(request("/settings/monitoring-scope/links", "POST", {
+    hostKey: "vm-squad-ia-01", parentHostKey: "ASGARD", vmId: "qemu/9003001", expectedRevision: 1,
+  })));
+  assert.equal(conflict.status, 409);
+  assert.equal(conflict.body.error.code, "revision_conflict");
+
+  const reader = sealEnvelope({ type: "access", token: "reader", user: { id: 7, email: "reader@pulse.test" }, sessionId: randomUUID(), expiresAt: Date.now() + 600000 });
+  const forbidden = await result(await handlers.monitoringScopeLinkPost(request("/settings/monitoring-scope/links", "POST", {
+    hostKey: "vm-squad-ia-01", parentHostKey: "ASGARD", vmId: "qemu/9003001", expectedRevision: 2,
+  }, reader)));
+  assert.equal(forbidden.status, 403);
+  assert.equal(forbidden.body.error.code, "editor_required");
+
+  const unlinked = await result(await handlers.monitoringScopeLinkDelete(request("/settings/monitoring-scope/links", "DELETE", {
+    hostKey: "vm-squad-ia-01", expectedRevision: 2, removeHost: true,
+  })));
+  assert.equal(unlinked.status, 200);
+  assert.equal(unlinked.body.data.revision, 3);
+  assert.deepEqual(unlinked.body.data.hostKeys, ["ASGARD"]);
+  assert.deepEqual(unlinked.body.data.vmLinks, []);
 });
 
 test("standalone VPS registration stops at 100 rows and a second monitor process does not collect", async () => {

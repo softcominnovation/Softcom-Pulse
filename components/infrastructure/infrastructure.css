@@ -1,4 +1,4 @@
-.monitoring-main { width: 100%; min-width: 0; padding: 0 clamp(14px, 2vw, 42px) 28px; }
+.monitoring-main { width: 100%; min-width: 0; max-width: 100%; overflow-x: clip; padding: 0 clamp(14px, 2vw, 42px) 28px; }
 .infrastructure-details { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .infrastructure-details .dashboard-heading, .infrastructure-details .dashboard-banner { margin-bottom: 0; }
 .infrastructure-details h1, .infrastructure-details h2, .infrastructure-details h3 { overflow-wrap: anywhere; }

@@ -49,6 +49,7 @@ Web e collector recebem o mesmo contrato de ambiente. Autenticação utiliza a U
 | `ZABBIX_API_URL` | Collector e BFF de histórico | Não | Mesmo nome nos dois ambientes; endpoint JSON-RPC do Server |
 | `ZABBIX_API_TOKEN` | Collector e BFF de histórico | Não | Mesmo nome nos dois ambientes; somente consultas de leitura |
 | `COLLECTOR_INTERVAL_MS` | BFF/refreshAfterMs e Collector | Não | Mesmo nome, default `20000` |
+| `PULSE_DISCOVERY_EVERY_N_CYCLES` | Collector | Não | A cada quantos ciclos roda o `host.get` leve de Agents candidatos. Inteiro 1–30, default `3`. Valor inválido cai no default |
 | `PROBE_INTERVAL_MS` | Processo da sonda | Não | Default `60000` se ausente ou vazia. Inteiro de 30000 a 120000. O collector não lê esta variável |
 | `VPS_MONITOR_INTERVAL_MS` | Processo do monitor de VPS | Não | Default `60000` se ausente ou vazia. Inteiro de 30000 a 120000. O collector e a sonda não leem esta variável |
 | `SNAPSHOT_TTL_SECONDS` | Helpers de snapshot: retenção por TTL | Não | Mesmo nome, default `300` |

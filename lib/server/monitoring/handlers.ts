@@ -16,10 +16,21 @@ import { listExternalServicesWithUptime } from "../probe/overview.ts";
 import { createExternalService, deleteExternalService, externalServiceHistory, updateExternalService } from "../probe/repository.ts";
 import { vpsDetailQuerySchema } from "../../config/standalone-vps.ts";
 import { createStandaloneVps, createVpsStack, deleteStandaloneVps, deleteVpsStack, listStandaloneVps, readStandaloneVps, updateStandaloneVps, updateVpsStack } from "../vps/repository.ts";
+import { deleteMonitoringScopeLink, postMonitoringScopeLink, readMonitoringScopeDocument } from "../config/monitoring-scope.ts";
 
 type Params<K extends string> = { params: Promise<Record<K, string>> };
 const emptyQuery = z.strictObject({});
 const historyQuery = z.strictObject({ range: historyRangeSchema.default("1h") });
+
+export function monitoringScopeGet(request: Request) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readMonitoringScopeDocument(); });
+}
+export function monitoringScopeLinkPost(request: Request) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return postMonitoringScopeLink(await jsonBody(request)); });
+}
+export function monitoringScopeLinkDelete(request: Request) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return deleteMonitoringScopeLink(await jsonBody(request)); });
+}
 
 export function vmConfigsGet(request: Request) {
   return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listVmConfigs() }; });

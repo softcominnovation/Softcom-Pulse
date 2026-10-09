@@ -11,6 +11,7 @@ import { sealEnvelope } from "../../lib/server/auth/envelope.ts";
 import { collectSnapshots } from "../../lib/server/zabbix/collect.ts";
 import { createCycle } from "../../collector/worker.ts";
 import { publishSnapshots, readSnapshotBatch, markSyncFailure, snapshotKeys as keys } from "../../lib/server/cache/snapshots.ts";
+import { discoveryKey } from "../../lib/server/cache/discovery.ts";
 import { createResource, updateResource, deleteResource, listResources } from "../../lib/server/config/repository.ts";
 import { readContainers, readOverview, readHost } from "../../lib/server/monitoring/read.ts";
 import { overviewGet, hostHistoryGet } from "../../lib/server/monitoring/handlers.ts";
@@ -45,6 +46,28 @@ after(async () => {
   if (admin) { assert.match(databaseName, /^pulse_phase04_test_\d+_\d+$/); if (created) await admin.query('DROP DATABASE "' + databaseName + '" WITH (FORCE)'); await admin.end(); }
   for (const key of ["DATABASE_URL", "REDIS_URL", "TOKEN_ENCRYPTION_KEY"]) if (env[key] === undefined) delete process.env[key]; else process.env[key] = env[key];
 });
+test("collector publishes agent discovery without changing the heavy scope inventory", async () => {
+  const f = zabbixFixture();
+  f.hosts.push({ hostid: "4", host: "VM-without-Agent", name: "VM-without-Agent", status: "0", tags: [], interfaces: [{ type: "1", main: "1", available: "1" }], hostgroups: [] });
+  const cycle = createCycle({
+    collect: () => collectSnapshots({ rpc: f.rpc }),
+    publish,
+    publishDiscovery: async data => {
+      const { publishAgentDiscovery } = await import("../../lib/server/cache/discovery.ts");
+      touched.add(discoveryKey);
+      await publishAgentDiscovery(data);
+    },
+    fail: markSyncFailure,
+  });
+  assert.equal(await cycle(), true);
+  const raw = await cache.get(discoveryKey);
+  assert.ok(raw);
+  const envelope = JSON.parse(raw);
+  assert.equal(envelope.source, "zabbix");
+  assert.equal(envelope.data.candidates[0].hostKey, "VM-without-Agent");
+  assert.equal((await readSnapshotBatch([keys.hosts])).snapshots.get(keys.hosts)?.data.length, 2);
+});
+
 test("whole collector generation feeds authenticated BFF while technical mappings stay private", async () => {
   const f = zabbixFixture(); addProvisionedCpuItems(f);
   const { entries } = await collectSnapshots({ rpc: f.rpc }); await publish(entries);

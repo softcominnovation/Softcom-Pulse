@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
 import { zabbixFixture, addProvisionedCpuItems } from "./fixtures/zabbix.mjs";
 import { hostSchema } from "../lib/monitoring/contracts.ts";
-import { collectSnapshots } from "../lib/server/zabbix/collect.ts";
+import { collectSnapshots, selectActiveProblems } from "../lib/server/zabbix/collect.ts";
+import { snapshotKeys } from "../lib/server/cache/snapshots.ts";
 import { normalizeInventory, normalizeProblems, summarize } from "../lib/server/zabbix/normalize.ts";
 import { observationContext } from "../lib/server/zabbix/observations.ts";
 import { selectScope, monitoringScopeSchema } from "../lib/server/zabbix/scope.ts";
@@ -146,24 +147,104 @@ test("overview Docker totals use aggregate items even when stopped containers ar
   f.items.find(i => i.key_ === "docker.containers.stopped").state = "1";
   assert.equal(summarize(normalize(f), p, 0).containersStopped, null);
 });
+test("selectActiveProblems keeps enabled triggers and drops disabled or missing ones", () => {
+  const problems = [
+    { eventid: "1", objectid: "10" },
+    { eventid: "2", objectid: "20" },
+    { eventid: "3", objectid: "30" },
+  ];
+  assert.deepEqual(
+    selectActiveProblems(problems, [{ triggerid: "10", status: "0" }, { triggerid: "20", status: "1" }]),
+    [{ eventid: "1", objectid: "10" }],
+  );
+});
+
+test("collection keeps problems with enabled triggers and drops disabled or missing triggers", async () => {
+  const f = zabbixFixture();
+  const containerItem = f.items.find(i => i.key_.includes("usage_total"));
+  f.problems.push(
+    { eventid: "910", objectid: "910", name: "Disabled trigger problem", severity: "4", clock: String(Math.floor(f.now / 1000)), tags: [] },
+    { eventid: "920", objectid: "920", name: "Missing trigger problem", severity: "3", clock: String(Math.floor(f.now / 1000)), tags: [] },
+  );
+  f.triggers.push(
+    { triggerid: "910", status: "1", hosts: [{ host: "linux-a" }], items: [{ itemid: containerItem.itemid }] },
+  );
+  const result = await collectSnapshots({ rpc: f.rpc, scope: f.scope, configs: [], now: f.now, discover: false });
+  const published = result.entries[snapshotKeys.problems];
+  assert.equal(published.length, 1);
+  assert.equal(published[0].description, "Fixture unavailable item");
+  assert.equal(result.counts.problems, 1);
+  assert.deepEqual(published[0].resource, { type: "docker_container", hostKey: "linux-a", reference: published[0].resource.reference });
+});
+
+test("collection batches one trigger.get for many problems and skips it when problem.get is empty", async () => {
+  const many = zabbixFixture();
+  const itemid = many.items.find(i => i.key_.includes("usage_total")).itemid;
+  many.problems.push(
+    { eventid: "931", objectid: "931", name: "Second problem", severity: "2", clock: String(Math.floor(many.now / 1000)), tags: [] },
+    { eventid: "932", objectid: "932", name: "Third problem", severity: "2", clock: String(Math.floor(many.now / 1000)), tags: [] },
+  );
+  many.triggers.push(
+    { triggerid: "931", status: "0", hosts: [{ host: "linux-a" }], items: [{ itemid }] },
+    { triggerid: "932", status: "0", hosts: [{ host: "linux-a" }], items: [{ itemid }] },
+  );
+  await collectSnapshots({ rpc: many.rpc, scope: many.scope, configs: [], now: many.now, discover: false });
+  const triggerCalls = many.calls.filter(call => call.method === "trigger.get");
+  assert.equal(triggerCalls.length, 1);
+  assert.deepEqual([...triggerCalls[0].params.triggerids].sort(), ["901", "931", "932"]);
+  assert.deepEqual(triggerCalls[0].params.output, ["triggerid", "status"]);
+
+  const empty = zabbixFixture();
+  empty.problems.splice(0, empty.problems.length);
+  await collectSnapshots({ rpc: empty.rpc, scope: empty.scope, configs: [], now: empty.now, discover: false });
+  assert.equal(empty.calls.filter(call => call.method === "trigger.get").length, 0);
+});
+
 test("collection uses a fixed number of batches, never fetches raw master values, and validates whole cycles", async () => {
   const f = zabbixFixture();
   const result = await collectSnapshots({ rpc: f.rpc, scope: f.scope, configs: [], now: f.now });
   assert.deepEqual(result.counts, { hosts: 2, vms: 2, containers: 1, problems: 1 });
-  assert.deepEqual(f.calls.map(c => c.method), ["host.get", "item.get", "item.get", "problem.get", "trigger.get"]);
+  assert.deepEqual(f.calls.map(c => c.method), ["host.get", "item.get", "item.get", "problem.get", "trigger.get", "host.get"]);
+  assert.equal(result.discovery?.candidates.length, 0);
   const values = f.calls[2].params.itemids;
   assert.ok(!f.items.filter(i => i.lastvalue.startsWith("DO_NOT_")).some(i => values.includes(i.itemid)));
   assert.ok(!JSON.stringify(result.entries).includes("DO_NOT_"));
   assert.ok(result.entries["pulse:source:bindings"]);
   await assert.rejects(collectSnapshots({ rpc: async (m, p) => m === "item.get" && p.itemids ? [] : f.rpc(m, p), scope: f.scope, configs: [] }), /incomplete/);
 });
+test("ready Agent outside scope is discovered; discovery failure does not drop the scope snapshot", async () => {
+  const f = zabbixFixture();
+  f.hosts.push({ hostid: "4", host: "VM-without-Agent", name: "VM-without-Agent", status: "0", tags: [], interfaces: [{ type: "1", main: "1", available: "1" }], hostgroups: [] });
+  const found = await collectSnapshots({ rpc: f.rpc, scope: f.scope, configs: [], now: f.now });
+  assert.equal(found.discovery?.candidates.length, 1);
+  assert.equal(found.discovery?.candidates[0].hostKey, "VM-without-Agent");
+  assert.equal(found.discovery?.candidates[0].suggestedVm?.vmId, "qemu/102");
+  assert.equal(found.counts.hosts, 2);
+  const broken = zabbixFixture();
+  const result = await collectSnapshots({
+    rpc: async (method, params) => {
+      if (method === "host.get" && !params.filter) throw new Error("discovery boom");
+      return broken.rpc(method, params);
+    },
+    scope: broken.scope, configs: [], now: broken.now,
+  });
+  assert.equal(result.discovery, null);
+  assert.equal(result.counts.hosts, 2);
+  assert.ok(result.entries["pulse:inventory:hosts"]);
+});
 test("concurrent cycles share one execution; partial failure never publishes and records only a safe code", async () => {
   let collected = 0, published = 0, failed;
-  const run = createCycle({ collect: async () => { collected++; await delay(20); return { entries: { a: 1 } }; }, publish: async () => { published++; }, fail: async code => { failed = code; } });
+  const run = createCycle({ collect: async () => { collected++; await delay(20); return { entries: { a: 1 }, discovery: null }; }, publish: async () => { published++; }, publishDiscovery: async () => {}, fail: async code => { failed = code; } });
   const first = run(); assert.equal(run(), first); assert.equal(await first, true); assert.equal(collected, 1); assert.equal(published, 1);
   const bad = createCycle({ collect: async () => { throw new Error("SECRET_URL_TOKEN"); }, publish: async () => { published++; }, fail: async code => { failed = code; } });
   assert.equal(await bad(), false); assert.equal(published, 1); assert.equal(failed, "collection_failed");
   const stop = new AbortController(); stop.abort(); assert.equal(await run(stop.signal), false); assert.equal(published, 1);
+});
+test("collectSnapshots skips discovery host.get when discover is false", async () => {
+  const f = zabbixFixture();
+  const skipped = await collectSnapshots({ rpc: f.rpc, scope: f.scope, configs: [], now: f.now, discover: false });
+  assert.equal(skipped.discovery, null);
+  assert.deepEqual(f.calls.map(c => c.method), ["host.get", "item.get", "item.get", "problem.get", "trigger.get"]);
 });
 test("long numeric history uses trends while health and state use typed history batches", async () => {
   const f = zabbixFixture(), n = normalize(f), c = n.containers[0];

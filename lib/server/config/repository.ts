@@ -23,13 +23,19 @@ function resourceResult(row: MonitoredResourceConfig): ResourceConfig {
   if (!parsed.success) throw new BffError(503, "configuration_unavailable");
   return { ...parsed.data, id, createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() };
 }
+function isZodError(error: unknown): error is ZodError {
+  return error instanceof ZodError || (!!error && typeof error === "object" && (error as { name?: string }).name === "ZodError" && Array.isArray((error as { issues?: unknown }).issues));
+}
 async function database<T>(action: () => Promise<T>): Promise<T> {
   try { return await action(); }
   catch (error) {
-    if (error instanceof BffError || error instanceof ZodError) throw error;
+    if (error instanceof BffError || isZodError(error)) throw error;
     const code = (error as { code?: string })?.code;
+    const message = error instanceof Error ? error.message : "";
     if (code === "P2002") throw new BffError(409, "resource_conflict");
     if (code === "P2025") throw new BffError(404, "resource_not_found");
+    if (code === "P2039" && message.includes("resource_presentation_check")) throw new BffError(400, "invalid_request");
+    console.error("database_unavailable", code ?? "", message || error);
     throw new BffError(503, "database_unavailable");
   }
 }

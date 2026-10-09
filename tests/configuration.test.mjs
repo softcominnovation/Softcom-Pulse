@@ -19,7 +19,7 @@ test("resource schemas reject telemetry and enforce type-specific defaults and s
   assert.deepEqual(resourcePatchSchema.parse({ description: " ", serviceType: "" }), { description: null, serviceType: null });
   for (const fields of [{ description: "x".repeat(241) }, { serviceType: "x".repeat(41) }, { description: "a\nb" }, { serviceType: "a\u0000" }]) assert.equal(resourceInputSchema.safeParse({ ...host, ...fields }).success, false);
   assert.equal(parsed.selectorType, null);
-  assert.deepEqual(parsed.presentation, { showStatus: true, showCpu: true, showMemory: true, showDisk: false, showNetwork: false, showUptime: false });
+  assert.deepEqual(parsed.presentation, { showStatus: true, showCpu: true, showMemory: true, showDisk: false, showNetwork: false, showUptime: false, metricsSource: "hypervisor" });
   assert.equal(resourceInputSchema.parse(container).presentation.showHealth, false);
   for (const invalid of [{ ...host, cpu: 0 }, { ...host, source: "proxmox" }, { ...host, selectorType: "exact_name" },
     { ...host, presentation: { showHealth: true } }, { ...host, presentation: { cpu: 0 } },
@@ -32,6 +32,9 @@ test("resource schemas reject telemetry and enforce type-specific defaults and s
   assert.equal(resourcePatchSchema.safeParse({}).success, false);
   assert.equal(resourcePatchSchema.safeParse({ status: "running" }).success, false);
   assert.equal(resourceInputSchema.parse({ ...container, presentation: { showHealth: true, showHealthTimeline: true, healthTimelineRange: "24h" } }).presentation.showHealthTimeline, true);
+  assert.equal(resourceInputSchema.parse({ ...host, presentation: { metricsSource: "hypervisor" } }).presentation.metricsSource, "hypervisor");
+  assert.equal(resourceInputSchema.safeParse({ ...host, presentation: { metricsSource: "guest" } }).success, false);
+  assert.equal(resourceInputSchema.safeParse({ ...container, presentation: { metricsSource: "agent" } }).success, false);
 });
 test("selectors isolate hosts, delimit Swarm prefixes and report ambiguity", () => {
   const config = resourceInputSchema.parse(container);

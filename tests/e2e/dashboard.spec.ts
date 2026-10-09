@@ -11,9 +11,6 @@ async function enter(page: Page) {
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
 }
-async function refreshOverview(page: Page) {
-  await page.evaluate(() => window.dispatchEvent(new Event("pulse:preferences-changed")));
-}
 async function mock(page: Page, count = 1, autoStart = false) {
   const state = { document: presentation(count, 1, autoStart), fail: false, configFail: false, stale: false, empty: false, calls: [] as string[], delay: 0, transform: null as ((body: ReturnType<typeof overview>) => void) | null };
   await page.route("**/api/settings/presentation", route => state.configFail ? route.fulfill({ status: 503, json: { error: "unavailable" } }) : route.fulfill({ json: { data: state.document, updatedAt: new Date().toISOString() } }));
@@ -35,7 +32,7 @@ for (const [width, height] of [[320,568],[360,800],[390,844],[768,1024],[1024,76
     await expect(page.getByRole("heading", { name: "Disponibilidade de Serviços" })).toBeVisible();
     await expect(page.getByRole("button", { name: "3 · Alternância" })).toBeDisabled();
     await expect(page.getByText("0%", { exact: true }).first()).toBeVisible();
-    await expect(page.getByText("Aplicação monitorada", { exact: true })).toBeVisible();
+    await expect(page.getByText("Sem dados", { exact: true }).first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(page.locator(".dashboard-panel").first()).toHaveCSS("border-radius", "14px");
     await expect(page.locator(".availability-card").first()).toHaveCSS("border-radius", "9px");
@@ -198,11 +195,15 @@ test("humanized problems preserve the original description and unknown formats",
   await expect(page.getByText(original, { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+async function refreshOverview(page: Page) {
+  await page.evaluate(() => window.dispatchEvent(new Event("pulse:preferences-changed")));
+}
 test("polls only the visible overview and preserves stale data after failure without repeated toast", async ({ page }) => {
   const state = await mock(page); await enter(page); await expect(page.getByRole("heading", { name: "Hosts monitorados" })).toBeVisible();
+  await expect(page.locator(".dashboard-status-banner")).toHaveCount(0);
   state.fail = true;
   await refreshOverview(page);
-  await expect(page.locator('[data-sonner-toast]')).toHaveCount(1);
+  await expect(page.getByText("Não foi possível atualizar os dados. A última leitura permanece identificada na tela.", { exact: true })).toBeVisible();
   await expect(page.getByText("Aplicação monitorada", { exact: true })).toBeVisible();
   await expect(page.locator(".availability-card .tone-good")).toHaveCount(0);
   await refreshOverview(page);
@@ -263,8 +264,9 @@ test("configuration failure, initial failure and empty highlights remain honest"
   const state = await mock(page); state.configFail = true; await enter(page);
   await expect(page.getByText("Não foi possível carregar a configuração", { exact: true })).toBeVisible();
   state.configFail = false; state.fail = true; await page.getByRole("button", { name: "Tentar novamente", exact: true }).click();
-  await expect(page.locator('[data-sonner-toast]')).toHaveCount(1);
+  await expect(page.getByText("Não foi possível atualizar os dados. A última leitura permanece identificada na tela.", { exact: true })).toBeVisible();
   await expect(page.locator(".dashboard-kpi")).toHaveCount(0);
+  await expect(page.locator(".dashboard-status-banner")).toHaveCount(0);
   state.fail = false; state.empty = true; await refreshOverview(page);
   await expect(page.getByText(/Nenhum serviço destacado/)).toBeVisible();
   await expect(page.locator(".availability-card")).toHaveCount(0);
@@ -297,6 +299,7 @@ test("two and three presentations saved through the real BFF play without writin
     await page.getByRole("button", { name: "Parar alternância", exact: true }).click();
     const unchanged = (await (await page.request.get("/api/settings/presentation", { headers })).json()).data;
     expect(unchanged).toEqual(current);
+    await expect(page.locator(".dashboard-status-banner")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
   }
 });
@@ -333,9 +336,13 @@ test("hidden tab and dialog suspend playback; manual stop survives closing the d
   await page.evaluate(() => document.getElementById("test-dialog")!.remove());
   await page.clock.runFor(10000); await expect(page.getByLabel("Escolher tela")).toHaveValue(id(2));
 });
-test("slow responses cannot paint the next screen while a pending overview is in flight", async ({ page }) => {
+test("slow responses cannot paint the next screen and refresh clicks share one request", async ({ page }) => {
   const state = await mock(page, 3); await enter(page); await expect(page.getByRole("heading", { name: "Hosts monitorados" })).toBeVisible();
   state.delay = 1500;
+  const previous = state.calls.length;
+  await refreshOverview(page);
+  await refreshOverview(page);
+  await expect.poll(() => state.calls.length).toBe(previous + 1);
   await page.getByLabel("Escolher tela").selectOption(id(3));
   await expect(page.getByLabel("Escolher tela")).toHaveValue(id(3));
   await expect(page.getByRole("heading", { name: "Hosts monitorados" })).toBeVisible();

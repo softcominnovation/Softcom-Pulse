@@ -10,6 +10,7 @@ import type { Host, Container } from "@/lib/monitoring/contracts";
 import { compileSelector, resolveResource } from "@/lib/monitoring/selectors";
 import { ServiceAvailabilityCard } from "@/components/dashboard/service-availability-card";
 import "@/components/dashboard/availability.css";
+import { hostMetricsPreference, mergeCardCpuRam, resolveCardCpuRam } from "@/lib/monitoring/card-metrics";
 import { Button } from "@/components/ui/button";
 import { Check, Field, errorText, useMutation } from "./shared";
 
@@ -57,12 +58,21 @@ export function ResourceForm({ initial, existing, hosts, containers, stale, onSa
       </div><div className="admin-checks">{([['enabled', 'Configuração habilitada'], ['dashboardEnabled', 'Destacar no dashboard'], ['critical', 'Recurso crítico']] as const).map(([key, label]) => <Check key={key} label={label}><input type="checkbox" {...form.register(key)} /></Check>)}</div>
       {existing && (!value.enabled || !value.dashboardEnabled) && <p className="admin-notice">Blocos individuais vinculados ficarão indisponíveis, preservando a escolha nas telas.</p>}
       <h3>Conteúdo do card</h3><div className="admin-checks">{flags.map(([key, label]) => <Check key={key} label={label}><input type="checkbox" {...form.register(`presentation.${key}` as keyof ResourceInput)} /></Check>)}</div>
+      {!isContainer && <Field label="CPU e RAM do card" hint="Padrão: mesma fonte da listagem de VMs. Agent só se quiser mudar."><select value={((value.presentation as { metricsSource?: string } | undefined)?.metricsSource === "agent" ? "agent" : "hypervisor")} onChange={event => form.setValue("presentation.metricsSource", event.target.value as "agent" | "hypervisor", { shouldDirty: true, shouldTouch: true })}><option value="hypervisor">Listagem de VMs (Asgard / hipervisor) — padrão</option><option value="agent">Agent Zabbix (convidado Linux)</option></select></Field>}
       {isContainer && <Field label="Janela do histórico de healthcheck" hint="O histórico é consultado sob demanda no detalhe."><select {...form.register("presentation.healthTimelineRange")}><option value="1h">1 hora</option><option value="24h">24 horas</option><option value="7d">7 dias</option></select></Field>}
       </fieldset>
       {isContainer && <div className="admin-candidates"><strong>{candidates.length} candidato(s) na última leitura</strong>{stale && <p>Descoberta indisponível ou desatualizada; não confirma o vínculo atual.</p>}<ul>{candidates.map(item => <li key={item.reference}>{item.name}</li>)}</ul>{!candidates.length && <p>Nenhum container corresponde ao seletor nesta leitura. A configuração existente será preservada.</p>}</div>}
       {error && <p role="alert" className="admin-error">{error}</p>}
       <div className="admin-actions"><Button type="submit" variant="primary" disabled={mutation.busy || ambiguous && changedSelector || invalidSelector || !existing && stale}>{mutation.busy ? "Salvando…" : "Salvar recurso"}</Button><Button type="button" disabled={mutation.busy} onClick={onCancel}>Cancelar</Button></div>
     </form>
-    {parsed.success && resolution && <div className="admin-resource-preview"><h3>Prévia local · não salva</h3><ServiceAvailabilityCard preview stale={stale} item={{ id: existing?.id ?? "00000000-0000-4000-8000-000000000000", config: { ...parsed.data, id: existing?.id ?? "00000000-0000-4000-8000-000000000000", createdAt: existing?.createdAt ?? new Date(0).toISOString(), updatedAt: existing?.updatedAt ?? new Date(0).toISOString() }, resolved: resolution.resolved, resolution: resolution.resolution, resource: resolution.target, metrics: resolution.target?.metrics ?? {} }} /></div>}
+    {parsed.success && resolution && (() => {
+      const target = resolution.target;
+      const baseMetrics = target?.metrics ?? {};
+      const preferred = target && !("reference" in target)
+        ? resolveCardCpuRam(target, hosts, hostMetricsPreference(parsed.data.presentation)).metrics
+        : {};
+      const metrics = mergeCardCpuRam(baseMetrics, preferred);
+      return <div className="admin-resource-preview"><h3>Prévia local · não salva</h3><ServiceAvailabilityCard preview stale={stale} item={{ id: existing?.id ?? "00000000-0000-4000-8000-000000000000", config: { ...parsed.data, id: existing?.id ?? "00000000-0000-4000-8000-000000000000", createdAt: existing?.createdAt ?? new Date(0).toISOString(), updatedAt: existing?.updatedAt ?? new Date(0).toISOString() }, resolved: resolution.resolved, resolution: resolution.resolution, resource: resolution.target, metrics }} /></div>;
+    })()}
   </section>;
 }

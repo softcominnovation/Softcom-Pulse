@@ -138,7 +138,7 @@ test("probe cards keep the availability size and the uptime block scrolls inside
   await expect(page.getByRole("dialog")).toContainText("dia(s) restante(s)");
   await expect(page.getByRole("dialog")).toContainText("Uptime");
   await expect(page.locator(".probe-dialog .uptime-track rect")).toHaveCount(40);
-  await expect(page.locator(".probe-dialog .uptime-track rect").first()).toBeVisible();
+  await expect(page.locator(".probe-dialog .uptime-track rect[opacity='0.35']")).toHaveCount(38);
   await expect(page.locator(".uptime-row", { hasText: "Aplicação 1" }).locator("rect")).toHaveCount(40);
   await expect.poll(() => ranges).toContain("24h");
   await page.getByRole("button", { name: "30 dias", exact: true }).click();

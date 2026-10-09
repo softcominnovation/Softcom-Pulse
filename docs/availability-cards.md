@@ -45,6 +45,8 @@ Componente `ServiceAvailabilityCard`. Só a classe `availability-card`.
 
 O miolo são duas leituras, classe `availability-readings`, em duas colunas: CPU e RAM. Cada uma tem rótulo, valor tabular de 10px e uma barra de 3px. CPU usa o verde. RAM usa o azul. Sem as duas leituras habilitadas, a zona mostra o texto **Ver detalhes**.
 
+CPU/RAM do card de recurso Zabbix seguem `presentation.metricsSource` do recurso (Recursos → editar host): padrão **hypervisor** (mesma fonte da listagem de VMs do Asgard); opcional **agent**. A lista de VMs do Asgard não muda.
+
 O rodapé, classe `availability-footer`, fica abaixo das barras. À esquerda, o tipo (Host, Container ou o tipo cadastrado). À direita, o tempo ativo ou o horário da leitura. Uma métrica só.
 
 O clique abre o detalhe do serviço, não um modal curto.

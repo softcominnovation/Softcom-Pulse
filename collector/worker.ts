@@ -2,22 +2,32 @@ import "server-only";
 import { setTimeout as delay } from "node:timers/promises";
 import { collectSnapshots } from "../lib/server/zabbix/collect.ts";
 import { publishSnapshots, markSyncFailure, snapshotTiming } from "../lib/server/cache/snapshots.ts";
+import { publishAgentDiscovery } from "../lib/server/cache/discovery.ts";
+import { discoveryEveryNCycles } from "../lib/server/zabbix/discovery.ts";
 import { getDatabase } from "../lib/server/database.ts";
 import { getCache } from "../lib/server/cache.ts";
 import { getPrisma } from "../lib/server/prisma.ts";
 import { zabbixCall } from "../lib/server/zabbix/client.ts";
 import { BffError } from "../lib/server/bff.ts";
 
-export function createCycle(dependencies = { collect: collectSnapshots, publish: publishSnapshots, fail: markSyncFailure }) {
+export function createCycle(dependencies = { collect: collectSnapshots, publish: publishSnapshots, publishDiscovery: publishAgentDiscovery, fail: markSyncFailure }) {
   let active: Promise<boolean> | null = null;
+  let cycleIndex = 0;
+  const everyN = discoveryEveryNCycles();
   return (signal?: AbortSignal): Promise<boolean> => {
     if (active) return active;
     const lastAttemptAt = new Date().toISOString();
     active = (async () => {
       try {
-        const { entries } = await dependencies.collect({ signal });
+        const discover = cycleIndex % everyN === 0;
+        cycleIndex += 1;
+        const { entries, discovery } = await dependencies.collect({ signal, discover });
         if (signal?.aborted) return false;
         await dependencies.publish(entries, new Date().toISOString(), lastAttemptAt);
+        if (discovery && dependencies.publishDiscovery) await dependencies.publishDiscovery(discovery).catch(error => {
+          const code = error instanceof BffError ? error.code : "discovery_publish_failed";
+          console.error(JSON.stringify({ event: "agent_discovery_publish_failed", error: code }));
+        });
         return true;
       } catch (error) {
         const code = error instanceof BffError ? error.code : "collection_failed";

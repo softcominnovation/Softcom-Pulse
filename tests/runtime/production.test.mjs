@@ -235,8 +235,10 @@ test("standalone persists configuration across restarts and serves every protect
     db.pathname = "/" + dbName;
     redisUrl.pathname = "/14";
     const cache = createClient({ url: redisUrl.href }); cache.on("error", () => {});
-    try { await cache.connect(); assert.equal(await cache.dbSize(), 0, "Redis DB 14 must be empty for read-only runtime tests"); }
-    finally { if (cache.isOpen) await cache.quit(); }
+    await cache.connect();
+    assert.equal(await cache.dbSize(), 0, "Redis DB 14 must be empty for read-only runtime tests");
+    const hostsKey = "pulse:inventory:hosts", syncKey = "pulse:sync:last";
+    try {
     await new Promise((resolve, reject) => {
       const child = spawn(process.execPath, [fileURLToPath(new URL("node_modules/prisma/build/index.js", root)), "migrate", "deploy"], {
         cwd: fileURLToPath(root), env: { ...process.env, DATABASE_URL: db.href }, stdio: "ignore", windowsHide: true,
@@ -259,27 +261,21 @@ test("standalone persists configuration across restarts and serves every protect
       const put = await fetch(base + "/api/settings/presentation", { method: "PUT", headers: auth, body: JSON.stringify({ expectedRevision: revision, settings }) });
       assert.equal(put.status, 200); saved = await put.json();
       assert.equal((await fetch(base + "/api/settings/presentation", { method: "PUT", headers: auth, body: JSON.stringify({ expectedRevision: revision, settings }) })).status, 409);
-      // createResource requires a ready hosts snapshot; seed briefly then clear so later GETs still see no_data.
       const observedAt = new Date().toISOString(), generation = randomUUID();
-      const hostsKey = "pulse:inventory:hosts", syncKey = "pulse:sync:last";
-      const wrap = data => JSON.stringify({ data, updatedAt: observedAt, source: "zabbix", generation });
       const runtimeHost = {
         hostKey: "runtime-host", name: "runtime-host", role: "unknown", availability: "reachable",
-        metrics: { cpuUsagePercent: { value: 0, unit: "percent", observedAt, quality: "fresh" } },
-        storages: [], filesystems: [], interfaces: [], vms: [], evidence: { source: "zabbix", observedAt, basis: "item" },
+        metrics: { cpuUsagePercent: { value: 1, unit: "percent", observedAt, quality: "fresh" } },
+        storages: [], filesystems: [], interfaces: [], vms: [],
+        evidence: { source: "zabbix", observedAt, basis: "item" },
       };
-      const inventory = createClient({ url: redisUrl.href }); inventory.on("error", () => {});
-      await inventory.connect();
-      try {
-        await inventory.set(hostsKey, wrap([runtimeHost]), { EX: 300 });
-        await inventory.set(syncKey, wrap({ status: "ok", lastSuccessfulAt: observedAt, lastAttemptAt: observedAt, error: null, keys: [hostsKey] }), { EX: 300 });
-        const post = await fetch(base + "/api/monitoring/services", { method: "POST", headers: auth, body: JSON.stringify({ resourceType: "host", zabbixHostKey: "runtime-host", displayName: "Runtime" }) });
-        assert.equal(post.status, 201, await post.clone().text()); resourceId = (await post.json()).data.id;
-      } finally {
-        await inventory.del([hostsKey, syncKey]);
-        await inventory.quit();
-      }
+      const wrap = data => JSON.stringify({ data, updatedAt: observedAt, source: "zabbix", generation });
+      await cache.set(hostsKey, wrap([runtimeHost]), { EX: 120 });
+      await cache.set(syncKey, wrap({ status: "ok", lastSuccessfulAt: observedAt, lastAttemptAt: observedAt, error: null, keys: [hostsKey] }), { EX: 120 });
+      const post = await fetch(base + "/api/monitoring/services", { method: "POST", headers: auth, body: JSON.stringify({ resourceType: "host", zabbixHostKey: "runtime-host", displayName: "Runtime" }) });
+      assert.equal(post.status, 201); resourceId = (await post.json()).data.id;
       const edit = await fetch(base + "/api/monitoring/services/" + resourceId, { method: "PATCH", headers: auth, body: JSON.stringify({ displayName: "Persistido" }) }); assert.equal(edit.status, 200);
+      // Drop discovery so protected reads stay on the empty/no_data contract for this suite.
+      await cache.del([hostsKey, syncKey]);
       for (const path of ["/monitoring/templates", "/monitoring/hosts", "/monitoring/containers", "/monitoring/problems", "/monitoring/services", "/monitoring/services/" + resourceId, "/monitoring/services/" + resourceId + "/history"]) {
         const response = await fetch(base + "/api" + path, { headers: auth }); assert.equal(response.status, 200, path);
         assert.equal((await response.json()).availability, "no_data");
@@ -306,6 +302,9 @@ test("standalone persists configuration across restarts and serves every protect
       const response = await fetch(base + "/api/settings/presentation", { headers: auth }); assert.equal(response.status, 503);
       assert.deepEqual(await response.json(), { error: { code: "database_unavailable" } });
     });
+    } finally {
+      if (cache.isOpen) { await cache.del([hostsKey, syncKey]).catch(() => {}); await cache.quit(); }
+    }
   } finally {
     await upstream.close();
     assert.match(dbName, /^pulse_runtime03_test_\d+_\d+$/);

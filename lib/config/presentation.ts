@@ -53,6 +53,8 @@ const screenSchema = z.strictObject({
 const fields = {
   schemaVersion: z.union([z.literal(1), z.literal(2)]), defaultTvMode: z.boolean().default(false),
   displayScalePercent: displayScaleSchema.default(defaultDisplayScalePercent),
+  // Hidden unless explicitly enabled in admin; legacy documents omit the field and stay hidden.
+  showStatusBanner: z.boolean().default(false),
   idlePresentation: idlePresentationSchema.prefault({}),
   rotation: z.strictObject({ autoStart: z.boolean().default(false), intervalSeconds: z.number().int().min(5).max(300).default(20) }).prefault({}),
   screens: z.array(screenSchema).min(1).max(3),
@@ -93,7 +95,7 @@ export const defaultDashboardBlocks = [
 ] as const;
 
 export function initialPresentation(newId: () => string): PresentationDocument {
-  return { schemaVersion: 2, revision: 1, defaultTvMode: false, displayScalePercent: defaultDisplayScalePercent, idlePresentation: idlePresentationSchema.parse({}), rotation: { autoStart: false, intervalSeconds: 20 }, screens: [{
+  return { schemaVersion: 2, revision: 1, defaultTvMode: false, displayScalePercent: defaultDisplayScalePercent, showStatusBanner: false, idlePresentation: idlePresentationSchema.parse({}), rotation: { autoStart: false, intervalSeconds: 20 }, screens: [{
     id: newId(), name: "Visão geral", enabled: true, layout: "overview",
     blocks: defaultDashboardBlocks.map(block => ({ id: newId(), ...block, enabled: true, options: effectiveOptions(block) })),
   }] };

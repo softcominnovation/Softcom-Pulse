@@ -31,7 +31,7 @@ export function zabbixFixture(now = Date.now()) {
     { hostid: "2", host: "linux-a", name: "Linux A", status: "0", tags: [], interfaces: [{ type: "1", main: "1", available: "0" }], hostgroups: [{ name: "Linux servers" }] },
     { hostid: "3", host: "outsider", name: "Unrelated host", status: "0", tags: [], interfaces: [], hostgroups: [] },
   ];
-  const scope = { scope: { hostKeys: ["ASGARD", "linux-a"], vmLinks: [{ hostKey: "linux-a", parentHostKey: "ASGARD", vmId: "qemu/101" }] }, asgardHostKey: "ASGARD" };
+  const scope = { scope: { hostKeys: ["ASGARD", "linux-a"], vmLinks: [{ hostKey: "linux-a", parentHostKey: "ASGARD", vmId: "qemu/101" }], revision: 1 }, asgardHostKey: "ASGARD" };
   const master = item("1", "proxmox.node.rrd[ASGARD]", "DO_NOT_FETCH_RAW_SECRET", "", { lastclock: "0", value_type: "4", type: "19" });
   const nodeOptions = { master_itemid: master.itemid, delay: "0", type: "18", tags: [{ tag: "node", value: "ASGARD" }], preprocessing: [{ type: "20", params: "10m" }] };
   item("1", "proxmox.node.cpu[ASGARD]", 0, "%", nodeOptions);
@@ -64,7 +64,7 @@ export function zabbixFixture(now = Date.now()) {
   item("2", 'docker.networks.rx_bytes["/service.1.abc"]', 10, "B", { tags, preprocessing: [{ type: "10", params: "" }] });
   item("2", 'docker.container_stats.memory.usage_total["/service.1.abc"]', 1024, "B", { tags, state: "1" });
   const problems = [{ eventid: "900", objectid: "901", name: "Fixture unavailable item", severity: "4", clock: clock(60), tags: [] }];
-  const triggers = [{ triggerid: "901", hosts: [{ host: "linux-a" }], items: [{ itemid: items.find(i => i.key_.includes("usage_total")).itemid }] }];
+  const triggers = [{ triggerid: "901", status: "0", hosts: [{ host: "linux-a" }], items: [{ itemid: items.find(i => i.key_.includes("usage_total")).itemid }] }];
   const calls = [];
   const rpc = async (method, params) => {
     calls.push({ method, params });

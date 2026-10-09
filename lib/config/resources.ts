@@ -4,11 +4,16 @@ import { compileSelector } from "../monitoring/selectors.ts";
 export const uuidSchema = z.uuid().transform(value => value.toLowerCase());
 export const hostKeySchema = z.string().min(1).max(256).refine(value => value.trim() === value && !/[\u0000-\u001f\u007f/\\]/.test(value));
 export const historyRangeSchema = z.enum(["1h", "24h", "7d"]);
+export const cardMetricsSourceSchema = z.enum(["auto", "agent", "hypervisor"]);
 const commonPresentation = {
   showStatus: z.boolean().default(true), showCpu: z.boolean().default(true), showMemory: z.boolean().default(true),
   showDisk: z.boolean().default(false), showNetwork: z.boolean().default(false), showUptime: z.boolean().default(false),
 };
-export const hostPresentationSchema = z.strictObject(commonPresentation);
+export const hostPresentationSchema = z.strictObject({
+  ...commonPresentation,
+  /** CPU/RAM on Disponibilidade + Infra host cards. Default = same source as the Asgard VM list. */
+  metricsSource: cardMetricsSourceSchema.default("hypervisor"),
+});
 export const containerPresentationSchema = z.strictObject({
   ...commonPresentation, showHealth: z.boolean().default(false), showHealthTimeline: z.boolean().default(false),
   healthTimelineRange: historyRangeSchema.default("1h"),

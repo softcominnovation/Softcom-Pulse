@@ -39,7 +39,7 @@ function PresentationForm({ saved, resources, hosts, reload }: { saved: Presenta
   const reset = () => { form.reset(editable(confirmed)); setError(""); setReadingError(""); setPreviewId(null); };
   const saveReading = async () => {
     const { revision, ...base } = confirmed, draft = form.getValues();
-    const parsed = presentationSettingsSchema.safeParse({ ...base, displayScalePercent: draft.displayScalePercent, idlePresentation: draft.idlePresentation });
+    const parsed = presentationSettingsSchema.safeParse({ ...base, displayScalePercent: draft.displayScalePercent, showStatusBanner: draft.showStatusBanner, idlePresentation: draft.idlePresentation });
     setReadingError("");
     if (!parsed.success) { setReadingError("Escolha um tamanho válido e informe um tempo inteiro entre 1 e 120 minutos."); return; }
     try {
@@ -74,7 +74,9 @@ function PresentationForm({ saved, resources, hosts, reload }: { saved: Presenta
       </div><div className="admin-checks admin-reading-checks">
         <Check label="Entrar no modo TV após inatividade"><input type="checkbox" {...form.register("idlePresentation.enabled")} /></Check>
         <Check label="Tentar tela cheia ao entrar automaticamente"><input type="checkbox" {...form.register("idlePresentation.requestFullscreen")} /></Check>
+        <Check label="Exibir faixa de status do monitoramento"><input type="checkbox" {...form.register("showStatusBanner")} /></Check>
       </div></fieldset>
+      <p className="admin-muted">A faixa de status (atualização, falha e horário da coleta) fica oculta por padrão. Só aparece no dashboard quando esta opção estiver marcada e salva.</p>
       <p className="admin-muted">A entrada por inatividade funciona somente no dashboard principal. A contagem fica suspensa com a aba oculta ou um diálogo aberto. O navegador pode exigir um clique para concluir a tela cheia; nesse caso, o modo TV entra e aparece um botão para continuar.</p>
       <FullscreenHelp />
       <p className="admin-muted">Use “Ver prévia” em uma tela para comparar tamanhos; opções maiores podem precisar de rolagem.</p>

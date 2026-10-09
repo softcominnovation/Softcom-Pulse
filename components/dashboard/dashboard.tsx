@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useStore } from "zustand";
-import { TriangleAlert } from "lucide-react";
+import { Activity, RefreshCw, TriangleAlert } from "lucide-react";
 import { isAxiosError } from "axios";
 import { presentationDocumentSchema, type PresentationDocument } from "@/lib/config/presentation";
 import type { Overview, ReadResult } from "@/lib/monitoring/contracts";
 import { createPlayerStore, playableScreens } from "@/lib/dashboard/player";
+import { timestamp } from "@/lib/dashboard/format";
 import { api } from "@/lib/client/api";
 import { useUiStore } from "@/store/ui.store";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,12 @@ import { EvidenceTimeContext } from "./metrics";
 
 const configurationDelay = () => 60000;
 const overviewDelay = (result: ReadResult<Overview>) => result.refreshAfterMs;
+function hasOldEvidence(value: unknown, now: number): boolean {
+  if (!value || typeof value !== "object") return false;
+  if ("quality" in value && value.quality === "stale") return true;
+  if ("validUntil" in value && typeof value.validUntil === "string" && Date.parse(value.validUntil) < now) return true;
+  return Object.values(value).some(child => typeof child === "object" && hasOldEvidence(child, now));
+}
 export function Dashboard() {
   const [store] = useState(createPlayerStore), player = useStore(store);
   const [now, setNow] = useState(0);
@@ -74,21 +81,35 @@ export function Dashboard() {
     };
   }, [store]);
   const result = overview.data, stale = !!result?.stale || overview.failed;
+  const showStatusBanner = player.document?.showStatusBanner === true;
+  const partial = showStatusBanner && !!result && hasOldEvidence(result.data, now);
+  const problems = result?.data.summary.problems;
+  const hasData = result?.availability === "ready";
+  const tone = stale ? "warn" : !hasData ? "unknown" : (result?.data.summary.criticalAffected ?? 0) > 0 ? "bad" : (problems ?? 0) > 0 ? "warn" : "unknown";
+  const title = overview.failed ? "Falha na atualização" : result?.stale ? "Dados desatualizados" : !result ? "Carregando monitoramento" : !hasData ? "Aguardando dados do monitoramento" : partial ? "Há evidências desatualizadas" : (problems ?? 0) > 0 ? "A operação requer atenção" : "Monitoramento atualizado";
   const layout = player.layoutOverride ?? screen?.layout ?? "overview";
   return <div className={`dashboard ${layout} ${layout === "overview" ? "balanced" : ""}`}>
     <PlayerToolbar store={store} />
     {configuration.failed && <div className="dashboard-banner banner-warn" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Não foi possível carregar a configuração</strong><p>{player.document ? "A última configuração válida foi mantida." : "Tente novamente para carregar as telas salvas."}</p></div><Button onClick={configuration.refresh}>Tentar novamente</Button></div>}
     {!player.document && !configuration.failed && <DashboardSkeleton label="Carregando as telas configuradas…" />}
     {player.document && !screen && <div className="dashboard-banner banner-warn" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Nenhuma composição utilizável</strong><p>A configuração precisa de uma tela habilitada com blocos disponíveis.</p></div><Button onClick={configuration.refresh}>Recarregar configuração</Button></div>}
-    {screen && <EvidenceTimeContext value={now}><div data-dashboard-content className="dashboard-blocks" aria-busy={overview.loading}>
-      {!result && !overview.failed && <DashboardSkeleton label="Carregando os indicadores da tela…" />}
-      {result && screen.blocks.filter(block => block.enabled).map(block => {
-        const payload = result.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
-        return <div className={`dashboard-block width-${block.width} block-${block.type}`} key={block.id}>
-          {payload ? <DashboardBlock block={payload} failed={stale} probes={result.data.externalServices ?? []} vps={result.data.standaloneVps ?? []} /> : <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section>}
-        </div>;
-      })}
-    </div></EvidenceTimeContext>}
+    {screen && <>
+      {showStatusBanner && <div className={`dashboard-banner dashboard-status-banner banner-${tone}`} role={overview.failed || result?.stale ? "alert" : "status"}>
+        {tone === "warn" || tone === "bad" ? <TriangleAlert aria-hidden="true" /> : <Activity aria-hidden="true" />}
+        <div><strong>{title}</strong><p>{overview.failed ? result ? "A última leitura foi mantida. Os valores não representam confirmação do estado atual." : "Ainda não foi possível obter uma leitura. Tente novamente." : result?.presentationStatus === "unavailable" ? "Nomes personalizados indisponíveis; identificações técnicas preservadas." : partial ? "Confira a data e a qualidade de cada amostra." : !hasData ? "Os indicadores serão exibidos quando houver evidência disponível." : "Dados do Zabbix · estado e qualidade avaliados por recurso."}</p></div>
+        <div className="banner-update"><span>Última atualização</span><time dateTime={result?.lastUpdated ?? undefined}>{timestamp(result?.lastUpdated)}</time></div>
+        <Button size="icon" aria-label="Atualizar monitoramento" title={`Última atualização: ${timestamp(result?.lastUpdated)}`} onClick={overview.refresh}><RefreshCw aria-hidden="true" /></Button>
+      </div>}
+      <EvidenceTimeContext value={now}><div data-dashboard-content className="dashboard-blocks" aria-busy={overview.loading}>
+        {!result && !overview.failed && <DashboardSkeleton label="Carregando os indicadores da tela…" />}
+        {result && screen.blocks.filter(block => block.enabled).map(block => {
+          const payload = result.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
+          return <div className={`dashboard-block width-${block.width} block-${block.type}`} key={block.id}>
+            {payload ? <DashboardBlock block={payload} failed={stale} probes={result.data.externalServices ?? []} vps={result.data.standaloneVps ?? []} hostMetricsSources={result.data.hostMetricsSources} /> : <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section>}
+          </div>;
+        })}
+      </div></EvidenceTimeContext>
+    </>}
     <footer className="dashboard-footer"><div aria-label="Legenda de estados"><span className="tone-good"><i className="status-dot" />Disponível</span><span className="tone-warn"><i className="status-dot" />Atenção</span><span className="tone-bad"><i className="status-dot" />Indisponível</span><span><i className="status-dot" />Desconhecido / sem dados</span></div><p>Horários de Fortaleza · UTC−3{result && <> · Atualização a cada {Math.round(result.refreshAfterMs / 1000)}s</>}</p></footer>
   </div>;
 }

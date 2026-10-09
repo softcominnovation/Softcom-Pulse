@@ -30,7 +30,10 @@ function SummaryBlock({ data, stale, options }: { data: Summary; stale: boolean;
   ];
   return <section className={`dashboard-kpis ${stale ? "is-stale" : ""}`} aria-label="Indicadores da operação">{options.indicators.map(key => items[indicatorKeys.indexOf(key)]).map(item => <article className="dashboard-kpi" key={item.label}><div className="kpi-label"><h2>{item.label}</h2><span aria-hidden="true">{item.icon}</span></div><p className="kpi-value">{number(item.value)}</p><p>{item.value === null ? "Sem dados da origem" : stale ? "Dados desatualizados" : item.note}</p>{stale && <p>{item.note}</p>}</article>)}</section>;
 }
-export function DashboardBlock({ block, failed, probes = [], vps = [] }: { block: OverviewBlock; failed: boolean; probes?: ProbeCard[]; vps?: StandaloneVpsHighlight[] }) {
+export function DashboardBlock({ block, failed, probes = [], vps = [], hostMetricsSources }: {
+  block: OverviewBlock; failed: boolean; probes?: ProbeCard[]; vps?: StandaloneVpsHighlight[];
+  hostMetricsSources?: Record<string, "auto" | "agent" | "hypervisor">;
+}) {
   const stale = failed || block.stale, now = useContext(EvidenceTimeContext);
   if (block.availability === "unavailable" || block.data === null) return <Panel title="Bloco indisponível" icon={<TriangleAlert aria-hidden="true" />}><p className="panel-empty">Este bloco não está disponível na configuração atual.</p></Panel>;
   switch (block.type) {
@@ -38,7 +41,7 @@ export function DashboardBlock({ block, failed, probes = [], vps = [] }: { block
     case "asgard_summary": return <AsgardPanel data={block.data as AsgardSummary} stale={stale} options={effectiveOptions({ ...block, type: "asgard_summary" })} />;
     case "host_inventory": {
       const options = effectiveOptions({ ...block, type: "host_inventory" });
-      return <HostInventory hosts={sortInventory(block.data as Host[], options, stale, now)} stale={stale} compact visibleRows={options.visibleRows} />;
+      return <HostInventory hosts={sortInventory(block.data as Host[], options, stale, now)} inventoryHosts={block.data as Host[]} stale={stale} compact visibleRows={options.visibleRows} metricsSources={hostMetricsSources} />;
     }
     case "container_inventory": {
       const options = effectiveOptions({ ...block, type: "container_inventory" }), all = block.data as Container[];

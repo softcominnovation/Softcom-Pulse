@@ -17,6 +17,7 @@ import { queryHistory } from "../zabbix/history.ts";
 import { isVmTemplate, operationalHost, operationalProblems } from "./virtual-machines.ts";
 import { readDisplayNames } from "./display-names.ts";
 import { visibleMetric } from "../../services/presentation.ts";
+import { hostMetricsPreference, mergeCardCpuRam, resolveCardCpuRam } from "../../monitoring/card-metrics.ts";
 import { readProbeOverview } from "../probe/overview.ts";
 import { listHighlightedStandaloneVps } from "../vps/repository.ts";
 
@@ -30,7 +31,7 @@ export function configuredResource(config: ResourceConfig, inventory: { hosts: H
   const resolution = resolveResource(config, inventory);
   return { id: config.id, config, resolved: resolution.resolved, resolution: resolution.resolution, resource: resolution.target, metrics: resolution.target?.metrics ?? {} };
 }
-export function cardResource(resource: ConfiguredResource): ConfiguredResource {
+export function cardResource(resource: ConfiguredResource, hosts: Host[] = []): ConfiguredResource {
   const p = resource.config.presentation;
   const visibleMetrics = (metrics: Metrics): Metrics => Object.fromEntries(Object.entries(metrics).filter(([key]) => {
     if (key.startsWith("cpu")) return p.showCpu;
@@ -41,7 +42,10 @@ export function cardResource(resource: ConfiguredResource): ConfiguredResource {
     return false;
   }));
   const target = resource.resource;
-  const metrics = visibleMetrics(resource.metrics);
+  const preferred = target && !("reference" in target)
+    ? resolveCardCpuRam(target, hosts, hostMetricsPreference(p)).metrics
+    : {};
+  const metrics = visibleMetrics(mergeCardCpuRam(resource.metrics, preferred));
   if (!target) return { ...resource, metrics };
   if ("reference" in target) return { ...resource, metrics, resource: {
     ...target, metrics, status: p.showStatus ? target.status : "unknown", health: "showHealth" in p && p.showHealth ? target.health : "unknown",
@@ -111,7 +115,10 @@ export async function readOverview(screenId?: string) {
   }), readResult(null, current.batch, current.keys).stale);
   const names = await readDisplayNames(current.hosts, current.containers, allConfigs);
   const named = { ...current, hosts: current.hosts.map(names.host), containers: current.containers.map(names.container) };
-  const resources = configs.map(config => ({ ...cardResource(configuredResource(config, named)), linkedVmName: linkedMachineName(config.zabbixHostKey, named.hosts) }));
+  const resources = configs.map(config => ({ ...cardResource(configuredResource(config, named), named.hosts), linkedVmName: linkedMachineName(config.zabbixHostKey, named.hosts) }));
+  const hostMetricsSources = Object.fromEntries(allConfigs
+    .filter(config => config.resourceType === "host" && config.enabled)
+    .map(config => [config.zabbixHostKey, hostMetricsPreference(config.presentation)]));
   const problems = operationalProblems(snapshotData(current.batch, snapshotKeys.problems, z.array(problemSchema), []), current.hosts).map(names.problem);
   base.asgardSummary = { host: base.asgardSummary.host ? names.host(operationalHost(base.asgardSummary.host)) : null, vms: base.asgardSummary.vms.filter(vm => !isVmTemplate(vm)).map(names.vm) };
   if (base.summary.vms !== null) base.summary.vms = current.batch.snapshots.get(snapshotKeys.hosts) ? current.hosts.reduce((n, host) => n + operationalHost(host).vms.length, 0) : null;
@@ -137,7 +144,7 @@ export async function readOverview(screenId?: string) {
     const checkedAt = probe.uptimeBoard.reduce<string | null>((latest, item) => item.checkedAt && (!latest || item.checkedAt > latest) ? item.checkedAt : latest, null);
     return { blockId: block.id, type: block.type, options: effectiveOptions(block), data, availability: !blockCatalog[block.type].available || (block.type === "resource_card" && !data) ? "unavailable" : probeBlock ? (probe.uptimeBoard.length ? "ready" : "no_data") : result.availability, stale: probeBlock ? false : result.stale, lastUpdated: probeBlock ? checkedAt : result.lastUpdated };
   });
-  const data: Overview = { ...base, highlightedResources: resources, problems, screenId: screen.id, presentationRevision: presentation.data.revision, blocks, externalServices: probe.externalServices, uptimeBoard: probe.uptimeBoard, standaloneVps };
+  const data: Overview = { ...base, highlightedResources: resources, problems, screenId: screen.id, presentationRevision: presentation.data.revision, blocks, hostMetricsSources, externalServices: probe.externalServices, uptimeBoard: probe.uptimeBoard, standaloneVps };
   return { ...readResult(data, current.batch, current.keys), presentationStatus: names.status };
 }
 export async function readHistory(resource: History["resource"], window: History["window"] = "1h", signal?: AbortSignal) {

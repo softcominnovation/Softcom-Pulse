@@ -166,7 +166,9 @@ test("vps list keeps catalog fields and treats a missing monitor as gray", async
   await dialog.getByRole("button", { name: "Salvar serviço", exact: true }).click();
   const stack = page.getByRole("region", { name: "Serviços", exact: true });
   await expect(stack).toContainText("Portainer");
-  await expect(stack).toContainText("Produção no host 1");
+  await expect(stack).not.toContainText("Produção no host 1");
+  await stack.getByRole("button", { name: "Ver anotações de Portainer", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("Produção no host 1");
   expect(managerCalls).toEqual([]);
 });
 

@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useId, useMemo, useState, useRef, type ReactElement } from "react";
-import Link from "next/link";
+import { PlaceLink } from "@/components/layout/place-link";
 import type uPlot from "uplot";
 import { api } from "@/lib/client/api";
+import { requestCanceled } from "@/lib/client/request-canceled";
 import { timestamp } from "@/lib/dashboard/format";
 import type { ProbeCard } from "@/lib/monitoring/contracts";
 import { certRemainingDays, formatLatency, formatUptime, probePresence, probeStatus } from "@/lib/probe/status";
@@ -15,7 +16,7 @@ import "uplot/dist/uPlot.min.css";
 const ranges = [["24h", "24 horas"], ["7d", "7 dias"], ["30d", "30 dias"]] as const;
 type Range = typeof ranges[number][0];
 type Point = { checkedAt: string; reason: number; latencyMs: number | null };
-type History = { points: Point[]; summary: { currentLatencyMs: number | null; averageLatencyMs: number | null; uptime24h: { available: number; total: number } | null; uptime7d: { available: number; total: number } | null; uptime30d: { available: number; total: number } | null } };
+type History = { serviceId?: string; points: Point[]; summary: { currentLatencyMs: number | null; averageLatencyMs: number | null; uptime24h: { available: number; total: number } | null; uptime7d: { available: number; total: number } | null; uptime30d: { available: number; total: number } | null } };
 const axisTime = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Fortaleza", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 function certText(value: string | null) {
@@ -61,29 +62,42 @@ function LatencyChart({ points }: { points: Point[] }) {
     </div>}
   </div>;
 }
-export function ProbeHistoryPanel({ serviceId, certNotAfter = null, paused = false, progressStartedAt = null }: { serviceId: string; certNotAfter?: string | null; paused?: boolean; progressStartedAt?: string | null }) {
+export function ProbeHistoryPanel({ serviceId, certNotAfter = null, paused = false, strip = [] }: { serviceId: string; certNotAfter?: string | null; paused?: boolean; strip?: number[] }) {
   const [range, setRange] = useState<Range>("24h");
   const [state, setState] = useState<{ loading: boolean; failed: boolean; data: History | null }>({ loading: true, failed: false, data: null });
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined, alive = true;
+    // Drop the previous service's samples as soon as the selection or window changes.
+    setState({ loading: true, failed: false, data: null });
+    const schedule = (initial: boolean, delay: number) => { clearTimeout(timer); timer = setTimeout(() => load(initial), delay); };
     const load = (initial: boolean) => {
       clearTimeout(timer);
-      if (document.hidden) { timer = setTimeout(() => load(initial), probeLiveRefreshMs); return; }
+      if (document.hidden) { schedule(initial, probeLiveRefreshMs); return; }
       if (initial) setState(current => ({ loading: current.data === null, failed: false, data: current.data }));
-      api.get<{ data: History }>(`/monitoring/external-services/${serviceId}/history`, { params: { range }, signal: controller.signal }).then(response => {
+      void api.get<{ data: History }>(`/monitoring/external-services/${serviceId}/history`, { params: { range }, signal: controller.signal }).then(response => {
         if (!alive || controller.signal.aborted) return;
         const next = response.data.data;
+        if (next.serviceId && next.serviceId !== serviceId) return;
         setState(current => {
-          const same = current.data && current.data.points.length === next.points.length && current.data.points.at(-1)?.checkedAt === next.points.at(-1)?.checkedAt;
-          return same ? { ...current, loading: false, failed: false } : { loading: false, failed: false, data: next };
+          const same = current.data
+            && (!current.data.serviceId || current.data.serviceId === serviceId)
+            && current.data.points.length === next.points.length
+            && current.data.points.at(0)?.checkedAt === next.points.at(0)?.checkedAt
+            && current.data.points.at(-1)?.checkedAt === next.points.at(-1)?.checkedAt;
+          return same ? { ...current, loading: false, failed: false } : { loading: false, failed: false, data: { ...next, serviceId } };
         });
-      }).catch(() => {
-        if (alive && !controller.signal.aborted) setState(current => ({ loading: false, failed: current.data === null, data: current.data }));
-      }).finally(() => { if (alive && !controller.signal.aborted) timer = setTimeout(() => load(false), probeLiveRefreshMs); });
+        if (alive && !controller.signal.aborted) schedule(false, probeLiveRefreshMs);
+      }).catch(error => {
+        if (!alive || controller.signal.aborted) return;
+        // Auth epoch switches abort via AbortSignal.any without touching this controller; that is not a read failure.
+        if (requestCanceled(error)) { schedule(initial, 100); return; }
+        setState(current => ({ loading: false, failed: current.data === null, data: current.data }));
+        schedule(false, probeLiveRefreshMs);
+      });
     };
     load(true);
-    const visible = () => { if (!document.hidden) { clearTimeout(timer); load(false); } };
+    const visible = () => { if (!document.hidden) schedule(false, 0); };
     document.addEventListener("visibilitychange", visible);
     return () => { alive = false; controller.abort(); clearTimeout(timer); document.removeEventListener("visibilitychange", visible); };
   }, [serviceId, range]);
@@ -95,7 +109,7 @@ export function ProbeHistoryPanel({ serviceId, certNotAfter = null, paused = fal
     {certificate && <p className="probe-cert">{certificate}</p>}
     {state.loading && <p className="panel-empty">Carregando consultas…</p>}
     {state.failed && <p className="admin-error" role="alert">Não foi possível ler o histórico. Os cards do dashboard não foram alterados.</p>}
-    <section className="probe-uptime-block"><h3 className="probe-section-title">Uptime</h3><UptimeTrack reasons={paused ? [] : points.filter(point => !progressStartedAt || point.checkedAt >= progressStartedAt).map(point => point.reason)} /></section>
+    <section className="probe-uptime-block"><h3 className="probe-section-title">Uptime</h3><UptimeTrack reasons={paused ? [] : strip} /></section>
     {summary && <>
       <div className="probe-summary">
         <div><span>Disponibilidade 24 h</span><strong>{formatUptime(summary.uptime24h)}</strong></div>
@@ -111,8 +125,8 @@ export function ProbeHistoryPanel({ serviceId, certNotAfter = null, paused = fal
 function ProbeHistory({ item }: { item: ProbeCard }) {
   const presence = item.paused ? { label: "Pausado", tone: "unknown" as const } : probePresence(item.reason);
   return <>
-    <DialogHeader><DialogTitle><span className={`app-presence tone-${presence.tone}`}>{presence.label}</span> {item.displayName}</DialogTitle><DialogDescription>{item.description?.trim() || item.serviceType?.trim() || "Aplicação"} · {item.paused ? "Pausado" : probeStatus(item.reason).label}</DialogDescription><Link className="probe-admin-link" href="/admin/aplicacoes" onClick={() => useProbeSelectionStore.getState().select(item.id)}>Abrir em Aplicações</Link></DialogHeader>
-    <DialogBody><ProbeHistoryPanel serviceId={item.id} certNotAfter={item.certNotAfter} paused={item.paused} progressStartedAt={item.progressStartedAt} /></DialogBody>
+    <DialogHeader><DialogTitle><span className={`app-presence tone-${presence.tone}`}>{presence.label}</span> {item.displayName}</DialogTitle><DialogDescription>{item.description?.trim() || item.serviceType?.trim() || "Aplicação"} · {item.paused ? "Pausado" : probeStatus(item.reason).label}</DialogDescription><PlaceLink className="probe-admin-link" href="/admin/aplicacoes" onClick={() => useProbeSelectionStore.getState().select(item.id)}>Abrir em Aplicações</PlaceLink></DialogHeader>
+    <DialogBody><ProbeHistoryPanel key={item.id} serviceId={item.id} certNotAfter={item.certNotAfter} paused={item.paused} strip={item.strip} /></DialogBody>
   </>;
 }
 export function ProbeDetails({ item, trigger }: { item: ProbeCard; trigger: ReactElement }) {

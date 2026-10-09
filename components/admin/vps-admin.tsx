@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ComponentProps } from "react";
-import Link from "next/link";
+import { PlaceLink } from "@/components/layout/place-link";
 import { Eye, EyeOff, Pause, Pencil, Play, Power, Trash2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -15,7 +15,7 @@ import { ConfirmationDialog } from "@/components/confirmation-dialog";
 import { probeLiveRefreshMs, ProbeStrip } from "@/components/dashboard/probe-strip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useCanEdit } from "@/store/auth.store";
+import { useAuthStore, useCanEdit } from "@/store/auth.store";
 import { Check, Field, ReadError, errorText, useAdminRead, useMutation } from "./shared";
 
 const parseList = (data: unknown) => z.object({ data: z.array(standaloneVpsCardSchema) }).parse(data).data;
@@ -82,12 +82,14 @@ export function VpsForm({ existing, onSaved, onCancel, onReload }: { existing?: 
 }
 export function VpsAdmin() {
   const list = useAdminRead("/monitoring/standalone-vps", parseList), mutation = useMutation(), editor = useCanEdit();
+  const authenticated = useAuthStore(state => state.status === "authenticated");
   const [query, setQuery] = useState(""), [draft, setDraft] = useState<StandaloneVpsCard | "new" | null>(null);
   const pendingId = useVpsSelectionStore(state => state.vpsId), consume = useVpsSelectionStore(state => state.consume);
   const items = list.data ?? [];
   const term = query.trim().toLocaleLowerCase("pt");
   const visible = items.filter(item => !term || [item.name, item.ip, item.domain ?? "", item.provider ?? ""].some(value => value.toLocaleLowerCase("pt").includes(term)));
   useEffect(() => { if (pendingId) consume(); }, [pendingId, consume]);
+  useEffect(() => { if (authenticated) list.refresh(); }, [authenticated, list.refresh]);
   useEffect(() => {
     const tick = () => { if (!document.hidden) list.refresh(); };
     const timer = setInterval(tick, probeLiveRefreshMs);
@@ -124,15 +126,15 @@ export function VpsAdmin() {
       const availability = vpsAvailability(item.enabled);
       const monitor = vpsMonitorLabel(item.monitorState);
       return <li key={item.id}><article className={`dashboard-panel vps-card ${item.enabled ? "" : "is-inactive"}`}>
-        <div className="vps-card-head"><Link href={`/admin/vps/${item.id}`}><strong>{item.name}</strong></Link><span className={`app-presence tone-${availability.tone}`}>{availability.label}</span></div>
+        <div className="vps-card-head"><PlaceLink href={`/admin/vps/${item.id}`}><strong>{item.name}</strong></PlaceLink><span className={`app-presence tone-${availability.tone}`}>{availability.label}</span></div>
         {item.provider && <p className="app-monitor-meta">{item.provider}</p>}
         <p>{item.ip}</p>
         {item.domain && <p className="app-monitor-meta">{item.domain}</p>}
-        {item.managerUrl && <a href={item.managerUrl} target="_blank" rel="noreferrer">Abrir manager</a>}
+        {authenticated && item.managerUrl && <a href={item.managerUrl} target="_blank" rel="noreferrer">Abrir manager</a>}
         {monitor && monitor.label !== availability.label && <p className={`vps-monitor tone-${monitor.tone}`}>{monitor.label}</p>}
         <ProbeStrip reasons={vpsStrip(item.enabled, item.monitorConfigured, item.strip, item.monitorPaused)} colorFor={vpsReasonColor} />
         <div className="vps-card-toolbar">
-          <Link className="vps-details-link" href={`/admin/vps/${item.id}`}>Detalhes</Link>
+          <PlaceLink className="vps-details-link" href={`/admin/vps/${item.id}`}>Detalhes</PlaceLink>
           {editor && <div className="admin-actions app-monitor-actions">
           <Button type="button" size="icon" aria-label={`Editar ${item.name}`} title="Editar" onClick={() => setDraft(item)}><Pencil aria-hidden="true" /></Button>
           {item.enabled

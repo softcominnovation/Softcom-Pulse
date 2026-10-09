@@ -2,6 +2,7 @@ import "server-only";
 import { Prisma } from "../../../generated/prisma/client.ts";
 import { ZodError } from "zod";
 import { externalServiceHistoryRangeSchema, externalServicePatchSchema, externalServiceWriteSchema, probeServiceLimit, serviceIssues, serviceNeedsSecret, type ExternalServiceInput } from "../../config/external-services.ts";
+import { downsampleProbeHistoryPoints, probeHistoryChartMaxPoints } from "../../probe/history.ts";
 import { BffError } from "../bff.ts";
 import { getPrisma } from "../prisma.ts";
 import { assertProbeDestination, parseProbeUrl } from "./network.ts";
@@ -93,17 +94,58 @@ export async function externalServiceHistory(id: string, range: string) {
   return database(async () => {
     await getExternalService(id);
     const since = new Date(Date.now() - windows[window] * 60 * 60 * 1000);
-    const points = await getPrisma().externalServiceSample.findMany({ where: { serviceId: id, checkedAt: { gte: since } }, orderBy: { checkedAt: "asc" }, select: { checkedAt: true, reason: true, latencyMs: true } });
     const uptime = async (hours: number) => {
       const rows = await getPrisma().$queryRaw<{ available: number; total: number }[]>`SELECT COUNT(*) FILTER (WHERE reason IN (0, 1))::int AS available, COUNT(*)::int AS total FROM external_service_sample WHERE service_id = ${id} AND checked_at >= ${new Date(Date.now() - hours * 60 * 60 * 1000)}`;
       return rows[0] && Number(rows[0].total) ? { available: Number(rows[0].available), total: Number(rows[0].total) } : null;
     };
-    const latencies = points.flatMap(point => point.latencyMs === null ? [] : [point.latencyMs]);
+    const [averageRow] = await getPrisma().$queryRaw<{ average: number | null }[]>`
+      SELECT AVG(latency_ms)::float AS average
+      FROM external_service_sample
+      WHERE service_id = ${id}::uuid AND checked_at >= ${since} AND latency_ms IS NOT NULL`;
     const latest = await getPrisma().externalServiceSample.findFirst({ where: { serviceId: id }, orderBy: { checkedAt: "desc" }, select: { latencyMs: true } });
-    return { serviceId: id, range: window, points: points.map(point => ({ checkedAt: point.checkedAt.toISOString(), reason: point.reason, latencyMs: point.latencyMs })), summary: {
-      currentLatencyMs: latest?.latencyMs ?? null, averageLatencyMs: latencies.length ? Math.round(latencies.reduce((sum, value) => sum + value, 0) / latencies.length) : null,
-      uptime24h: await uptime(24), uptime7d: await uptime(24 * 7), uptime30d: await uptime(24 * 30),
-    } };
+    const total = await getPrisma().externalServiceSample.count({ where: { serviceId: id, checkedAt: { gte: since } } });
+    let points: { checkedAt: string; reason: number; latencyMs: number | null }[];
+    if (total <= probeHistoryChartMaxPoints) {
+      const rows = await getPrisma().externalServiceSample.findMany({ where: { serviceId: id, checkedAt: { gte: since } }, orderBy: { checkedAt: "asc" }, select: { checkedAt: true, reason: true, latencyMs: true } });
+      points = rows.map(point => ({ checkedAt: point.checkedAt.toISOString(), reason: point.reason, latencyMs: point.latencyMs }));
+    } else {
+      // Dense windows: one sample per time bucket in Postgres, then a hard cap for the chart payload.
+      const sampled = await getPrisma().$queryRaw<{ checkedAt: Date; reason: number; latencyMs: number | null }[]>`
+        WITH source AS (
+          SELECT checked_at AS "checkedAt", reason, latency_ms AS "latencyMs",
+            width_bucket(
+              extract(epoch FROM checked_at),
+              extract(epoch FROM ${since}::timestamptz),
+              extract(epoch FROM clock_timestamp()),
+              ${probeHistoryChartMaxPoints}::int
+            ) AS bucket
+          FROM external_service_sample
+          WHERE service_id = ${id}::uuid AND checked_at >= ${since}
+        ),
+        picked AS (
+          SELECT DISTINCT ON (bucket) "checkedAt", reason, "latencyMs"
+          FROM source
+          WHERE bucket >= 1 AND bucket <= ${probeHistoryChartMaxPoints}
+          -- Prefer the worst reason in the bucket so short outages are not hidden by a later OK.
+          ORDER BY bucket, reason DESC, ("latencyMs" IS NULL) DESC, "checkedAt" DESC
+        )
+        SELECT "checkedAt", reason, "latencyMs" FROM picked ORDER BY "checkedAt" ASC`;
+      points = downsampleProbeHistoryPoints(
+        sampled.map(point => ({ checkedAt: point.checkedAt.toISOString(), reason: Number(point.reason), latencyMs: point.latencyMs })),
+      );
+    }
+    return {
+      serviceId: id,
+      range: window,
+      points,
+      summary: {
+        currentLatencyMs: latest?.latencyMs ?? null,
+        averageLatencyMs: averageRow?.average == null ? null : Math.round(averageRow.average),
+        uptime24h: await uptime(24),
+        uptime7d: await uptime(24 * 7),
+        uptime30d: await uptime(24 * 30),
+      },
+    };
   });
 }
 export async function visualStrips(ids: string[]) {

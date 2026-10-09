@@ -89,8 +89,16 @@ function nextKey(current: string | null, apiKey: string | null | undefined, base
 export function listStandaloneVps() {
   return database(async () => adminCards(await getPrisma().standaloneVps.findMany({ orderBy: [{ name: "asc" }, { id: "asc" }] }) as VpsRow[]));
 }
+function highlightCard(item: Awaited<ReturnType<typeof cards>>[number]) {
+  return {
+    id: item.id, name: item.name, provider: item.provider, ip: item.ip,
+    enabled: item.enabled, monitorConfigured: item.monitorConfigured, monitorPaused: item.monitorPaused, monitorState: item.monitorState,
+    cpuPercent: item.cpuPercent, memoryPercent: item.memoryPercent, diskPercent: item.diskPercent,
+    checkedAt: item.checkedAt, strip: item.strip,
+  };
+}
 export function listHighlightedStandaloneVps() {
-  return database(async () => cards(await getPrisma().standaloneVps.findMany({ where: { dashboardEnabled: true }, orderBy: [{ name: "asc" }, { id: "asc" }] }) as VpsRow[]));
+  return database(async () => (await cards(await getPrisma().standaloneVps.findMany({ where: { dashboardEnabled: true }, orderBy: [{ name: "asc" }, { id: "asc" }] }) as VpsRow[])).map(highlightCard));
 }
 export function listEnabledMonitoredVps() {
   return database(async () => getPrisma().standaloneVps.findMany({
@@ -131,16 +139,25 @@ export function deleteStandaloneVps(id: string) {
     if (!deleted.count) throw new BffError(404, "standalone_vps_not_found");
   })).then(() => deleteVpsResult(id));
 }
-export async function readStandaloneVps(id: string, range: string) {
-  const window = vpsHistoryRangeSchema.parse(range);
+export async function readStandaloneVps(id: string, options: { range?: string; samples?: boolean } | string = {}) {
+  const parsed = typeof options === "string" ? { range: options, samples: false } : options;
+  const window = vpsHistoryRangeSchema.parse(parsed.range ?? "24h");
+  const includeSamples = parsed.samples === true;
   return database(async () => {
     const row = await getPrisma().standaloneVps.findUnique({ where: { id }, include: { stacks: { orderBy: [{ name: "asc" }, { id: "asc" }] } } });
     if (!row) throw new BffError(404, "standalone_vps_not_found");
-    const since = new Date(Date.now() - windows[window] * 60 * 60 * 1000);
     const [card] = await adminCards([row as VpsRow]);
-    const samples = await getPrisma().vpsMonitorSample.findMany({ where: { vpsId: id, checkedAt: { gte: since } }, orderBy: { checkedAt: "asc" } });
+    const samples = includeSamples
+      ? await getPrisma().vpsMonitorSample.findMany({ where: { vpsId: id, checkedAt: { gte: new Date(Date.now() - windows[window] * 60 * 60 * 1000) } }, orderBy: { checkedAt: "asc" } })
+      : [];
     const result = row.enabled && row.baseUrl ? await readVpsResult(id).catch(() => null) : null;
-    return { ...card, stacks: row.stacks.map(stack => ({ id: stack.id, vpsId: stack.vpsId, name: stack.name, link: stack.link, notes: stack.notes, createdAt: stack.createdAt.toISOString(), updatedAt: stack.updatedAt.toISOString() })), result, samples: samples.map(sample => ({ checkedAt: sample.checkedAt.toISOString(), reason: sample.reason, latencyMs: sample.latencyMs, cpuPercent: percent(sample.cpuPercent), memoryPercent: percent(sample.memoryPercent), diskPercent: percent(sample.diskPercent) })), range: window };
+    return {
+      ...card,
+      stacks: row.stacks.map(stack => ({ id: stack.id, vpsId: stack.vpsId, name: stack.name, link: stack.link, notes: stack.notes, createdAt: stack.createdAt.toISOString(), updatedAt: stack.updatedAt.toISOString() })),
+      result,
+      samples: samples.map(sample => ({ checkedAt: sample.checkedAt.toISOString(), reason: sample.reason, latencyMs: sample.latencyMs, cpuPercent: percent(sample.cpuPercent), memoryPercent: percent(sample.memoryPercent), diskPercent: percent(sample.diskPercent) })),
+      range: window,
+    };
   });
 }
 export async function createVpsStack(vpsId: string, body: unknown) {

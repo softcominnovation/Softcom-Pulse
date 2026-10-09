@@ -2,8 +2,8 @@
 
 import { displayName } from "@/lib/monitoring/display-names";
 
-import Link from "next/link";
 import { useContext, useRef, useState, type ReactNode } from "react";
+import { PlaceLink } from "@/components/layout/place-link";
 import { Activity, Box, HardDrive, Server } from "lucide-react";
 import type { Host, VirtualMachine } from "@/lib/monitoring/contracts";
 import { number } from "@/lib/dashboard/format";
@@ -44,6 +44,6 @@ export function VmDetails({ vm, agent, parentName, range, stale, controls }: { v
     <VmKpis vm={vm} agent={agent} stale={stale} />
     <section className="vm-identity-panel"><div className="vm-identity-heading"><p>{displayName(vm) !== vm.name && <>Nome técnico: {vm.name} · </>}ID {vm.vmId ?? "não informado"}</p>{canEdit && <Button ref={editNameButton} aria-expanded={editingName} onClick={() => setEditingName(value => !value)}>Editar nome</Button>}</div>{canEdit && editingName && <VmNameEditor vm={vm} canCreate={!stale} onClose={() => { setEditingName(false); editNameButton.current?.focus(); }} />}</section>
     <HistoryPanel resource={{ type: "vm", hostKey: vm.parentHostKey, reference: vm.vmKey }} range={range} name={displayName(vm)} origin="VM · perspectiva do hipervisor" controls={controls} summary={<div className="selected-vm-current"><p className="history-origin">VM {vm.vmId ?? "sem ID informado"} · hipervisor {parentName} <Status value={vm.state} stale={evidenceExpired(vm, stale, now)} /></p><MetricList metrics={metrics} stale={stale} /></div>} />
-    {vm.linuxHostKey && <section className="dashboard-panel agent-context"><Link href={hostUrl(vm.linuxHostKey, range)}>Detalhes do Agent</Link><details open={agentOpened} onToggle={event => setAgentOpened(event.currentTarget.open)}><summary>Perspectiva do Agent desta VM</summary>{agentOpened && (agent ? <><MetricList metrics={agent.metrics} stale={stale} /><DevicePanel title="Filesystems dentro da VM" devices={agent.filesystems} stale={stale} /><DevicePanel title="Rede da VM por interface" devices={agent.interfaces} stale={stale} network /><HistoryPanel resource={{ type: "host", hostKey: agent.hostKey, reference: null }} range={range} name={displayName(agent)} host={agent} origin="Linux · Agent · métricas internas" /></> : <p className="panel-empty">Agent associado sem dados disponíveis na coleta atual.</p>)}</details></section>}
+    {vm.linuxHostKey && <section className="dashboard-panel agent-context"><PlaceLink href={hostUrl(vm.linuxHostKey, range)}>Detalhes do Agent</PlaceLink><details open={agentOpened} onToggle={event => setAgentOpened(event.currentTarget.open)}><summary>Perspectiva do Agent desta VM</summary>{agentOpened && (agent ? <><MetricList metrics={agent.metrics} stale={stale} /><DevicePanel title="Filesystems dentro da VM" devices={agent.filesystems} stale={stale} /><DevicePanel title="Rede da VM por interface" devices={agent.interfaces} stale={stale} network /><HistoryPanel resource={{ type: "host", hostKey: agent.hostKey, reference: null }} range={range} name={displayName(agent)} host={agent} origin="Linux · Agent · métricas internas" /></> : <p className="panel-empty">Agent associado sem dados disponíveis na coleta atual.</p>)}</details></section>}
   </>;
 }

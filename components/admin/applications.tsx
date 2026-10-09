@@ -147,7 +147,7 @@ export function ApplicationsAdmin() {
               <ConfirmationDialog trigger={<Button type="button" size="icon" variant="destructive" aria-label="Remover" title="Remover"><Trash2 aria-hidden="true" /></Button>} title="Remover aplicação?" description="O cadastro e o histórico da aplicação serão apagados. Nenhum recurso do Zabbix será alterado." confirmLabel="Remover aplicação" destructive onConfirm={removeSelected} />
             </div>}
           </div>
-          <div className="app-monitor-body"><ProbeHistoryPanel serviceId={selected.id} paused={!selected.enabled} progressStartedAt={selected.progressStartedAt} /></div>
+          <div className="app-monitor-body"><ProbeHistoryPanel key={selected.id} serviceId={selected.id} paused={!selected.enabled} strip={selected.uptime?.strip ?? []} /></div>
         </section>}
         {!draft && !selected && <p className="panel-empty">Nenhuma aplicação cadastrada.</p>}
       </div>

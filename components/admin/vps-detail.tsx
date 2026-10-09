@@ -1,21 +1,22 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Activity, Cpu, HardDrive, MemoryStick, Pause, Pencil, Play, Power, Trash2 } from "lucide-react";
+import { PlaceLink, usePlaceHref } from "@/components/layout/place-link";
+import { usePathname, useRouter } from "next/navigation";
+import { Activity, Cpu, Eye, HardDrive, MemoryStick, Pause, Pencil, Play, Power, Trash2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { api } from "@/lib/client/api";
 import { standaloneVpsDetailSchema, vpsStackWriteSchema, type StandaloneVpsDetail, type VpsStackRecord } from "@/lib/config/standalone-vps";
 import { timestamp } from "@/lib/dashboard/format";
+import { isPublicPath } from "@/lib/public/paths";
 import { vpsAvailability, vpsMonitorLabel, vpsReasonColor, vpsStrip } from "@/lib/vps/labels";
 import { ConfirmationDialog } from "@/components/confirmation-dialog";
 import { probeLiveRefreshMs, ProbeStrip } from "@/components/dashboard/probe-strip";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { useCanEdit } from "@/store/auth.store";
+import { useAuthStore, useCanEdit } from "@/store/auth.store";
 import { VpsForm } from "./vps-admin";
 import { Field, ReadError, errorText, useAdminRead, useMutation } from "./shared";
 
@@ -47,9 +48,13 @@ function StackForm({ vpsId, existing, onSaved, onCancel }: { vpsId: string; exis
   </div></fieldset>{error && <p role="alert" className="admin-error">{error}</p>}<div className="admin-actions"><Button type="submit" variant="primary" disabled={mutation.busy}>{mutation.busy ? "Salvando…" : "Salvar serviço"}</Button><Button type="button" disabled={mutation.busy} onClick={onCancel}>Cancelar</Button></div></form>;
 }
 export function VpsDetail({ id }: { id: string }) {
-  const detail = useAdminRead(`/monitoring/standalone-vps/${id}?range=24h`, parseDetail), mutation = useMutation(), router = useRouter(), editor = useCanEdit();
-  const [editing, setEditing] = useState(false), [stack, setStack] = useState<VpsStackRecord | "new" | null>(null);
+  const detail = useAdminRead(`/monitoring/standalone-vps/${id}`, parseDetail), mutation = useMutation(), router = useRouter(), editor = useCanEdit(), place = usePlaceHref();
+  const publicRead = isPublicPath(usePathname());
+  const authenticated = useAuthStore(state => state.status === "authenticated");
+  const [editing, setEditing] = useState(false), [stack, setStack] = useState<VpsStackRecord | "new" | null>(null), [viewing, setViewing] = useState<VpsStackRecord | null>(null);
   const item = detail.data;
+  useEffect(() => { setEditing(false); setStack(null); setViewing(null); }, [id]);
+  useEffect(() => { if (authenticated) detail.refresh(); }, [authenticated, detail.refresh]);
   useEffect(() => {
     const tick = () => { if (!document.hidden) detail.refresh(); };
     const timer = setInterval(tick, probeLiveRefreshMs);
@@ -75,7 +80,7 @@ export function VpsDetail({ id }: { id: string }) {
     const removed = await mutation.run(signal => api.delete(`/monitoring/standalone-vps/${item.id}`, { signal }));
     if (!removed) return;
     toast.success("VPS removida.");
-    router.push("/admin/vps");
+    router.push(place("/admin/vps") ?? "/admin/vps");
   }
   async function removeStack(current: VpsStackRecord) {
     if (!item) return;
@@ -85,15 +90,15 @@ export function VpsDetail({ id }: { id: string }) {
     detail.refresh();
   }
   return <div className="admin-page">
-    <p><Link href="/admin/vps">Voltar para VPS</Link></p>
+    <p><PlaceLink href="/admin/vps">Voltar para VPS</PlaceLink></p>
     {detail.failed && <ReadError refresh={detail.refresh}>Não foi possível ler esta VPS.</ReadError>}
     {detail.loading && !item && <p className="panel-empty">Carregando VPS…</p>}
-    {item && <VpsBody item={item} editor={editor} editing={editing} setEditing={setEditing} onReload={detail.refresh} setEnabled={setEnabled} setPaused={setPaused} remove={remove} stack={stack} setStack={setStack} removeStack={removeStack} />}
+    {item && <VpsBody item={item} editor={editor} authenticated={authenticated} publicRead={publicRead} editing={editing} setEditing={setEditing} onReload={detail.refresh} setEnabled={setEnabled} setPaused={setPaused} remove={remove} stack={stack} setStack={setStack} viewing={viewing} setViewing={setViewing} removeStack={removeStack} />}
   </div>;
 }
-function VpsBody({ item, editor, editing, setEditing, onReload, setEnabled, setPaused, remove, stack, setStack, removeStack }: {
-  item: StandaloneVpsDetail; editor: boolean; editing: boolean; setEditing: (value: boolean) => void; onReload: () => void;
-  setEnabled: (enabled: boolean) => Promise<void>; setPaused: (paused: boolean) => Promise<void>; remove: () => Promise<void>; stack: VpsStackRecord | "new" | null; setStack: (value: VpsStackRecord | "new" | null) => void; removeStack: (stack: VpsStackRecord) => Promise<void>;
+function VpsBody({ item, editor, authenticated, publicRead, editing, setEditing, onReload, setEnabled, setPaused, remove, stack, setStack, viewing, setViewing, removeStack }: {
+  item: StandaloneVpsDetail; editor: boolean; authenticated: boolean; publicRead: boolean; editing: boolean; setEditing: (value: boolean) => void; onReload: () => void;
+  setEnabled: (enabled: boolean) => Promise<void>; setPaused: (paused: boolean) => Promise<void>; remove: () => Promise<void>; stack: VpsStackRecord | "new" | null; setStack: (value: VpsStackRecord | "new" | null) => void; viewing: VpsStackRecord | null; setViewing: (value: VpsStackRecord | null) => void; removeStack: (stack: VpsStackRecord) => Promise<void>;
 }) {
   const availability = vpsAvailability(item.enabled);
   const monitor = vpsMonitorLabel(item.monitorState);
@@ -109,7 +114,7 @@ function VpsBody({ item, editor, editing, setEditing, onReload, setEnabled, setP
         {item.provider && <p className="app-monitor-meta">{item.provider}</p>}
         <p>{item.ip}{item.domain ? ` · ${item.domain}` : ""}</p>
         {monitor && <p className={`vps-monitor tone-${monitor.tone}`}>{monitor.label}</p>}
-        {item.managerUrl && <a href={item.managerUrl} target="_blank" rel="noreferrer">Abrir manager</a>}
+        {authenticated && item.managerUrl && <a href={item.managerUrl} target="_blank" rel="noreferrer">Abrir manager</a>}
       </div>{editor && <div className="admin-actions app-monitor-actions">
         <Button type="button" size="icon" aria-label="Editar" title="Editar" onClick={() => setEditing(true)}><Pencil aria-hidden="true" /></Button>
         {item.monitorConfigured && (item.monitorPaused
@@ -145,10 +150,17 @@ function VpsBody({ item, editor, editing, setEditing, onReload, setEnabled, setP
         {showMeters && reading?.checkedAt && item.monitorState !== "down" && <time dateTime={reading.checkedAt}>{timestamp(reading.checkedAt)}</time>}
       </div>
     </section>
-    <section className="dashboard-panel vps-stacks" aria-label="Serviços"><div className="panel-heading"><h2>Serviços</h2>{editor && <Button type="button" variant="primary" onClick={() => setStack("new")}>Novo serviço</Button>}</div>
-      <ul>{item.stacks.map(current => <li key={current.id}><div><strong>{current.name}</strong>{current.link && <a href={current.link} target="_blank" rel="noreferrer">{current.link}</a>}{current.notes && <p>{current.notes}</p>}</div>{editor && <div className="admin-actions app-monitor-actions"><Button type="button" size="icon" aria-label={`Editar serviço ${current.name}`} title="Editar" onClick={() => setStack(current)}><Pencil aria-hidden="true" /></Button><ConfirmationDialog trigger={<Button type="button" size="icon" variant="destructive" aria-label={`Remover serviço ${current.name}`} title="Remover"><Trash2 aria-hidden="true" /></Button>} title="Remover serviço?" description="O serviço sai deste cadastro. A VPS e o monitor não são alterados." confirmLabel="Remover serviço" destructive onConfirm={() => removeStack(current)} /></div>}</li>)}{!item.stacks.length && <li className="app-monitor-empty">Nenhum serviço cadastrado.</li>}</ul>
-    </section>
+    {!publicRead && <section className="dashboard-panel vps-stacks" aria-label="Serviços"><div className="panel-heading"><h2>Serviços</h2>{editor && <Button type="button" variant="primary" onClick={() => setStack("new")}>Novo serviço</Button>}</div>
+      <ul>{item.stacks.map(current => <li key={current.id}><div><strong>{current.name}</strong>{current.link && <a href={current.link} target="_blank" rel="noreferrer">{current.link}</a>}</div>
+        <div className="admin-actions app-monitor-actions">
+          {current.notes && <Button type="button" size="icon" aria-label={`Ver anotações de ${current.name}`} title="Ver anotações" onClick={() => setViewing(current)}><Eye aria-hidden="true" /></Button>}
+          {editor && <><Button type="button" size="icon" aria-label={`Editar serviço ${current.name}`} title="Editar" onClick={() => setStack(current)}><Pencil aria-hidden="true" /></Button>
+            <ConfirmationDialog trigger={<Button type="button" size="icon" variant="destructive" aria-label={`Remover serviço ${current.name}`} title="Remover"><Trash2 aria-hidden="true" /></Button>} title="Remover serviço?" description="O serviço sai deste cadastro. A VPS e o monitor não são alterados." confirmLabel="Remover serviço" destructive onConfirm={() => removeStack(current)} /></>}
+        </div>
+      </li>)}{!item.stacks.length && <li className="app-monitor-empty">Nenhum serviço cadastrado.</li>}</ul>
+    </section>}
     <Dialog open={editing} onOpenChange={setEditing}><DialogContent className="vps-dialog"><DialogHeader><DialogTitle>Editar VPS</DialogTitle><DialogDescription>O cadastro fica no Pulse.</DialogDescription></DialogHeader><DialogBody><VpsForm key={`${item.id}:${item.revision}`} existing={item} onSaved={() => { setEditing(false); onReload(); }} onCancel={() => setEditing(false)} onReload={onReload} /></DialogBody></DialogContent></Dialog>
     <Dialog open={stack !== null} onOpenChange={open => { if (!open) setStack(null); }}><DialogContent><DialogHeader><DialogTitle>{stack && stack !== "new" ? "Editar serviço" : "Novo serviço"}</DialogTitle><DialogDescription>Nome, link e anotações ficam neste cadastro.</DialogDescription></DialogHeader><DialogBody>{stack && <StackForm vpsId={item.id} existing={stack === "new" ? undefined : stack} onSaved={() => { setStack(null); onReload(); }} onCancel={() => setStack(null)} />}</DialogBody></DialogContent></Dialog>
+    <Dialog open={viewing !== null} onOpenChange={open => { if (!open) setViewing(null); }}><DialogContent><DialogHeader><DialogTitle>{viewing?.name ?? "Serviço"}</DialogTitle><DialogDescription>Anotações deste serviço.</DialogDescription></DialogHeader><DialogBody>{viewing?.link && <a className="vps-stack-link" href={viewing.link} target="_blank" rel="noreferrer">{viewing.link}</a>}{viewing?.notes ? <p className="vps-stack-notes">{viewing.notes}</p> : <p className="panel-empty">Sem anotações.</p>}</DialogBody></DialogContent></Dialog>
   </>;
 }

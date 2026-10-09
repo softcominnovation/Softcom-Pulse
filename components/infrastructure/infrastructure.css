@@ -53,8 +53,13 @@
 .device-time { grid-column: 1 / -1; color: var(--pulse-faint); font: 10px var(--font-numeric); }
 .device-list .detail-metrics { grid-column: 1 / -1; padding: 0; }
 .resource-select-label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; color: var(--pulse-muted); min-width: 0; max-width: 100%; }
-.infrastructure-details select { border: 1px solid var(--pulse-line); border-radius: 7px; background: var(--pulse-surface); color: var(--pulse-text); padding: 8px 28px 8px 10px; font-size: 12px; min-width: 0; max-width: 100%; }
-.resource-select-label select { width: 270px; }
+.infrastructure-details select, .infrastructure-details input[type=search] { border: 1px solid var(--pulse-line); border-radius: 7px; background: var(--pulse-surface); color: var(--pulse-text); padding: 8px 28px 8px 10px; font-size: 12px; min-width: 0; max-width: 100%; }
+.infrastructure-details input[type=search] { padding-right: 10px; }
+.resource-select-label select, .resource-select-label input[type=search] { width: 270px; }
+.vm-list-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; padding: 14px 18px; border: 1px solid var(--pulse-line); border-radius: 14px; background: var(--pulse-surface); }
+.vm-list-toolbar .resource-select-label { flex: 1 1 180px; }
+.vm-list-toolbar .resource-select-label select, .vm-list-toolbar .resource-select-label input[type=search] { width: 100%; }
+.vm-list-toolbar-count { margin: 0 0 2px auto; color: var(--pulse-muted); font: 11px var(--font-numeric); }
 .history-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 0 18px 12px; }
 .history-ranges { display: flex; flex-wrap: wrap; gap: 4px; }
 .history-ranges button { background: transparent; font-size: 11px; padding: 6px 9px; }
@@ -122,7 +127,7 @@
 }
 @media(pointer:coarse) {
   .vm-name-link, .agent-context summary { min-height: 44px; display: inline-flex; align-items: center; }
-  .infrastructure-details button, .infrastructure-details select { min-height: 44px; }
+  .infrastructure-details button, .infrastructure-details select, .infrastructure-details input[type=search] { min-height: 44px; }
   .history-point-reader input[type=range] { height: 44px; }
   .vm-details-table small a { display: inline-flex; min-height: 44px; align-items: center; }
 }

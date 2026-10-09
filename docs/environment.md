@@ -44,6 +44,7 @@ Web e collector recebem o mesmo contrato de ambiente. Autenticação utiliza a U
 | `REDIS_URL` | Web/health e leitura/publicação de envelopes pelo Collector | Não | Mesmo nome nos dois serviços; default `redis://pulse_redis:6379` ou `redis://pulse_redis_dev:6379` |
 | `API_BASE_URL` | BFF de login, refresh e logout | Não | Web e collector leem `${API_BASE_URL:-https://api.softcom.cloud}`. Exemplo, `.env` local e os dois arquivos do Portainer trazem `https://api.softcom.cloud`. Sem chave de serviço |
 | `PULSE_EDITOR_EMAILS` | Web, na decisão de gravar | Não | Lista de e-mails separada por vírgula. Vazia recusa toda gravação. Só o serviço web. Collector, sonda e monitor de VPS não recebem |
+| `PULSE_PUBLIC_HOSTS` | Web, na leitura pública | Não | Hostnames separados por vírgula, sem esquema nem porta. Vazia recusa `/api/public`. Compara o header `Host`. Só o serviço web. Local: `localhost,127.0.0.1`. Dev publicado: `dev-pulse.softcomtecnologia.com`. Produção: `pulse.softcomtecnologia.com` |
 | `TOKEN_ENCRYPTION_KEY` | AES-256-GCM dos envelopes de sessão | Não | Obrigatória: 32 bytes aleatórios em base64, segredo próprio por ambiente e igual entre réplicas do mesmo ambiente |
 | `ZABBIX_API_URL` | Collector e BFF de histórico | Não | Mesmo nome nos dois ambientes; endpoint JSON-RPC do Server |
 | `ZABBIX_API_TOKEN` | Collector e BFF de histórico | Não | Mesmo nome nos dois ambientes; somente consultas de leitura |

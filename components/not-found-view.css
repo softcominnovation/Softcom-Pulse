@@ -1,0 +1,21 @@
+.not-found-view {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 28px;
+  min-height: min(70dvh, 640px);
+  padding: 24px 16px 40px;
+  text-align: center;
+}
+.not-found-art {
+  width: min(100%, 560px);
+  height: auto;
+  object-fit: contain;
+}
+.not-found-fallback {
+  max-width: 28rem;
+  margin: 0;
+  color: var(--pulse-muted);
+  font-size: 15px;
+  line-height: 1.6;
+}

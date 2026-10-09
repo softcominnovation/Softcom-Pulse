@@ -825,9 +825,12 @@ test("standalone VPS registration keeps the monitor key local and does not chang
   const calls = [];
   await runVpsMonitorCycle({ transport: async url => { calls.push(url); throw new Error("unreachable"); } });
   assert.deepEqual(calls, ["http://10.8.0.4:9100/monitor/ping/latency"]);
-  const failed = await result(await handlers.standaloneVpsDetailGet(request("/?range=24h"), params({ id })));
-  assert.equal(failed.body.data.samples[0].reason, 5);
+  const failed = await result(await handlers.standaloneVpsDetailGet(request("/"), params({ id })));
+  assert.deepEqual(failed.body.data.samples, []);
+  assert.equal(failed.body.data.reason, 5);
   assert.equal(failed.body.data.monitorState, "down");
+  const withSamples = await result(await handlers.standaloneVpsDetailGet(request("/?samples=1"), params({ id })));
+  assert.equal(withSamples.body.data.samples[0].reason, 5);
   assert.equal(failed.body.data.apiKey, secret);
   assert.equal(await cache.get(keys.sync), syncBefore);
   const paused = await result(await handlers.standaloneVpsPost(request("/", "POST", vpsInput({ name: "Pausada", ip: "10.8.0.5", enabled: false, baseUrl: "http://10.8.0.5/monitor", apiKey: secret }))));
@@ -844,7 +847,7 @@ test("standalone VPS registration keeps the monitor key local and does not chang
   assert.equal(stored.includes(secret), false);
   assert.equal(stored.includes("10.8.0.4"), false);
   assert.equal(JSON.parse(stored).source, "vps");
-  const ready = await result(await handlers.standaloneVpsDetailGet(request("/?range=24h"), params({ id })));
+  const ready = await result(await handlers.standaloneVpsDetailGet(request("/"), params({ id })));
   assert.equal(ready.body.data.monitorState, "up");
   assert.equal(ready.body.data.cpuPercent, 12.5);
   assert.equal(ready.body.data.diskPercent, 72);

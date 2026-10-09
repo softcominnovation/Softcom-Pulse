@@ -3,6 +3,7 @@
 import { cloneElement, useId, useCallback, useEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { isAxiosError } from "axios";
 import { api } from "@/lib/client/api";
+import { requestCanceled } from "@/lib/client/request-canceled";
 import { Button } from "@/components/ui/button";
 
 export function errorText(error: unknown) {
@@ -34,17 +35,26 @@ export function errorText(error: unknown) {
   return messages[code] ?? "Não foi possível concluir. Seu rascunho foi mantido; tente novamente.";
 }
 export function useAdminRead<T>(path: string, parse: (data: unknown) => T) {
-  const [state, setState] = useState<{ data: T | null; failed: boolean; loading: boolean }>({ data: null, failed: false, loading: true });
+  const [state, setState] = useState<{ path: string; data: T | null; failed: boolean; loading: boolean }>({ path, data: null, failed: false, loading: true });
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
+    setState(previous => previous.path === path
+      ? { ...previous, loading: true, failed: false }
+      : { path, data: null, failed: false, loading: true });
     void api.get(path, { signal: controller.signal }).then(response => {
       const data = parse(response.data);
-      if (!controller.signal.aborted) setState({ data, failed: false, loading: false });
-    }).catch(() => { if (!controller.signal.aborted) setState(previous => ({ ...previous, failed: true, loading: false })); });
+      if (!controller.signal.aborted) setState({ path, data, failed: false, loading: false });
+    }).catch(error => {
+      if (controller.signal.aborted || requestCanceled(error)) return;
+      setState(previous => previous.path === path
+        ? { ...previous, failed: true, loading: false }
+        : previous);
+    });
     return () => controller.abort();
   }, [path, parse, revision]);
-  return { ...state, refresh: useCallback(() => { setState(previous => ({ ...previous, loading: true })); setRevision(value => value + 1); }, []) };
+  const current = state.path === path ? state : { data: null, failed: false, loading: true };
+  return { data: current.data, failed: current.failed, loading: current.loading, refresh: useCallback(() => { setState(previous => ({ ...previous, loading: true })); setRevision(value => value + 1); }, []) };
 }
 export function useMutation() {
   const pending = useRef<AbortController | null>(null), [busy, setBusy] = useState(false);

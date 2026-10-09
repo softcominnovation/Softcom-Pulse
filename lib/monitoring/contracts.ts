@@ -97,7 +97,7 @@ export type Overview = {
   summary: Summary; highlightedResources: ConfiguredResource[]; problems: Problem[]; asgardSummary: AsgardSummary;
   screenId: string; presentationRevision: number; blocks: OverviewBlock[];
   externalServices?: ProbeCard[]; uptimeBoard?: ProbeCard[];
-  standaloneVps?: import("../config/standalone-vps.ts").StandaloneVpsCard[];
+  standaloneVps?: import("../config/standalone-vps.ts").StandaloneVpsHighlight[];
 };
 export function emptySummary(): Summary {
   return { hostsKnown: null, hostsReachable: null, vms: null, containersRunning: null, containersStopped: null, problems: null, criticalAffected: null };

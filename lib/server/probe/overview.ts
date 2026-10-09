@@ -24,10 +24,12 @@ export async function readProbeOverview(includeBoard: boolean) {
   const strips = await visualStrips(services.filter(service => service.enabled).map(service => service.id)).catch(() => new Map<string, number[]>());
   const card = (service: typeof services[number]): ProbeCard => {
     const result = results.get(service.id);
+    // Overview/modal strip use at most 40 bars; history points load only when the modal opens.
     return {
       id: service.id, displayName: service.displayName, description: service.description, serviceType: service.serviceType, displayOrder: service.displayOrder,
-      critical: service.critical, dashboardEnabled: service.dashboardEnabled, paused: !service.enabled, progressStartedAt: service.progressStartedAt, reason: result?.reason ?? null, latencyMs: result?.latencyMs ?? null,
-      checkedAt: result?.checkedAt ?? null, httpStatus: result?.httpStatus ?? null, certNotAfter: result?.certNotAfter ?? null, uptime24h: result?.uptime24h ?? null, strip: shownStrip(service.enabled, strips.get(service.id)),
+      critical: service.critical, dashboardEnabled: service.dashboardEnabled, paused: !service.enabled, progressStartedAt: service.progressStartedAt,
+      reason: result?.reason ?? null, latencyMs: result?.latencyMs ?? null, checkedAt: null, httpStatus: null,
+      certNotAfter: result?.certNotAfter ?? null, uptime24h: result?.uptime24h ?? null, strip: shownStrip(service.enabled, strips.get(service.id)),
     };
   };
   return { externalServices: services.filter(service => service.dashboardEnabled).map(card), uptimeBoard: includeBoard ? services.filter(service => service.enabled).map(card) : [] };

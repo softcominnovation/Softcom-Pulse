@@ -134,6 +134,14 @@ export const standaloneVpsCardSchema = z.object({
   checkedAt: z.string().nullable(), strip: z.array(z.number().int()), createdAt: z.string(), updatedAt: z.string(),
 });
 export type StandaloneVpsCard = z.infer<typeof standaloneVpsCardSchema>;
+/** Lean payload for dashboard availability cards and their modal. No secrets, recipe or history. */
+export const standaloneVpsHighlightSchema = z.object({
+  id: z.uuid(), name: z.string(), provider: z.string().nullable(), ip: z.string(),
+  enabled: z.boolean(), monitorConfigured: z.boolean(), monitorPaused: z.boolean().default(false), monitorState: monitorStateSchema,
+  cpuPercent: z.number().nullable(), memoryPercent: z.number().nullable(), diskPercent: z.number().nullable(),
+  checkedAt: z.string().nullable(), strip: z.array(z.number().int()),
+});
+export type StandaloneVpsHighlight = z.infer<typeof standaloneVpsHighlightSchema>;
 const diskSchema = z.object({ device: z.string().nullable(), type: z.string().nullable(), mount: z.string().nullable(), size: z.string().nullable(), used: z.string().nullable(), available: z.string().nullable(), use: z.number().nullable() });
 export const standaloneVpsDetailSchema = standaloneVpsCardSchema.extend({
   stacks: z.array(z.object({ id: z.uuid(), vpsId: z.uuid(), name: z.string(), link: z.string().nullable(), notes: z.string().nullable(), createdAt: z.string(), updatedAt: z.string() })),
@@ -147,6 +155,11 @@ export const standaloneVpsDetailSchema = standaloneVpsCardSchema.extend({
   range: z.enum(["24h", "7d", "30d"]),
 });
 export type StandaloneVpsDetail = z.infer<typeof standaloneVpsDetailSchema>;
+export const vpsDetailQuerySchema = z.strictObject({
+  range: vpsHistoryRangeSchema.default("24h"),
+  /** Opt-in history points. Default off — the detail screen uses strip + current result only. */
+  samples: z.enum(["0", "1"]).default("0"),
+});
 export type VpsStackRecord = StandaloneVpsDetail["stacks"][number];
 export type VpsStackInput = z.infer<typeof vpsStackWriteSchema>;
 

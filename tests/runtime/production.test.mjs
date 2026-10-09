@@ -196,7 +196,7 @@ test("standalone serves packaged login assets and authenticates through the BFF"
   const browser = await chromium.launch();
   try {
     await withServer({ API_BASE_URL: upstream.url }, async base => {
-      for (const asset of ["/logo.png", "/logo.svg", "/logo.ico", "/images/login-image.png", "/images/softcom-logo.png"]) assert.equal((await fetch(base + asset)).status, 200);
+      for (const asset of ["/logo.png", "/logo.svg", "/logo.ico", "/images/login-image.png", "/images/softcom-logo.png", "/images/404.png"]) assert.equal((await fetch(base + asset)).status, 200);
       const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
       await page.goto(base + "/login");
       await page.getByLabel("E-mail", { exact: true }).fill("standalone@example.test");

@@ -1,9 +1,11 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useStore } from "zustand";
-import { AuthController } from "@/lib/client/auth-session";
+import { AuthController, type AuthState } from "@/lib/client/auth-session";
 import { authHttp } from "@/lib/client/auth-http";
 import { STORAGE_KEY, REFRESH_LOCK, STORAGE_LOCK } from "@/lib/auth/contracts";
+import { isPublicPath } from "@/lib/public/paths";
 import { useUiStore } from "@/store/ui.store";
 
 let controller: AuthController | undefined;
@@ -26,9 +28,13 @@ export function getAuthController() {
   });
   return controller;
 }
-export function useAuthStore() {
-  return useStore(getAuthController().store);
+export function useAuthStore(): AuthState;
+export function useAuthStore<T>(selector: (state: AuthState) => T): T;
+export function useAuthStore<T>(selector?: (state: AuthState) => T) {
+  return useStore(getAuthController().store, selector ?? (state => state as T));
 }
 export function useCanEdit() {
-  return useStore(getAuthController().store, state => state.editor);
+  const editor = useStore(getAuthController().store, state => state.editor);
+  const path = usePathname();
+  return editor && !isPublicPath(path);
 }

@@ -27,10 +27,14 @@ for (const dev of [false, true]) {
     for (const suffix of ["-collector", "-probe", "-vps-monitor"]) assert.equal(c.services[web + suffix].image, image);
     assert.equal(app.environment.API_BASE_URL, "${API_BASE_URL:-https://api.softcom.cloud}");
     assert.equal(app.environment.PULSE_EDITOR_EMAILS, "${PULSE_EDITOR_EMAILS:-}");
+    assert.equal(app.environment.PULSE_PUBLIC_HOSTS, "${PULSE_PUBLIC_HOSTS:-}");
     assert.equal(c.services[web + "-collector"].environment.API_BASE_URL, "${API_BASE_URL:-https://api.softcom.cloud}");
     assert.equal(c.services[web + "-collector"].environment.PULSE_EDITOR_EMAILS, undefined);
+    assert.equal(c.services[web + "-collector"].environment.PULSE_PUBLIC_HOSTS, undefined);
     assert.equal(c.services[web + "-probe"].environment.PULSE_EDITOR_EMAILS, undefined);
+    assert.equal(c.services[web + "-probe"].environment.PULSE_PUBLIC_HOSTS, undefined);
     assert.equal(c.services[web + "-vps-monitor"].environment.PULSE_EDITOR_EMAILS, undefined);
+    assert.equal(c.services[web + "-vps-monitor"].environment.PULSE_PUBLIC_HOSTS, undefined);
     assert.ok(app.environment.REDIS_URL.includes(cache));
     assert.equal(c.services[web + "-collector"].deploy.update_config.order, "stop-first");
     assert.deepEqual(c.services[web + "-collector"].command, ["node", "--conditions=react-server", "collector/index.mjs"]);

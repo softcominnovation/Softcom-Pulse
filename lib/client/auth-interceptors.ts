@@ -1,18 +1,31 @@
 import { AxiosError, CanceledError, type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
+import { isPublicPath } from "../public/paths.ts";
 import type { AuthController } from "./auth-session.ts";
 
 type SessionRequest = InternalAxiosRequestConfig & { sessionEpoch?: string; retried?: boolean };
 
+async function attachSession(config: SessionRequest, controller: AuthController) {
+  if (config.sessionEpoch && config.sessionEpoch !== controller.generation) throw new CanceledError();
+  config.sessionEpoch = controller.generation;
+  config.headers.set("Authorization", "Bearer " + await controller.getAccessToken());
+  // Re-read after await: login/validate/clear may have rotated the auth AbortSignal meanwhile.
+  if (config.sessionEpoch !== controller.generation) throw new CanceledError();
+  const signal = controller.signal;
+  config.signal = AbortSignal.any([signal, ...(config.signal ? [config.signal as AbortSignal] : [])]);
+  if (signal.aborted) throw new CanceledError();
+}
+
 export function installAuthInterceptors(api: AxiosInstance, auth: () => AuthController) {
   api.interceptors.request.use(async (config: SessionRequest) => {
+    if (typeof window !== "undefined" && isPublicPath(window.location.pathname)) {
+      config.baseURL = "/api/public";
+      const controller = auth();
+      // Logged-in readers on /monitor still use the public BFF, but send the token so manager URLs can be revealed.
+      if (controller.store.getState().status === "authenticated") await attachSession(config, controller);
+      return config;
+    }
     if (config.url === "/health" || config.url?.startsWith("/auth/")) return config;
-    const controller = auth();
-    if (config.sessionEpoch && config.sessionEpoch !== controller.generation) throw new CanceledError();
-    config.sessionEpoch = controller.generation;
-    const signal = controller.signal;
-    config.headers.set("Authorization", "Bearer " + await controller.getAccessToken());
-    config.signal = AbortSignal.any([signal, ...(config.signal ? [config.signal as AbortSignal] : [])]);
-    if (signal.aborted || config.sessionEpoch !== controller.generation) throw new CanceledError();
+    await attachSession(config, auth());
     return config;
   });
   api.interceptors.response.use(response => {

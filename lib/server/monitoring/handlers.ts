@@ -14,7 +14,7 @@ import { listVmConfigs, saveVmConfig } from "../config/vms.ts";
 import { externalServiceHistoryRangeSchema } from "../../config/external-services.ts";
 import { listExternalServicesWithUptime } from "../probe/overview.ts";
 import { createExternalService, deleteExternalService, externalServiceHistory, updateExternalService } from "../probe/repository.ts";
-import { vpsHistoryRangeSchema } from "../../config/standalone-vps.ts";
+import { vpsDetailQuerySchema } from "../../config/standalone-vps.ts";
 import { createStandaloneVps, createVpsStack, deleteStandaloneVps, deleteVpsStack, listStandaloneVps, readStandaloneVps, updateStandaloneVps, updateVpsStack } from "../vps/repository.ts";
 
 type Params<K extends string> = { params: Promise<Record<K, string>> };
@@ -125,7 +125,8 @@ export function standaloneVpsDelete(request: Request, context: Params<"id">) {
 }
 export function standaloneVpsDetailGet(request: Request, context: Params<"id">) {
   return protectedResponse(request, async editor => {
-    const data = await readStandaloneVps(uuidSchema.parse((await context.params).id), queryParams(request, z.strictObject({ range: vpsHistoryRangeSchema.default("24h") })).range);
+    const query = queryParams(request, vpsDetailQuerySchema);
+    const data = await readStandaloneVps(uuidSchema.parse((await context.params).id), { range: query.range, samples: query.samples === "1" });
     if (editor) return { data };
     const { apiKey: _apiKey, ...item } = data;
     return { data: item };

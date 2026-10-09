@@ -6,5 +6,5 @@ import "@/components/admin/admin.css";
 
 export default async function VpsDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <AppShell><VpsDetail id={id} /></AppShell>;
+  return <AppShell><VpsDetail key={id} id={id} /></AppShell>;
 }

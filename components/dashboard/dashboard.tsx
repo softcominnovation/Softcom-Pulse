@@ -12,6 +12,7 @@ import { api } from "@/lib/client/api";
 import { useUiStore } from "@/store/ui.store";
 import { Button } from "@/components/ui/button";
 import { DashboardBlock } from "./blocks";
+import { DashboardSkeleton } from "./dashboard-skeleton";
 import { PlayerToolbar } from "./player-toolbar";
 import { shortcutAllowed } from "./display-controls";
 import { usePoll } from "./use-poll";
@@ -89,7 +90,7 @@ export function Dashboard() {
   return <div className={`dashboard ${layout} ${layout === "overview" ? "balanced" : ""}`}>
     <PlayerToolbar store={store} />
     {configuration.failed && <div className="dashboard-banner banner-warn" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Não foi possível carregar a configuração</strong><p>{player.document ? "A última configuração válida foi mantida." : "Tente novamente para carregar as telas salvas."}</p></div><Button onClick={configuration.refresh}>Tentar novamente</Button></div>}
-    {!player.document && !configuration.failed && <p className="panel-empty" role="status">Carregando as telas configuradas…</p>}
+    {!player.document && !configuration.failed && <DashboardSkeleton label="Carregando as telas configuradas…" />}
     {player.document && !screen && <div className="dashboard-banner banner-warn" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Nenhuma composição utilizável</strong><p>A configuração precisa de uma tela habilitada com blocos disponíveis.</p></div><Button onClick={configuration.refresh}>Recarregar configuração</Button></div>}
     {screen && <>
       {/* <div className={`dashboard-banner dashboard-status-banner banner-${tone}`} role={overview.failed || result?.stale ? "alert" : "status"}>
@@ -99,7 +100,7 @@ export function Dashboard() {
         <Button size="icon" aria-label="Atualizar monitoramento" title={`Última atualização: ${timestamp(result?.lastUpdated)}`} onClick={overview.refresh}><RefreshCw aria-hidden="true" /></Button>
       </div> */}
       <EvidenceTimeContext value={now}><div data-dashboard-content className="dashboard-blocks" aria-busy={overview.loading}>
-        {!result && !overview.failed && <div className="dashboard-loading" role="status">Carregando os indicadores da tela…</div>}
+        {!result && !overview.failed && <DashboardSkeleton label="Carregando os indicadores da tela…" />}
         {result && screen.blocks.filter(block => block.enabled).map(block => {
           const payload = result.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
           return <div className={`dashboard-block width-${block.width} block-${block.type}`} key={block.id}>

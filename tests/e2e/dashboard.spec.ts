@@ -182,6 +182,7 @@ test("three compact panels share a desktop row and a single highlight stays card
 test("wall format places ASGARD, problems and Signal side by side without a trailing gap", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   const state = await mock(page);
+  state.document.schemaVersion = 2;
   state.document.screens[0].blocks = [
     { id: id(901), type: "summary", width: "full", enabled: true, options: effectiveOptions({ type: "summary" }) },
     { id: id(902), type: "highlighted_resources", width: "full", enabled: true, options: effectiveOptions({ type: "highlighted_resources" }) },
@@ -190,10 +191,15 @@ test("wall format places ASGARD, problems and Signal side by side without a trai
     { id: id(905), type: "signal_flow", width: "wide", enabled: true, options: effectiveOptions({ type: "signal_flow" }) },
   ];
   await enter(page);
+  await expect(page.locator(".block-asgard_summary")).toBeVisible();
   await page.getByRole("button", { name: "2 · Tela completa" }).click();
   await expect(page.locator(".dashboard")).toHaveClass(/wall/);
+  await expect(page.locator(".block-asgard_summary")).toBeVisible();
+  await expect(page.locator(".block-problems")).toBeVisible();
+  await expect(page.locator(".block-signal_flow")).toBeVisible();
   const boxes = await Promise.all(["asgard_summary", "problems", "signal_flow"].map(type => page.locator(`.block-${type}`).boundingBox()));
   for (const box of boxes) {
+    expect(box).toBeTruthy();
     expect(box!.width).toBeGreaterThan(500);
     expect(box!.width).toBeLessThan(700);
     expect(Math.abs(box!.y - boxes[0]!.y)).toBeLessThan(2);

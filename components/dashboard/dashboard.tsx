@@ -16,12 +16,14 @@ import { DashboardBlock } from "./blocks";
 import { DashboardSkeleton } from "./dashboard-skeleton";
 import { PlayerToolbar } from "./player-toolbar";
 import { shortcutAllowed } from "./display-controls";
+import { createPollCache } from "@/lib/dashboard/poll-view";
 import { usePoll } from "./use-poll";
 import { useIdlePresentation } from "./use-idle-presentation";
 import { EvidenceTimeContext } from "./metrics";
 
 const configurationDelay = () => 60000;
 const overviewDelay = (result: ReadResult<Overview>) => result.refreshAfterMs;
+const overviewCache = createPollCache<ReadResult<Overview>>();
 function hasOldEvidence(value: unknown, now: number): boolean {
   if (!value || typeof value !== "object") return false;
   if ("quality" in value && value.quality === "stale") return true;
@@ -57,7 +59,7 @@ export function Dashboard() {
     if (result.data.presentationRevision !== revision) { refreshConfiguration(); throw new Error("Presentation changed"); }
     return result;
   }, [player.screenId, revision, refreshConfiguration]);
-  const overview = usePoll(screen ? `${screen.id}:${revision}` : null, loadOverview, overviewDelay, "Não foi possível atualizar os dados. A última leitura permanece identificada na tela.");
+  const overview = usePoll(screen ? `${screen.id}:${revision}` : null, loadOverview, overviewDelay, "Não foi possível atualizar os dados. A última leitura permanece identificada na tela.", false, overviewCache);
   useEffect(() => {
     const visibility = () => store.getState().block("hidden", document.hidden);
     const dialog = () => store.getState().block("dialog", !!document.querySelector('[role="dialog"][data-state="open"], dialog[open]'));

@@ -289,6 +289,26 @@ test("three screens rotate, manual choice and reading pause, resume gets a compl
   await page.clock.runFor(12000); await expect(page.getByLabel("Escolher tela")).toHaveValue(id(3));
   expect(new Set(state.calls)).toEqual(new Set([id(1), id(2), id(3)]));
 });
+test("revisited screens keep panels without skeleton; first load still skeletons", async ({ page }) => {
+  const state = await mock(page, 2);
+  state.delay = 400;
+  await enter(page);
+  await expect(page.getByRole("heading", { name: "Hosts monitorados" })).toBeVisible();
+  await expect(page.locator(".dashboard-skeleton")).toHaveCount(0);
+  await page.getByRole("button", { name: "Próxima tela", exact: true }).click();
+  await expect(page.getByLabel("Escolher tela")).toHaveValue(id(2));
+  await expect(page.locator(".dashboard-skeleton")).toHaveCount(0, { timeout: 5000 });
+  await expect(page.locator("[data-dashboard-content] .dashboard-block").first()).toBeVisible();
+  expect(state.calls).toContain(id(2));
+  await page.getByRole("button", { name: "Tela anterior", exact: true }).click();
+  await expect(page.getByLabel("Escolher tela")).toHaveValue(id(1));
+  await expect(page.locator(".dashboard-skeleton")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Hosts monitorados" })).toBeVisible();
+  await page.getByRole("button", { name: "Próxima tela", exact: true }).click();
+  await expect(page.getByLabel("Escolher tela")).toHaveValue(id(2));
+  await expect(page.locator(".dashboard-skeleton")).toHaveCount(0);
+  await expect(page.locator("[data-dashboard-content] .dashboard-block").first()).toBeVisible();
+});
 test("configuration failure, initial failure and empty highlights remain honest", async ({ page }) => {
   const state = await mock(page); state.configFail = true; await enter(page);
   await expect(page.getByText("Não foi possível carregar a configuração", { exact: true })).toBeVisible();

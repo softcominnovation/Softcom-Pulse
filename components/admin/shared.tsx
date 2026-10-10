@@ -38,7 +38,7 @@ export function useAdminRead<T>(path: string, parse: (data: unknown) => T) {
   const [state, setState] = useState<{ path: string; data: T | null; failed: boolean; loading: boolean }>({ path, data: null, failed: false, loading: true });
   const [revision, setRevision] = useState(0);
   const parseRef = useRef(parse);
-  parseRef.current = parse;
+  useEffect(() => { parseRef.current = parse; });
   if (state.path !== path) setState({ path, data: null, failed: false, loading: true });
   useEffect(() => {
     const controller = new AbortController();

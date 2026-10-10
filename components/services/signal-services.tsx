@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { isAxiosError } from "axios";
 import { api } from "@/lib/client/api";
+import { requestCanceled } from "@/lib/client/request-canceled";
 import { signalInfraRoles, signalTargetWriteSchema } from "@/lib/config/signal-targets";
 import { hostSchema } from "@/lib/monitoring/contracts";
 import { number, timestamp } from "@/lib/dashboard/format";
@@ -79,12 +80,15 @@ export function SignalServicesPanel() {
   const [linkQuery, setLinkQuery] = useState("");
   const [linkError, setLinkError] = useState("");
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const [targetsRes, hostsRes] = await Promise.all([
-        api.get("/monitoring/signal-targets", { signal }),
-        api.get("/monitoring/hosts", { signal }),
-      ]);
+  const [revision, setRevision] = useState(0);
+  const refresh = useCallback(() => setRevision(value => value + 1), []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void Promise.all([
+      api.get("/monitoring/signal-targets", { signal: controller.signal }),
+      api.get("/monitoring/hosts", { signal: controller.signal }),
+    ]).then(([targetsRes, hostsRes]) => {
       const items = z.object({ data: z.array(targetSchema) }).parse(targetsRes.data).data;
       setTarget(items[0] ?? null);
       const hosts = z.object({ data: z.array(hostSchema) }).passthrough().parse(hostsRes.data).data;
@@ -101,17 +105,17 @@ export function SignalServicesPanel() {
       vms.sort((a, b) => a.name.localeCompare(b.name, "pt"));
       setAgentVms(vms);
       setFailed(false);
-    } catch {
-      if (!signal?.aborted) setFailed(true);
-    }
-  }, []);
+    }).catch(error => {
+      if (controller.signal.aborted || requestCanceled(error)) return;
+      setFailed(true);
+    });
+    return () => controller.abort();
+  }, [revision]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    const timer = setInterval(() => { if (!document.hidden) void load(); }, 15_000);
-    return () => { controller.abort(); clearInterval(timer); };
-  }, [load]);
+    const timer = setInterval(() => { if (!document.hidden) refresh(); }, 15_000);
+    return () => clearInterval(timer);
+  }, [refresh]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -137,14 +141,14 @@ export function SignalServicesPanel() {
     if (!target) return;
     await mutation.run(signal => api.patch(`/monitoring/signal-targets/${target.id}`, { enabled, expectedRevision: target.revision }, { signal }));
     toast.success(enabled ? "Signal retomado." : "Signal pausado.");
-    await load();
+    refresh();
   }
   async function removeTarget() {
     if (!target) return;
     await mutation.run(signal => api.delete(`/monitoring/signal-targets/${target.id}`, { signal }));
     toast.success("Alvo Signal removido.");
     setTarget(null);
-    await load();
+    refresh();
   }
   async function linkVm(vm: AgentVm) {
     if (!target) return;
@@ -155,7 +159,7 @@ export function SignalServicesPanel() {
         hostKey: vm.parentHostKey, vmKey: vm.vmKey, parentHostKey: vm.parentHostKey,
       }, { signal }));
       toast.success(`Vinculada: ${vm.name}`);
-      await load();
+      refresh();
     } catch (failure) { setLinkError(errorText(failure)); }
   }
   async function unlink(linkId: string) {
@@ -164,7 +168,7 @@ export function SignalServicesPanel() {
       data: { expectedRevision: target.revision }, signal,
     }));
     toast.success("Vínculo removido.");
-    await load();
+    refresh();
   }
 
   return <div id="signal" className="signal-services">
@@ -198,7 +202,7 @@ export function SignalServicesPanel() {
       {editor && editing && <SignalEditForm
         existing={target}
         onCancel={() => setEditing(false)}
-        onSaved={async () => { setEditing(false); await load(); }}
+        onSaved={async () => { setEditing(false); refresh(); }}
       />}
 
       {target && !editing && <>

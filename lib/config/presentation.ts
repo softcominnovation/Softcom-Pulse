@@ -16,12 +16,21 @@ export type IdlePresentation = z.infer<typeof idlePresentationSchema>;
 const direction = z.enum(["asc", "desc"]).default("asc");
 const rows = z.number().int().min(3).max(10).default(6);
 const unique = <T>(values: T[]) => new Set(values).size === values.length;
-export const indicatorKeys = ["hosts", "containers_running", "containers_stopped", "problems"] as const;
+export const indicatorKeys = ["hosts", "containers_running", "containers_stopped", "problems", "jobs_waiting"] as const;
+export const defaultIndicators = ["hosts", "containers_running", "containers_stopped", "problems"] as const;
+export type IndicatorKey = typeof indicatorKeys[number];
+export const overviewGridModes = ["default", "split"] as const;
 export const blockOptionsSchemas = {
-  summary: z.strictObject({ indicators: z.array(z.enum(indicatorKeys)).min(1).max(4).refine(unique).default([...indicatorKeys]) }),
+  summary: z.strictObject({ indicators: z.array(z.enum(indicatorKeys)).min(1).max(4).refine(unique).default([...defaultIndicators]) }),
   asgard_summary: z.strictObject({ sortBy: z.enum(["name", "state", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows, states: z.array(z.enum(["running", "stopped", "paused", "unknown"])).min(1).max(4).refine(unique).default(["running", "stopped", "paused", "unknown"]) }),
   problems: z.strictObject({ sortBy: z.enum(["severity", "recent"]).default("severity"), sortDirection: z.enum(["asc", "desc"]).default("desc"), visibleRows: rows, severities: z.array(z.number().int().min(0).max(5)).min(1).max(6).refine(unique).default([0, 1, 2, 3, 4, 5]) }),
-  highlighted_resources: z.strictObject({ sortBy: z.enum(["configured", "name"]).default("configured"), sortDirection: direction, criticalOnly: z.boolean().default(false), visibleRows: z.number().int().min(1).max(3).default(1) }),
+  highlighted_resources: z.strictObject({
+    sortBy: z.enum(["configured", "name"]).default("configured"),
+    sortDirection: direction,
+    criticalOnly: z.boolean().default(false),
+    // Legacy documents may store 3; clamp to 1–2 so saves stay valid without migration.
+    visibleRows: z.preprocess(value => typeof value === "number" ? Math.min(2, Math.max(1, value)) : value, z.number().int().min(1).max(2)).default(1),
+  }),
   resource_card: z.strictObject({}),
   host_inventory: z.strictObject({ sortBy: z.enum(["name", "state", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows }),
   container_inventory: z.strictObject({ sortBy: z.enum(["name", "status", "health", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows, hostKeys: z.array(hostKeySchema).max(32).refine(unique).optional() }),
@@ -50,7 +59,9 @@ const blockSchema = z.strictObject({
   options: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.array(z.number())])).optional(),
 }).refine(block => (block.type === "resource_card") === (block.resourceConfigId !== undefined), { path: ["resourceConfigId"], message: "Only resource cards require a resource reference" });
 const screenSchema = z.strictObject({
-  id: uuidSchema, name: z.string().trim().min(1).max(80), enabled: z.boolean(), layout: z.enum(["overview", "wall"]), blocks: z.array(blockSchema).max(24),
+  id: uuidSchema, name: z.string().trim().min(1).max(80), enabled: z.boolean(), layout: z.enum(["overview", "wall"]),
+  overviewGrid: z.enum(overviewGridModes).default("default"),
+  blocks: z.array(blockSchema).max(24),
 }).refine(screen => !screen.enabled || screen.blocks.some(block => block.enabled), { path: ["blocks"], message: "Enabled screen requires an enabled block" });
 const fields = {
   schemaVersion: z.union([z.literal(1), z.literal(2)]), defaultTvMode: z.boolean().default(false),
@@ -98,7 +109,7 @@ export const defaultDashboardBlocks = [
 
 export function initialPresentation(newId: () => string): PresentationDocument {
   return { schemaVersion: 2, revision: 1, defaultTvMode: false, displayScalePercent: defaultDisplayScalePercent, showStatusBanner: false, idlePresentation: idlePresentationSchema.parse({}), rotation: { autoStart: false, intervalSeconds: 20 }, screens: [{
-    id: newId(), name: "Visão geral", enabled: true, layout: "overview",
+    id: newId(), name: "Visão geral", enabled: true, layout: "overview", overviewGrid: "default",
     blocks: defaultDashboardBlocks.map(block => ({ id: newId(), ...block, enabled: true, options: effectiveOptions(block) })),
   }] };
 }

@@ -15,8 +15,39 @@
 .availability-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 230px)); justify-content: start; gap: 8px;
   padding: 0 14px 10px; align-content: start; flex-shrink: 0;
-  max-height: calc(var(--service-rows, 2) * 128px + 2px); overflow: auto; scrollbar-gutter: stable;
+  max-height: calc(var(--service-rows, 1) * 128px + 2px); overflow: auto; scrollbar-gutter: stable;
 }
+.overview-split-grid .availability-panel {
+  height: 100%;
+  min-height: 0;
+}
+.overview-split-grid .availability-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  justify-content: stretch;
+  /* Split em cima: sempre espaço para 2 fileiras de cards (não ceder à compactação). */
+  --split-service-rows: max(2, var(--service-rows, 2));
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  min-height: calc(var(--split-service-rows) * 128px + 2px);
+  max-height: calc(var(--split-service-rows) * 128px + 2px);
+  height: calc(var(--split-service-rows) * 128px + 2px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-content: start;
+}
+/* Fileira de cima: altura pelo conteúdo; Problemas acompanha a Disponibilidade. */
+.balanced .overview-split-grid .availability-panel { flex: none; height: auto; }
+.balanced .overview-split-grid .block-highlighted_resources,
+.balanced .overview-split-grid .block-problems {
+  height: auto;
+  align-self: stretch;
+  min-height: 0;
+}
+.balanced .overview-split-grid .block-problems .dashboard-panel { height: 100%; }
+.overview-split-grid .availability-card {
+  max-width: none; width: 100%; justify-self: stretch;
+}
+.availability-panel { display: flex; flex-direction: column; min-height: 0; }
 .availability-card {
   display: flex; flex-direction: column; text-align: left; gap: 3px; box-sizing: border-box;
   width: 100%; max-width: 230px; justify-self: start; overflow: hidden;
@@ -89,7 +120,42 @@
 :is(.probe-dialog, .app-monitor-detail) .history-tooltip dd { font-family: var(--font-numeric); margin-top: 3px; }
 .availability-no-metrics { font-size: 10px; color: var(--pulse-muted); }
 @media (min-width: 1201px) and (min-height: 740px) {
-  .dashboard.balanced .dashboard-blocks { grid-template-rows: max-content max-content; grid-auto-rows: minmax(0, 1fr); }
+  /* Padrão: KPI + Disponibilidade/Problemas por conteúdo; fileira de baixo (ASGARD/Signal) engole o resto. */
+  .dashboard.balanced .dashboard-blocks:not(.overview-split) {
+    grid-template-rows: max-content max-content;
+    grid-auto-rows: minmax(0, 1fr);
+  }
+  /* Split: KPI + grade 2×2; a grade ocupa toda a altura restante até o rodapé. */
+  .dashboard.balanced .dashboard-blocks.overview-split {
+    grid-template-rows: max-content minmax(0, 1fr);
+    grid-auto-rows: minmax(0, max-content);
+    align-content: stretch;
+    min-height: 0;
+  }
+  .dashboard.balanced .overview-split-grid {
+    min-height: 0;
+    height: 100%;
+    align-self: stretch;
+    grid-template-rows: max-content minmax(0, 1fr);
+  }
+  .dashboard.balanced .overview-split-grid.no-problems {
+    grid-template-rows: max-content minmax(0, 1fr);
+  }
+  .dashboard.balanced .overview-split-grid > .block-asgard_summary,
+  .dashboard.balanced .overview-split-grid > .block-signal_flow,
+  .dashboard.balanced .overview-split-grid > .block-asgard_summary > *,
+  .dashboard.balanced .overview-split-grid > .block-signal_flow > * {
+    min-height: 0;
+    height: 100%;
+  }
+  .dashboard.balanced .overview-split-grid.no-problems > .block-signal_flow,
+  .dashboard.balanced .overview-split-grid.no-problems > .block-signal_flow > * {
+    height: auto;
+  }
+  .dashboard.balanced .overview-split-grid.no-problems > .block-asgard_summary,
+  .dashboard.balanced .overview-split-grid.no-problems > .block-asgard_summary > * {
+    height: 100%;
+  }
   .dashboard-shell:not([data-display-scale="100"]) .dashboard.balanced .dashboard-blocks { min-height: 0; }
   .dashboard.balanced .availability-panel { height: auto; overflow: visible; }
   .balanced .availability-grid { flex: none; }
@@ -106,7 +172,13 @@
   .availability-panel .panel-link { min-height: 44px; }
 }
 @media (min-width: 1201px) and (min-height: 740px) and (max-height: 900px) {
-  .dashboard.balanced .availability-grid { max-height: 130px; }
+  /* Compactação de 1 fileira só na grade padrão — no split as 2 fileiras ficam visíveis. */
+  .dashboard.balanced .dashboard-blocks:not(.overview-split) .availability-grid { max-height: 130px; }
+  .dashboard.balanced .overview-split-grid .availability-grid {
+    min-height: calc(var(--split-service-rows, 2) * 128px + 2px);
+    max-height: calc(var(--split-service-rows, 2) * 128px + 2px);
+    height: calc(var(--split-service-rows, 2) * 128px + 2px);
+  }
   .dashboard.balanced .asgard-compact .asgard-context { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; }
   .dashboard.balanced .asgard-compact .storage-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .dashboard.balanced .dashboard-kpi { padding-top: 6px; padding-bottom: 6px; }

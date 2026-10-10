@@ -100,15 +100,35 @@ export function Dashboard() {
         <div className="banner-update"><span>Última atualização</span><time dateTime={result?.lastUpdated ?? undefined}>{timestamp(result?.lastUpdated)}</time></div>
         <Button size="icon" aria-label="Atualizar monitoramento" title={`Última atualização: ${timestamp(result?.lastUpdated)}`} onClick={overview.refresh}><RefreshCw aria-hidden="true" /></Button>
       </div>}
-      <EvidenceTimeContext value={now}><div data-dashboard-content className="dashboard-blocks" aria-busy={overview.loading}>
-        {!result && !overview.failed && <DashboardSkeleton label="Carregando os indicadores da tela…" />}
-        {result && screen.blocks.filter(block => block.enabled).map(block => {
-          const payload = result.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
+      <EvidenceTimeContext value={now}>{(() => {
+        const enabled = screen.blocks.filter(block => block.enabled);
+        const split = layout === "overview" && screen.overviewGrid === "split";
+        const renderBlock = (block: typeof enabled[number]) => {
+          const payload = result?.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
           return <div className={`dashboard-block width-${block.width} block-${block.type}`} key={block.id}>
-            {payload ? <DashboardBlock block={payload} failed={stale} probes={result.data.externalServices ?? []} vps={result.data.standaloneVps ?? []} signalCards={result.data.signalCards ?? []} hostMetricsSources={result.data.hostMetricsSources} /> : <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section>}
+            {payload ? <DashboardBlock block={payload} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
           </div>;
-        })}
-      </div></EvidenceTimeContext>
+        };
+        return <div data-dashboard-content className={`dashboard-blocks${split ? " overview-split" : ""}`} aria-busy={overview.loading}>
+          {!result && !overview.failed && <DashboardSkeleton label="Carregando os indicadores da tela…" />}
+          {result && !split && enabled.map(renderBlock)}
+          {result && split && (() => {
+            const gridTypes = new Set(["highlighted_resources", "problems", "asgard_summary", "signal_flow"]);
+            const byType = (type: string) => enabled.filter(block => block.type === type);
+            const hasProblems = byType("problems").length > 0;
+            return <>
+              {byType("summary").map(renderBlock)}
+              <div className={`overview-split-grid${hasProblems ? "" : " no-problems"}`}>
+                {byType("highlighted_resources").map(renderBlock)}
+                {byType("problems").map(renderBlock)}
+                {byType("asgard_summary").map(renderBlock)}
+                {byType("signal_flow").map(renderBlock)}
+              </div>
+              {enabled.filter(block => !gridTypes.has(block.type) && block.type !== "summary").map(renderBlock)}
+            </>;
+          })()}
+        </div>;
+      })()}</EvidenceTimeContext>
     </>}
     <footer className="dashboard-footer"><div aria-label="Legenda de estados"><span className="tone-good"><i className="status-dot" />Disponível</span><span className="tone-warn"><i className="status-dot" />Atenção</span><span className="tone-bad"><i className="status-dot" />Indisponível</span><span><i className="status-dot" />Desconhecido / sem dados</span></div><p>Horários de Fortaleza · UTC−3{result && <> · Atualização a cada {Math.round(result.refreshAfterMs / 1000)}s</>}</p></footer>
   </div>;

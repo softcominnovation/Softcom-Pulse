@@ -81,10 +81,12 @@ test("legacy over-limit composition is preserved until explicitly adjusted, and 
   await page.getByLabel("Bloco habilitado", { exact: true }).last().uncheck(); await page.getByRole("button", { name: "Salvar apresentação" }).click(); await expect.poll(() => state.document.schemaVersion).toBe(2);
   expect(state.document.screens[0].blocks).toHaveLength(7); expect(state.document.screens[0].blocks[6].id).toBe(id(8006));
   const first = page.getByRole("article").first();
-  for (const label of ["Hosts", "Containers em execução", "Containers parados", "Problemas"]) await first.getByLabel(label, { exact: true }).uncheck();
-  await expect(page.getByText("selecione ao menos uma opção válida", { exact: false })).toBeVisible();
-  await first.getByLabel("Hosts", { exact: true }).check(); await page.getByRole("button", { name: "Salvar apresentação" }).click(); await expect.poll(() => state.document.revision).toBe(3);
-  expect(state.document.screens[0].blocks[0].options?.indicators).toEqual(["hosts"]);
+  for (const label of ["Hosts monitorados", "Containers em execução", "Containers parados"]) await first.getByLabel(label, { exact: true }).uncheck();
+  await expect(first.getByLabel("Problemas ativos", { exact: true })).toBeDisabled();
+  await first.getByLabel("Jobs aguardando", { exact: true }).check();
+  await first.getByLabel("Problemas ativos", { exact: true }).uncheck();
+  await page.getByRole("button", { name: "Salvar apresentação" }).click(); await expect.poll(() => state.document.revision).toBe(3);
+  expect(state.document.screens[0].blocks[0].options?.indicators).toEqual(["jobs_waiting"]);
 });
 test("existing resource preferences remain editable without discovery and keep the UUID", async ({ page }) => {
   const state = await adminFixture(page), resourceId = state.resources[0].id;

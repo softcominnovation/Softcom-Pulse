@@ -22,9 +22,13 @@ test("version 2 has type-specific defaults, strict options and six enabled block
   const { revision, ...settings } = document; assert.ok(presentationWriteSchema.safeParse({ expectedRevision: revision, settings }).success);
   assert.deepEqual(effectiveOptions(screen.blocks[0]).indicators, ["hosts", "containers_running", "containers_stopped", "problems"]);
   assert.equal(screen.blocks[0].options, undefined);
+  assert.equal(document.screens[0].overviewGrid, "default");
+  assert.equal(effectiveOptions({ type: "highlighted_resources" }).visibleRows, 1);
+  assert.equal(effectiveOptions({ type: "highlighted_resources", options: { visibleRows: 3 } }).visibleRows, 2);
+  assert.deepEqual(effectiveOptions({ type: "summary", options: { indicators: ["jobs_waiting", "hosts", "problems"] } }).indicators, ["jobs_waiting", "hosts", "problems"]);
 });
 test("invalid ranges, duplicate and empty filters and options from another type are rejected", () => {
-  for (const [type, options] of [["summary", { indicators: [] }], ["summary", { indicators: ["hosts", "hosts"] }], ["asgard_summary", { states: [] }], ["asgard_summary", { sortBy: "health" }], ["problems", { severities: [6] }], ["problems", { severities: [0,0] }], ["host_inventory", { visibleRows: 2 }], ["host_inventory", { visibleRows: 11 }], ["highlighted_resources", { visibleRows: 4 }], ["container_inventory", { hostKeys: ["a", "a"] }], ["container_inventory", { hostKeys: ["../a"] }]]) {
+  for (const [type, options] of [["summary", { indicators: [] }], ["summary", { indicators: ["hosts", "hosts"] }], ["summary", { indicators: ["hosts", "containers_running", "containers_stopped", "problems", "jobs_waiting"] }], ["asgard_summary", { states: [] }], ["asgard_summary", { sortBy: "health" }], ["problems", { severities: [6] }], ["problems", { severities: [0,0] }], ["host_inventory", { visibleRows: 2 }], ["host_inventory", { visibleRows: 11 }], ["highlighted_resources", { sortBy: "cpu" }], ["container_inventory", { hostKeys: ["a", "a"] }], ["container_inventory", { hostKeys: ["../a"] }]]) {
     assert.throws(() => effectiveOptions({ type, options }), `${type}: ${JSON.stringify(options)}`);
   }
 });

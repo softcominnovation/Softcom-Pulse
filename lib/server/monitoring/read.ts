@@ -128,7 +128,20 @@ export async function readOverview(screenId?: string) {
   const standaloneVps = await listHighlightedStandaloneVps().catch(() => []);
   const signalCards = await listHighlightedSignalTargets().catch(() => []);
   const needsSignalFlow = visibleBlocks.some(block => block.type === "signal_flow");
-  const signalFlow = needsSignalFlow ? await listSignalFlowTarget().catch(() => null) : null;
+  const needsSummaryJobs = visibleBlocks.some(block => block.type === "summary");
+  const signalFlow = (needsSignalFlow || needsSummaryJobs) ? await listSignalFlowTarget().catch(() => null) : null;
+  if (needsSummaryJobs) {
+    if (signalFlow) {
+      const outbox = signalFlow.outboxPending;
+      const inbox = signalFlow.inboxPending;
+      base.summary.jobsWaiting = outbox == null && inbox == null ? null : (outbox ?? 0) + (inbox ?? 0);
+      const ages = [signalFlow.oldestOutboxSeconds, signalFlow.oldestInboxSeconds].filter((value): value is number => value != null);
+      base.summary.jobsWaitingOldestSeconds = ages.length ? Math.max(...ages) : null;
+    } else {
+      base.summary.jobsWaiting = null;
+      base.summary.jobsWaitingOldestSeconds = null;
+    }
+  }
   const blocks: OverviewBlock[] = screen.blocks.filter(block => block.enabled).map(block => {
     let data: OverviewBlock["data"] = null;
     let keys: string[] = [];

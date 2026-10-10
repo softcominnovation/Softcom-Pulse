@@ -16,7 +16,7 @@ test("signal_flow is available with visibleRows defaults and rejects inventing o
     idlePresentation: { enabled: false, afterMinutes: 5, requestFullscreen: true },
     rotation: { autoStart: false, intervalSeconds: 20 },
     screens: [{
-      id: randomUUID(), name: "Visão geral", enabled: true, layout: "overview",
+      id: randomUUID(), name: "Visão geral", enabled: true, layout: "overview", overviewGrid: "default",
       blocks: [{ id: randomUUID(), type: "signal_flow", enabled: true, width: "wide", options: { visibleRows: 4 } }],
     }],
   };

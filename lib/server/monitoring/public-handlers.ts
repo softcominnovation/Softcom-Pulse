@@ -54,9 +54,23 @@ async function readPublic(request: Request, segments: string[]) {
       data: {
         ...overview.data,
         signalCards: [],
-        blocks: overview.data.blocks.map(block => block.type === "signal_flow"
-          ? { ...block, data: null, availability: "unavailable" as const, stale: false, lastUpdated: null }
-          : block),
+        summary: {
+          ...overview.data.summary,
+          jobsWaiting: null,
+          jobsWaitingOldestSeconds: null,
+        },
+        blocks: overview.data.blocks.map(block => {
+          if (block.type === "signal_flow") {
+            return { ...block, data: null, availability: "unavailable" as const, stale: false, lastUpdated: null };
+          }
+          if (block.type === "summary" && block.data && typeof block.data === "object") {
+            return {
+              ...block,
+              data: { ...block.data as object, jobsWaiting: null, jobsWaitingOldestSeconds: null },
+            };
+          }
+          return block;
+        }),
       },
     };
   }

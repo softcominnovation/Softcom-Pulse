@@ -62,6 +62,10 @@
 .admin-block-heading { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
 .admin-block .admin-field input, .admin-block .admin-field select { background: var(--pulse-surface); }
 .admin-options { display: grid; gap: 12px; }
+.admin-indicator-editor { display: grid; gap: 12px; }
+.admin-indicator-order { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.admin-indicator-order li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border: 1px solid var(--pulse-line); border-radius: 8px; background: var(--pulse-surface); }
+.admin-indicator-order .admin-actions { display: inline-flex; gap: 4px; }
 .admin-preview { border-top: 1px solid var(--pulse-line); padding-top: 20px; display: grid; gap: 14px; min-width: 0; }
 .admin-preview .dashboard { min-width: 0; }
 .admin-template-group { display: grid; gap: 12px; padding-top: 14px; border-top: 1px solid var(--pulse-line); }

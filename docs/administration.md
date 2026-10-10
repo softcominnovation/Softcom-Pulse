@@ -26,7 +26,7 @@ O editor envia o documento completo em schemaVersion 2 para `/api/settings/prese
 
 Os controles por botões funcionam com teclado e toque. Intervalo: 5–300 segundos; alternância automática requer pelo menos duas telas aptas. Modo TV inicial não aciona fullscreen automaticamente. Tela atual, pausa e cronômetro do player são locais e não são editados aqui.
 
-O catálogo central valida opções específicas por tipo: indicadores, ordenação/direção, filtros de estados/severidades/criticidade/hosts, linhas ou fileiras visíveis e `visibleRows` do bloco `signal_flow`. Campos de outro bloco são rejeitados. CPU/RAM ordenam percentuais numéricos; zero e valores acima de 100 são preservados. Valores ausentes, sem percentual, stale e expirados ficam por último em ambas as direções. Filtros mostram contagens parciais; não alteram os KPIs globais.
+O catálogo central valida opções específicas por tipo: indicadores (catálogo de cinco chaves, até quatro ativos, com ordem), ordenação/direção, filtros de estados/severidades/criticidade/hosts, fileiras de Disponibilidade (1–2), linhas visíveis e `visibleRows` do bloco `signal_flow`. Cada tela overview tem `overviewGrid` (`default` ou `split`). Campos de outro bloco são rejeitados. CPU/RAM ordenam percentuais numéricos; zero e valores acima de 100 são preservados. Valores ausentes, sem percentual, stale e expirados ficam por último em ambas as direções. Filtros mostram contagens parciais; não alteram os KPIs globais.
 
 Linhas visíveis controlam a altura da janela, sem remover dados. Todas as entradas permanecem acessíveis por rolagem interna. A composição inicial preserva destaques em faixa inteira e ASGARD/problemas lado a lado. Alterar opções pode exigir rolagem da página; o editor não diminui artificialmente a escala.
 

@@ -46,6 +46,42 @@
 .dashboard-block { min-width: 0; grid-column: span 4; }
 .dashboard-block.width-wide { grid-column: span 6; }
 .dashboard-block.width-full, .dashboard-loading, .dashboard-skeleton { grid-column: 1 / -1; }
+/* Split = mesma grade do protótipo: 2 colunas × 2 fileiras (esquerda um pouco mais larga). */
+.overview-split { align-content: stretch; align-items: stretch; }
+.overview-split > .block-summary,
+.overview-split > .dashboard-skeleton,
+.overview-split > .dashboard-block { grid-column: 1 / -1; }
+.overview-split-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "avail side"
+    "asgard signal";
+  gap: inherit;
+  min-height: 0;
+  align-items: stretch;
+}
+.overview-split-grid > .dashboard-block {
+  min-width: 0; min-height: 0; display: flex; flex-direction: column;
+  grid-column: auto; /* não herdar width-full/wide */
+}
+.overview-split-grid > .dashboard-block > * { flex: 1 1 auto; min-height: 0; height: 100%; }
+.overview-split-grid > .block-highlighted_resources { grid-area: avail; }
+.overview-split-grid > .block-problems { grid-area: side; }
+.overview-split-grid > .block-asgard_summary { grid-area: asgard; }
+.overview-split-grid > .block-signal_flow { grid-area: signal; }
+/* Sem Problemas na tela: Signal sobe para o canto superior direito; ASGARD ocupa a fileira de baixo. */
+.overview-split-grid.no-problems {
+  grid-template-areas:
+    "avail side"
+    "asgard asgard";
+  grid-template-rows: minmax(0, 1.15fr) minmax(0, 1fr);
+}
+.overview-split-grid.no-problems > .block-signal_flow { grid-area: side; }
+.overview-split-grid .dashboard-panel,
+.overview-split-grid .availability-panel { height: 100%; min-height: 0; display: flex; flex-direction: column; }
 .dashboard-panel { background: var(--pulse-surface); border: 1px solid var(--pulse-line); border-radius: 14px; min-width: 0; display: flex; flex-direction: column; }
 .panel-heading, .panel-foot { flex-shrink: 0; }
 .panel-heading { display: flex; align-items: center; gap: calc(9px * var(--dashboard-scale, 1)); padding: calc(13px * var(--dashboard-scale, 1)) calc(18px * var(--dashboard-scale, 1)) calc(10px * var(--dashboard-scale, 1)); }
@@ -95,7 +131,10 @@
 .kpi-label { display: flex; align-items: center; justify-content: space-between; gap: calc(8px * var(--dashboard-scale, 1)); color: var(--pulse-muted); font-size: calc(12px * var(--dashboard-scale, 1)); }
 .kpi-label svg { width: calc(19px * var(--dashboard-scale, 1)); height: calc(19px * var(--dashboard-scale, 1)); color: var(--pulse-faint); stroke-width: 1.7; }
 .kpi-value { font: 500 calc(36px * var(--dashboard-scale, 1))/1.15 var(--font-numeric); font-variant-numeric: tabular-nums; letter-spacing: -2px; margin: calc(8px * var(--dashboard-scale, 1)) 0 calc(5px * var(--dashboard-scale, 1)); }
-.dashboard-kpi > p:not(.kpi-value) { font-size: calc(11px * var(--dashboard-scale, 1)); color: var(--pulse-muted); }
+.kpi-value small { font: 500 calc(14px * var(--dashboard-scale, 1))/1.15 var(--font-sans, inherit); letter-spacing: 0; color: var(--pulse-muted); margin-left: 0.2em; }
+.kpi-value.tone-warn { color: var(--pulse-amber); }
+.dashboard-kpi > p:not(.kpi-value) { font-size: calc(11px * var(--dashboard-scale, 1)); color: var(--pulse-muted); display: flex; align-items: center; gap: 0.35rem; }
+.dashboard-kpi > p .status-dot { width: 6px; height: 6px; }
 .is-stale .kpi-value { color: var(--pulse-muted); }
 .resource-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(calc(210px * var(--dashboard-scale, 1)), 100%), 1fr)); gap: calc(9px * var(--dashboard-scale, 1)); padding: 0 calc(14px * var(--dashboard-scale, 1)) calc(14px * var(--dashboard-scale, 1)); align-content: start; max-height: calc(440px * var(--dashboard-scale, 1)); overflow: auto; }
 .resource-card { padding: calc(12px * var(--dashboard-scale, 1)); border: 1px solid var(--pulse-line); border-radius: 9px; background: var(--pulse-service); min-width: 0; }
@@ -257,14 +296,39 @@
 @media (min-width: 1201px) and (min-height: 740px) {
   .dashboard-shell:has(.balanced) { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
   .dashboard-shell:has(.balanced) .pulse-topbar { flex-shrink: 0; }
-  .dashboard-shell:has(.balanced) .dashboard-main { display: flex; flex: 1; min-height: 0; }
-  .balanced { display: flex; flex-direction: column; width: 100%; min-height: 0; }
+  .dashboard-shell:has(.balanced) .dashboard-main { display: flex; flex: 1; min-height: 0; align-items: stretch; }
+  .balanced { display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 0; align-self: stretch; }
   .balanced > :not(.dashboard-blocks) { flex-shrink: 0; }
   .balanced .dashboard-blocks { flex: 1; min-height: 0; grid-template-rows: max-content minmax(calc(140px * var(--dashboard-scale, 1)), calc(210px * var(--dashboard-scale, 1))) minmax(calc(235px * var(--dashboard-scale, 1)), calc(340px * var(--dashboard-scale, 1))); align-content: start; align-items: stretch; }
+  /* Split: reforço do encaixe; a regra definitiva fica em availability.css (carrega depois). */
+  .balanced .dashboard-blocks.overview-split {
+    grid-template-rows: max-content minmax(0, 1fr);
+    align-content: stretch;
+    min-height: 0;
+  }
+  .balanced .overview-split-grid {
+    min-height: 0;
+    height: 100%;
+    align-self: stretch;
+    grid-template-rows: max-content minmax(0, 1fr);
+  }
+  .balanced .overview-split-grid.no-problems {
+    grid-template-rows: max-content minmax(0, 1fr);
+  }
+  .balanced .overview-split-grid > .block-asgard_summary,
+  .balanced .overview-split-grid > .block-signal_flow { min-height: 0; height: 100%; }
+  .balanced .overview-split-grid > .block-asgard_summary > *,
+  .balanced .overview-split-grid > .block-signal_flow > * { min-height: 0; height: 100%; }
+  .balanced .overview-split-grid .problem-list,
+  .balanced .overview-split-grid .vm-table-scroll,
+  .balanced .overview-split-grid .signal-flow-body,
+  .balanced .overview-split-grid .asgard-content,
+  .balanced .overview-split-grid .asgard-machines { flex: 1 1 0; min-height: 0; overflow: auto; }
   .balanced .dashboard-block { min-height: 0; }
-  .dashboard-shell:not([data-display-scale="100"]) .balanced .dashboard-blocks { min-height: min-content; }
+  .dashboard-shell:not([data-display-scale="100"]) .balanced .dashboard-blocks:not(.overview-split) { min-height: min-content; }
+  .dashboard-shell:not([data-display-scale="100"]) .balanced .dashboard-blocks.overview-split { min-height: 0; }
   .balanced .dashboard-panel { height: 100%; min-height: 0; overflow: hidden; }
-  .balanced:has(.block-highlighted_resources .panel-empty) .dashboard-blocks { grid-template-rows: max-content max-content minmax(calc(235px * var(--dashboard-scale, 1)), calc(340px * var(--dashboard-scale, 1))); }
+  .balanced:has(.block-highlighted_resources .panel-empty) .dashboard-blocks:not(.overview-split) { grid-template-rows: max-content max-content minmax(calc(235px * var(--dashboard-scale, 1)), calc(340px * var(--dashboard-scale, 1))); }
   .balanced .asgard-content, .balanced .asgard-machines, .balanced .container-inventory-compact, .balanced .signal-flow-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
   .balanced .signal-flow-body { flex: 1; min-height: 0; }
   .balanced .vm-table-scroll, .balanced .problem-list, .balanced .resource-grid, .balanced .uptime-scroll, .balanced .host-card-grid, .balanced .container-inventory-compact .container-table-scroll { flex: 1 1 0; min-height: 0; height: auto; max-height: none; overflow: auto; }
@@ -289,6 +353,7 @@
   .balanced .dashboard-banner { padding-top: calc(6px * var(--dashboard-scale, 1)); padding-bottom: calc(6px * var(--dashboard-scale, 1)); margin-bottom: calc(10px * var(--dashboard-scale, 1)); }
   .balanced .dashboard-banner p { font-size: calc(11px * var(--dashboard-scale, 1)); }
   .balanced .dashboard-blocks { gap: calc(10px * var(--dashboard-scale, 1)); min-height: 0; grid-template-rows: max-content minmax(calc(200px * var(--dashboard-scale, 1)), calc(220px * var(--dashboard-scale, 1))) minmax(calc(220px * var(--dashboard-scale, 1)), calc(290px * var(--dashboard-scale, 1))); }
+  .balanced .dashboard-blocks.overview-split { grid-template-rows: max-content minmax(0, 1fr); }
   .balanced .dashboard-kpi { padding: calc(8px * var(--dashboard-scale, 1)) calc(14px * var(--dashboard-scale, 1)); }
   .balanced .kpi-value { margin: calc(3px * var(--dashboard-scale, 1)) 0; font-size: calc(26px * var(--dashboard-scale, 1)); }
   .balanced .dashboard-kpi > p:not(.kpi-value) { font-size: calc(10px * var(--dashboard-scale, 1)); }
@@ -318,6 +383,15 @@
   .dashboard-block.width-standard, .wall .dashboard-block.width-standard { grid-column: span 1; }
   .dashboard-block.width-wide, .wall .dashboard-block.width-wide { grid-column: span 1; }
   .dashboard-shell .pulse-top-actions { flex-wrap: wrap; }
+  .overview-split-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas:
+      "avail"
+      "side"
+      "asgard"
+      "signal";
+  }
 }
 @media (max-width: 1100px) {
   .dashboard-nav { align-items: stretch; flex-direction: column; gap: 0; }

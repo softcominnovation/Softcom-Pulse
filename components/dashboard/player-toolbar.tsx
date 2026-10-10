@@ -22,7 +22,7 @@ export function PlayerToolbar({ store }: { store: ReturnType<typeof createPlayer
       </div>
     </div>
     <div className="dashboard-heading">
-      <div><p className="dashboard-eyebrow">CENTRAL DE MONITORAMENTO</p><h1>Dashboard</h1><p className="dashboard-subtitle">Infraestrutura, serviços e evidências da operação.</p></div>
+      <div><h1>Toda a operação. Um só lugar.</h1><p className="dashboard-subtitle">Infraestrutura, serviços e evidências da operação.</p></div>
       {(player.rotating && paused || !player.rotating && player.pending) && <div className="player-controls">
         {player.rotating && paused && <Button onClick={() => player.start()} disabled={player.hidden || player.dialog}><Play aria-hidden="true" />Continuar alternância</Button>}
         {!player.rotating && player.pending && <Button onClick={() => player.stop()}>Aplicar configuração atualizada</Button>}

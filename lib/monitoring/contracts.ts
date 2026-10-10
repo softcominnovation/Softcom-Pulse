@@ -58,7 +58,13 @@ export const problemSchema = z.object({
   severity: z.number().int().min(0).max(5), visualState: z.enum(["info", "warning", "critical", "unknown"]), startedAt: isoSchema,
 });
 const count = z.number().int().nonnegative().nullable();
-export const summarySchema = z.object({ hostsKnown: count, hostsReachable: count, vms: count, containersRunning: count, containersStopped: count, containersTotal: count.optional(), problems: count, criticalAffected: count });
+export const summarySchema = z.object({
+  hostsKnown: count, hostsReachable: count, vms: count, containersRunning: count, containersStopped: count, containersTotal: count.optional(),
+  problems: count, criticalAffected: count,
+  /** Signal pipeline pending (outbox + inbox); filled on overview, not by Zabbix collector. */
+  jobsWaiting: count.optional(),
+  jobsWaitingOldestSeconds: z.number().int().nonnegative().nullable().optional(),
+});
 export const asgardSummarySchema = z.object({ host: hostSchema.nullable(), vms: z.array(vmSchema) });
 export const overviewSnapshotSchema = z.object({ summary: summarySchema, asgardSummary: asgardSummarySchema });
 export const historySchema = z.object({
@@ -117,5 +123,8 @@ export type Overview = {
   }[];
 };
 export function emptySummary(): Summary {
-  return { hostsKnown: null, hostsReachable: null, vms: null, containersRunning: null, containersStopped: null, problems: null, criticalAffected: null };
+  return {
+    hostsKnown: null, hostsReachable: null, vms: null, containersRunning: null, containersStopped: null,
+    problems: null, criticalAffected: null, jobsWaiting: null, jobsWaitingOldestSeconds: null,
+  };
 }

@@ -179,6 +179,35 @@ test("three compact panels share a desktop row and a single highlight stays card
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({path:".cache/screenshots/dashboard-three-columns.png",fullPage:true});
 });
+test("wall format places ASGARD, problems and Signal side by side without a trailing gap", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const state = await mock(page);
+  state.document.schemaVersion = 2;
+  state.document.screens[0].blocks = [
+    { id: id(901), type: "summary", width: "full", enabled: true, options: effectiveOptions({ type: "summary" }) },
+    { id: id(902), type: "highlighted_resources", width: "full", enabled: true, options: effectiveOptions({ type: "highlighted_resources" }) },
+    { id: id(903), type: "asgard_summary", width: "wide", enabled: true, options: effectiveOptions({ type: "asgard_summary" }) },
+    { id: id(904), type: "problems", width: "wide", enabled: true, options: effectiveOptions({ type: "problems" }) },
+    { id: id(905), type: "signal_flow", width: "wide", enabled: true, options: effectiveOptions({ type: "signal_flow" }) },
+  ];
+  await enter(page);
+  await expect(page.locator(".block-asgard_summary")).toBeVisible();
+  await page.getByRole("button", { name: "2 · Tela completa" }).click();
+  await expect(page.locator(".dashboard")).toHaveClass(/wall/);
+  await expect(page.locator(".block-asgard_summary")).toBeVisible();
+  await expect(page.locator(".block-problems")).toBeVisible();
+  await expect(page.locator(".block-signal_flow")).toBeVisible();
+  const boxes = await Promise.all(["asgard_summary", "problems", "signal_flow"].map(type => page.locator(`.block-${type}`).boundingBox()));
+  for (const box of boxes) {
+    expect(box).toBeTruthy();
+    expect(box!.width).toBeGreaterThan(500);
+    expect(box!.width).toBeLessThan(700);
+    expect(Math.abs(box!.y - boxes[0]!.y)).toBeLessThan(2);
+  }
+  const rightEdge = Math.max(...boxes.map(box => box!.x + box!.width));
+  const grid = (await page.locator(".dashboard-blocks").boundingBox())!;
+  expect(grid.x + grid.width - rightEdge).toBeLessThan(40);
+});
 test("humanized problems preserve the original description and unknown formats", async ({ page }) => {
   const state = await mock(page);
   const original = "Proxmox VE: VM [ASGARD/vm-operacao (qemu/101)]: Not running";
@@ -259,6 +288,26 @@ test("three screens rotate, manual choice and reading pause, resume gets a compl
   await page.locator(".vm-table-scroll").focus();
   await page.clock.runFor(12000); await expect(page.getByLabel("Escolher tela")).toHaveValue(id(3));
   expect(new Set(state.calls)).toEqual(new Set([id(1), id(2), id(3)]));
+});
+test("revisited screens keep panels without skeleton; first load still skeletons", async ({ page }) => {
+  const state = await mock(page, 2);
+  state.delay = 400;
+  await enter(page);
+  await expect(page.getByRole("heading", { name: "Hosts monitorados" })).toBeVisible();
+  await expect(page.locator(".dashboard-skeleton")).toHaveCount(0);
+  await page.getByRole("button", { name: "Próxima tela", exact: true }).click();
+  await expect(page.getByLabel("Escolher tela")).toHaveValue(id(2));
+  await expect(page.locator(".dashboard-skeleton")).toHaveCount(0, { timeout: 5000 });
+  await expect(page.locator("[data-dashboard-content] .dashboard-block").first()).toBeVisible();
+  expect(state.calls).toContain(id(2));
+  await page.getByRole("button", { name: "Tela anterior", exact: true }).click();
+  await expect(page.getByLabel("Escolher tela")).toHaveValue(id(1));
+  await expect(page.locator(".dashboard-skeleton")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Hosts monitorados" })).toBeVisible();
+  await page.getByRole("button", { name: "Próxima tela", exact: true }).click();
+  await expect(page.getByLabel("Escolher tela")).toHaveValue(id(2));
+  await expect(page.locator(".dashboard-skeleton")).toHaveCount(0);
+  await expect(page.locator("[data-dashboard-content] .dashboard-block").first()).toBeVisible();
 });
 test("configuration failure, initial failure and empty highlights remain honest", async ({ page }) => {
   const state = await mock(page); state.configFail = true; await enter(page);

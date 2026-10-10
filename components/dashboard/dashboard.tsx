@@ -7,7 +7,7 @@ import { isAxiosError } from "axios";
 import { presentationDocumentSchema, type PresentationDocument } from "@/lib/config/presentation";
 import type { Overview, ReadResult } from "@/lib/monitoring/contracts";
 import { createPlayerStore, playableScreens } from "@/lib/dashboard/player";
-import { overviewBlockWidth } from "@/lib/dashboard/layout";
+import { displayBlockWidth } from "@/lib/dashboard/layout";
 import { timestamp } from "@/lib/dashboard/format";
 import { api } from "@/lib/client/api";
 import { useUiStore } from "@/store/ui.store";
@@ -16,12 +16,14 @@ import { DashboardBlock } from "./blocks";
 import { DashboardSkeleton } from "./dashboard-skeleton";
 import { PlayerToolbar } from "./player-toolbar";
 import { shortcutAllowed } from "./display-controls";
+import { createPollCache } from "@/lib/dashboard/poll-view";
 import { usePoll } from "./use-poll";
 import { useIdlePresentation } from "./use-idle-presentation";
 import { EvidenceTimeContext } from "./metrics";
 
 const configurationDelay = () => 60000;
 const overviewDelay = (result: ReadResult<Overview>) => result.refreshAfterMs;
+const overviewCache = createPollCache<ReadResult<Overview>>();
 function hasOldEvidence(value: unknown, now: number): boolean {
   if (!value || typeof value !== "object") return false;
   if ("quality" in value && value.quality === "stale") return true;
@@ -57,7 +59,7 @@ export function Dashboard() {
     if (result.data.presentationRevision !== revision) { refreshConfiguration(); throw new Error("Presentation changed"); }
     return result;
   }, [player.screenId, revision, refreshConfiguration]);
-  const overview = usePoll(screen ? `${screen.id}:${revision}` : null, loadOverview, overviewDelay, "Não foi possível atualizar os dados. A última leitura permanece identificada na tela.");
+  const overview = usePoll(screen ? `${screen.id}:${revision}` : null, loadOverview, overviewDelay, "Não foi possível atualizar os dados. A última leitura permanece identificada na tela.", false, overviewCache);
   useEffect(() => {
     const visibility = () => store.getState().block("hidden", document.hidden);
     const dialog = () => store.getState().block("dialog", !!document.querySelector('[role="dialog"][data-state="open"], dialog[open]'));
@@ -104,9 +106,10 @@ export function Dashboard() {
       <EvidenceTimeContext value={now}>{(() => {
         const enabled = screen.blocks.filter(block => block.enabled);
         const split = layout === "overview" && screen.overviewGrid === "split";
+        const wall = layout === "wall";
         const renderBlock = (block: typeof enabled[number]) => {
           const payload = result?.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
-          const width = overviewBlockWidth(block, enabled, split);
+          const width = displayBlockWidth(block, enabled, { split, wall });
           return <div className={`dashboard-block width-${width} block-${block.type}`} key={block.id}>
             {payload ? <DashboardBlock block={payload} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
           </div>;

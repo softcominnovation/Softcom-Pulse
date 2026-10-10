@@ -7,7 +7,7 @@ import type { Overview, OverviewBlock, ReadResult } from "@/lib/monitoring/contr
 import { hostSchema, containerSchema, configuredResourceSchema } from "@/lib/monitoring/contracts";
 import { readSchema, EvidenceClock } from "@/components/infrastructure/data";
 import { DashboardBlock } from "@/components/dashboard/blocks";
-import { overviewBlockWidth } from "@/lib/dashboard/layout";
+import { displayBlockWidth } from "@/lib/dashboard/layout";
 import { Button } from "@/components/ui/button";
 import { Field } from "./shared";
 
@@ -47,11 +47,12 @@ export function PresentationPreview({ screen, displayScalePercent }: { screen: S
   useEffect(() => { const element = content.current; if (!element) return; const check = () => setScroll(element.scrollHeight > window.innerHeight - 180); const observer = new ResizeObserver(check); observer.observe(element); window.addEventListener("resize", check); check(); return () => { observer.disconnect(); window.removeEventListener("resize", check); }; }, []);
   const enabled = screen.blocks.filter(block => block.enabled);
   const split = screen.layout === "overview" && screen.overviewGrid === "split";
+  const wall = screen.layout === "wall";
   const gridTypes = new Set(["highlighted_resources", "problems", "asgard_summary", "signal_flow"]);
   const hasProblems = enabled.some(block => block.type === "problems");
   const renderPreviewBlock = (block: Screen["blocks"][number]) => {
     const data = blocks?.find(item => item.blockId === block.id);
-    const width = overviewBlockWidth(block, enabled, split);
+    const width = displayBlockWidth(block, enabled, { split, wall });
     return <div key={block.id} className={`dashboard-block width-${width} block-${block.type}`}>{data ? <DashboardBlock block={data} failed={false} probes={probes ?? []} vps={vps ?? []} signalCards={signalCards ?? []} /> : <p className="panel-empty">Carregando prévia…</p>}</div>;
   };
   return <section className="admin-preview" aria-label="Prévia da composição"><div className="admin-actions"><h3>Prévia local · não salva · {screen.name}</h3><Button type="button" onClick={() => setReload(value => value + 1)}>Atualizar prévia</Button></div><Field label="Visualização da prévia"><select value={tvPreview ? "tv" : "normal"} onChange={event => setTvPreview(event.target.value === "tv")}><option value="normal">Normal · 100%</option><option value="tv">Telão · {displayScalePercent}%</option></select></Field><p className="admin-muted">Dados reais disponíveis, na largura atual do navegador. As alterações só serão compartilhadas ao salvar.</p>{scroll && <p className="admin-notice">Esta composição precisa de rolagem nesta altura de tela. Reduza linhas/blocos ou distribua o conteúdo entre telas.</p>}{failed && <p role="alert" className="admin-notice">Parte dos dados não pôde ser lida. Os blocos afetados indicam indisponibilidade.</p>}<EvidenceClock><div ref={content} className={`dashboard dashboard-preview ${screen.layout} ${screen.layout === "overview" ? "balanced" : ""} ${tvPreview ? "tv-mode" : ""}`} data-display-scale={scale} style={{ "--dashboard-scale": scale / 100 } as CSSProperties} aria-busy={loading}><div className={`dashboard-blocks${split ? " overview-split" : ""}`}>{!split && enabled.map(renderPreviewBlock)}{split && <>{enabled.filter(block => block.type === "summary").map(renderPreviewBlock)}<div className={`overview-split-grid${hasProblems ? "" : " no-problems"}`}>{enabled.filter(block => block.type === "highlighted_resources").map(renderPreviewBlock)}{enabled.filter(block => block.type === "problems").map(renderPreviewBlock)}{enabled.filter(block => block.type === "asgard_summary").map(renderPreviewBlock)}{enabled.filter(block => block.type === "signal_flow").map(renderPreviewBlock)}</div>{enabled.filter(block => block.type !== "summary" && !gridTypes.has(block.type)).map(renderPreviewBlock)}</>}</div></div></EvidenceClock></section>;

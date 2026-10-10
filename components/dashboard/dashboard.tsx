@@ -7,7 +7,7 @@ import { isAxiosError } from "axios";
 import { presentationDocumentSchema, type PresentationDocument } from "@/lib/config/presentation";
 import type { Overview, ReadResult } from "@/lib/monitoring/contracts";
 import { createPlayerStore, playableScreens } from "@/lib/dashboard/player";
-import { overviewBlockWidth } from "@/lib/dashboard/layout";
+import { displayBlockWidth } from "@/lib/dashboard/layout";
 import { timestamp } from "@/lib/dashboard/format";
 import { api } from "@/lib/client/api";
 import { useUiStore } from "@/store/ui.store";
@@ -104,9 +104,10 @@ export function Dashboard() {
       <EvidenceTimeContext value={now}>{(() => {
         const enabled = screen.blocks.filter(block => block.enabled);
         const split = layout === "overview" && screen.overviewGrid === "split";
+        const wall = layout === "wall";
         const renderBlock = (block: typeof enabled[number]) => {
           const payload = result?.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
-          const width = overviewBlockWidth(block, enabled, split);
+          const width = displayBlockWidth(block, enabled, { split, wall });
           return <div className={`dashboard-block width-${width} block-${block.type}`} key={block.id}>
             {payload ? <DashboardBlock block={payload} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
           </div>;

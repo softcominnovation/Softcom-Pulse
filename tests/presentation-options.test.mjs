@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { initialPresentation, presentationDocumentSchema, effectiveOptions, blockTypes, presentationWriteSchema } from "../lib/config/presentation.ts";
 import { sortInventory, selectVms, selectProblems, selectHighlights } from "../lib/dashboard/block-options.ts";
-import { isBalancedComposition, overviewBlockWidth } from "../lib/dashboard/layout.ts";
+import { displayBlockWidth, isBalancedComposition, overviewBlockWidth } from "../lib/dashboard/layout.ts";
 
 test("version 2 has type-specific defaults, strict options and six enabled blocks; version 1 stays readable", () => {
   const document = initialPresentation(randomUUID), screen = document.screens[0];
@@ -75,4 +75,19 @@ test("overview pair width widens ASGARD+Signal alone but keeps three compact pan
   const triple = [...pair, { id: randomUUID(), type: "resource_card", width: "standard", enabled: true, options: effectiveOptions({ type: "resource_card" }), resourceConfigId: randomUUID() }];
   assert.equal(overviewBlockWidth(triple[1], triple, false), "standard");
   assert.equal(overviewBlockWidth(triple[2], triple, false), "standard");
+});
+test("wall format distributes ASGARD/Problems/Signal across the row without leaving a trailing gap", () => {
+  const full = { id: randomUUID(), type: "summary", width: "full", enabled: true, options: effectiveOptions({ type: "summary" }) };
+  const asgard = { id: randomUUID(), type: "asgard_summary", width: "wide", enabled: true, options: effectiveOptions({ type: "asgard_summary" }) };
+  const problems = { id: randomUUID(), type: "problems", width: "wide", enabled: true, options: effectiveOptions({ type: "problems" }) };
+  const signal = { id: randomUUID(), type: "signal_flow", width: "wide", enabled: true, options: effectiveOptions({ type: "signal_flow" }) };
+  const wallThree = [full, asgard, problems, signal];
+  assert.equal(displayBlockWidth(asgard, wallThree, { split: false, wall: true }), "standard");
+  assert.equal(displayBlockWidth(problems, wallThree, { split: false, wall: true }), "standard");
+  assert.equal(displayBlockWidth(signal, wallThree, { split: false, wall: true }), "standard");
+  assert.equal(displayBlockWidth(asgard, wallThree, { split: false, wall: false }), "wide");
+  const wallTwo = [full, asgard, signal];
+  assert.equal(displayBlockWidth(asgard, wallTwo, { split: false, wall: true }), "wide");
+  assert.equal(displayBlockWidth(signal, wallTwo, { split: false, wall: true }), "wide");
+  assert.equal(displayBlockWidth(signal, [full, signal], { split: false, wall: true }), "full");
 });

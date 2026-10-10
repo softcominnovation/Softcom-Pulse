@@ -265,7 +265,8 @@
   .dashboard-shell:not([data-display-scale="100"]) .balanced .dashboard-blocks { min-height: min-content; }
   .balanced .dashboard-panel { height: 100%; min-height: 0; overflow: hidden; }
   .balanced:has(.block-highlighted_resources .panel-empty) .dashboard-blocks { grid-template-rows: max-content max-content minmax(calc(235px * var(--dashboard-scale, 1)), calc(340px * var(--dashboard-scale, 1))); }
-  .balanced .asgard-content, .balanced .asgard-machines, .balanced .container-inventory-compact { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  .balanced .asgard-content, .balanced .asgard-machines, .balanced .container-inventory-compact, .balanced .signal-flow-panel { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+  .balanced .signal-flow-body { flex: 1; min-height: 0; }
   .balanced .vm-table-scroll, .balanced .problem-list, .balanced .resource-grid, .balanced .uptime-scroll, .balanced .host-card-grid, .balanced .container-inventory-compact .container-table-scroll { flex: 1 1 0; min-height: 0; height: auto; max-height: none; overflow: auto; }
   .balanced .block-highlighted_resources .panel-empty { padding-top: calc(8px * var(--dashboard-scale, 1)); }
   .balanced .dashboard-banner { margin-bottom: calc(12px * var(--dashboard-scale, 1)); padding: calc(10px * var(--dashboard-scale, 1)) calc(14px * var(--dashboard-scale, 1)); }

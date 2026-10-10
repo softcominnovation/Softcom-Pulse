@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { hostKeySchema, uuidSchema } from "./resources.ts";
 
-export const blockTypes = ["summary", "highlighted_resources", "problems", "asgard_summary", "resource_card", "host_inventory", "container_inventory", "uptime_list"] as const;
+export const blockTypes = ["summary", "highlighted_resources", "problems", "asgard_summary", "resource_card", "host_inventory", "container_inventory", "uptime_list", "signal_flow"] as const;
 export type BlockType = typeof blockTypes[number];
 export const displayScaleOptions = [100, 110, 120, 125] as const;
 export const defaultDisplayScalePercent = 110;
@@ -26,6 +26,7 @@ export const blockOptionsSchemas = {
   host_inventory: z.strictObject({ sortBy: z.enum(["name", "state", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows }),
   container_inventory: z.strictObject({ sortBy: z.enum(["name", "status", "health", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows, hostKeys: z.array(hostKeySchema).max(32).refine(unique).optional() }),
   uptime_list: z.strictObject({ sortBy: z.enum(["name", "uptime", "state"]).default("name"), sortDirection: direction, visibleRows: rows }),
+  signal_flow: z.strictObject({ visibleRows: z.number().int().min(3).max(10).default(4) }),
 };
 export type OptionsByType = { [K in BlockType]: z.infer<typeof blockOptionsSchemas[K]> };
 export type BlockOptions = OptionsByType[BlockType];
@@ -41,6 +42,7 @@ export const blockCatalog = {
   host_inventory: { available: true, uiPhase: 6, label: "Hosts", options: blockOptionsSchemas.host_inventory },
   container_inventory: { available: true, uiPhase: 7, label: "Containers", options: blockOptionsSchemas.container_inventory },
   uptime_list: { available: true, uiPhase: 2, label: "Uptime das aplicações", options: blockOptionsSchemas.uptime_list },
+  signal_flow: { available: true, uiPhase: 2, label: "Signal · fluxo de processamento", options: blockOptionsSchemas.signal_flow },
 };
 const blockSchema = z.strictObject({
   id: uuidSchema, type: z.enum(blockTypes), enabled: z.boolean(), width: z.enum(["standard", "wide", "full"]),

@@ -18,6 +18,6 @@ export function overview(document: PresentationDocument, screenId = document.scr
   const problems: Problem[] = [{ id: "problem-1", resource: { type: "host", hostKey: "ASGARD", reference: null }, description: "Atenção na coleta da unidade", severity: 2, visualState: "warning", startedAt: observedAt }];
   const asgardSummary = { host, vms: host.vms };
   const screen = document.screens.find(screen => screen.id === screenId)!;
-  return { availability: "ready", stale, lastUpdated: observedAt, refreshAfterMs: 20000, data: { screenId, presentationRevision: document.revision, summary, highlightedResources: [resource], problems, asgardSummary,
-    blocks: screen.blocks.filter(block => block.enabled).map(block => ({ blockId: block.id, type: block.type, availability: "ready", stale, lastUpdated: observedAt, data: block.type === "summary" ? summary : block.type === "highlighted_resources" ? [resource] : block.type === "resource_card" ? resource : block.type === "problems" ? problems : block.type === "host_inventory" ? [host] : asgardSummary })) } };
+  return { availability: "ready", stale, lastUpdated: observedAt, refreshAfterMs: 20000, data: { screenId, presentationRevision: document.revision, summary, highlightedResources: [resource], problems, asgardSummary, signalCards: [],
+    blocks: screen.blocks.filter(block => block.enabled).map(block => ({ blockId: block.id, type: block.type, availability: "ready", stale, lastUpdated: observedAt, data: block.type === "summary" ? summary : block.type === "highlighted_resources" ? [resource] : block.type === "resource_card" ? resource : block.type === "problems" ? problems : block.type === "host_inventory" ? [host] : block.type === "signal_flow" ? { target: null } : asgardSummary })) } };
 }

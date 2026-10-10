@@ -87,7 +87,16 @@ export type ConfiguredResource = {
 export const configuredResourceSchema = z.object({ id: z.uuid(), config: resourceConfigSchema, resolved: z.boolean(), resolution: z.enum(["resolved", "missing", "ambiguous"]), resource: z.union([hostSchema, containerSchema]).nullable(), metrics: metricsSchema });
 export const vmWorkloadsSchema = z.object({ vm: vmSchema, association: z.enum(["linked", "unlinked", "host_unavailable"]), containers: z.array(containerSchema), configuredServices: z.array(configuredResourceSchema) });
 export type VmWorkloads = z.infer<typeof vmWorkloadsSchema>;
-export type OverviewBlock = Omit<ReadResult<Summary | AsgardSummary | ConfiguredResource | ConfiguredResource[] | Problem[] | Host[] | Container[] | ProbeCard[] | null>, "refreshAfterMs"> & { blockId: string; type: BlockType; options?: Record<string, unknown> };
+export type SignalFlowBlockData = {
+  target: {
+    id: string; displayName: string; description: string | null; state: number; latencyMs: number | null;
+    readyStatus: string | null; workerStatus: string | null; activeInstances: number | null; strip: number[];
+    checkedAt: string | null; outboxPending: number | null; inboxPending: number | null;
+    outboxDead: number | null; inboxDead: number | null; oldestOutboxSeconds: number | null;
+    oldestInboxSeconds: number | null; checks: Record<string, unknown> | null;
+  } | null;
+};
+export type OverviewBlock = Omit<ReadResult<Summary | AsgardSummary | ConfiguredResource | ConfiguredResource[] | Problem[] | Host[] | Container[] | ProbeCard[] | SignalFlowBlockData | null>, "refreshAfterMs"> & { blockId: string; type: BlockType; options?: Record<string, unknown> };
 export type ProbeCard = {
   id: string; displayName: string; description: string | null; serviceType: string | null; displayOrder: number; critical: boolean; dashboardEnabled: boolean; paused: boolean; progressStartedAt: string | null;
   reason: number | null; latencyMs: number | null; checkedAt: string | null; httpStatus: number | null; certNotAfter: string | null;
@@ -102,7 +111,7 @@ export type Overview = {
   standaloneVps?: import("../config/standalone-vps.ts").StandaloneVpsHighlight[];
   signalCards?: {
     id: string; displayName: string; description: string | null; critical: boolean; displayOrder: number;
-    state: number; latencyMs: number | null; readyStatus: string | null; workerStatus: string | null;
+    enabled: boolean; state: number; latencyMs: number | null; readyStatus: string | null; workerStatus: string | null;
     activeInstances: number | null; strip: number[];
     uptime24h: { available: number; total: number } | null; checkedAt: string | null;
   }[];

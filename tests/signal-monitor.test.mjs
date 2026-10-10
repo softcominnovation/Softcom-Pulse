@@ -103,33 +103,32 @@ function okReady(checks = {}) {
 }
 const liveOk = { ok: true, status: 200, latencyMs: 20, body: { status: "ok" } };
 
-test("Signal classifier maps ready ok, degraded, worker stale, DLQ-only, ages and timeout", () => {
+test("Signal classifier follows application-style availability: respond ok, slow, or down", () => {
   assert.equal(classifySignalSample(liveOk, okReady()).state, signalStates.ok);
 
-  const degraded = classifySignalSample(liveOk, {
-    ok: false, error: "http", status: 503, latencyMs: 30,
-    body: { status: "degraded", checks: { database: "down", worker: { status: "unavailable" } } },
-  });
-  assert.equal(degraded.state, signalStates.degraded);
-
-  assert.equal(classifySignalSample(liveOk, okReady({ worker: { status: "stale", ageSeconds: 50, activeInstances: 0 } })).state, signalStates.degraded);
-
-  const dlq = classifySignalSample(liveOk, okReady({
-    pipeline: { outbox_pending: 0, outbox_dead: 3, inbox_pending: 0, inbox_dead: 0, oldest_outbox_seconds: 0, oldest_inbox_seconds: 0 },
+  const dlqStillOk = classifySignalSample(liveOk, okReady({
+    pipeline: { outbox_pending: 0, outbox_dead: 3, inbox_pending: 0, inbox_dead: 142, oldest_outbox_seconds: 0, oldest_inbox_seconds: 0 },
   }));
-  assert.equal(dlq.state, signalStates.attention);
+  assert.equal(dlqStillOk.state, signalStates.ok);
 
-  assert.equal(classifySignalSample(liveOk, okReady({
-    pipeline: { outbox_pending: 2, outbox_dead: 0, inbox_pending: 0, inbox_dead: 0, oldest_outbox_seconds: 60, oldest_inbox_seconds: 0 },
-  })).state, signalStates.degraded);
+  assert.equal(classifySignalSample(liveOk, okReady({ worker: { status: "stale", ageSeconds: 50, activeInstances: 0 } })).state, signalStates.ok);
 
-  assert.equal(classifySignalSample(liveOk, okReady({
-    pipeline: { outbox_pending: 0, outbox_dead: 0, inbox_pending: 1, inbox_dead: 0, oldest_outbox_seconds: 0, oldest_inbox_seconds: 120 },
-  })).state, signalStates.degraded);
+  const slow = classifySignalSample(
+    { ok: true, status: 200, latencyMs: 2600, body: { status: "ok" } },
+    { ...okReady(), latencyMs: 2600 },
+    5000,
+  );
+  assert.equal(slow.state, signalStates.attention);
 
   const timeout = classifySignalSample(
     { ok: false, error: "timeout", status: null, latencyMs: 5000 },
     { ok: false, error: "timeout", status: null, latencyMs: 5000 },
   );
   assert.equal(timeout.state, signalStates.down);
+
+  const network = classifySignalSample(
+    { ok: false, error: "network", status: null, latencyMs: null },
+    { ok: false, error: "network", status: null, latencyMs: null },
+  );
+  assert.equal(network.state, signalStates.down);
 });

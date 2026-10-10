@@ -67,7 +67,7 @@ Alvos Softcom Signal ficam em `signal_target`, `signal_infra_link` e `signal_mon
 
 | Rota | Resultado |
 |---|---|
-| `GET /api/monitoring/signal-targets` | `{data}` com estado atual, `strip`, `uptime24h`, `checks` sanitizados e `links` com `inventoryStatus` |
+| `GET /api/monitoring/signal-targets` | `{data}` com estado atual, `strip`, `uptime24h`/`uptime7d`/`uptime30d`, `checks` sanitizados e `links` com `inventoryStatus` e métricas do inventário quando ready |
 | `POST /api/monitoring/signal-targets` | 201 `{data}`; acima do limite: 409 `signal_target_limit` |
 | `GET /api/monitoring/signal-targets/:id` | 200 `{data}` |
 | `PATCH /api/monitoring/signal-targets/:id` | 200 `{data}`; revisão divergente: 409 `revision_conflict` |
@@ -76,7 +76,7 @@ Alvos Softcom Signal ficam em `signal_target`, `signal_infra_link` e `signal_mon
 | `POST /api/monitoring/signal-targets/:id/links` | 201 `{data}` do alvo; acima do limite: 409 `signal_infra_link_limit` |
 | `DELETE /api/monitoring/signal-targets/:id/links/:linkId` | 200 `{data}` do alvo; body com `expectedRevision` |
 
-O overview ganha `signalCards` só com alvos `enabled` e `dashboardEnabled`. Separado de `externalServices` e `standaloneVps`. Falha do Signal não altera `pulse:sync:last` do Zabbix.
+O overview autentificado inclui `signalCards` com alvos `dashboardEnabled` (pausados aparecem como Pausado) e o bloco `signal_flow` com o primeiro alvo habilitado. Separado de `externalServices` e `standaloneVps`. Estado: `0` Disponível (respondeu), `1` Atenção (latência &gt; metade do timeout), `3` Indisponível (sem resposta útil); DLQ/deps ficam nas métricas. Na superfície pública (`/api/public/...`), `signalCards` fica vazio e `signal_flow` responde `unavailable`. Falha do Signal não altera `pulse:sync:last` do Zabbix.
 
 Seletores são sensíveis a maiúsculas/minúsculas. Prefixo `evolution_evolution` casa o nome exato ou tasks iniciadas em `evolution_evolution.`; também se aceita o prefixo com ponto explícito. Não casa `evolution_evolution_backup`. `name_contains` busca trecho literal. Regex usa [RE2JS](https://github.com/le0pard/re2js), versão fixada 2.8.6, com avaliação linear e limite de 256 caracteres no padrão e 512 no nome; não usa RegExp nativo com padrão do usuário. Sintaxe não suportada, incluindo backreferences, retorna 400.
 

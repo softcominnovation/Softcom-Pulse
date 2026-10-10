@@ -47,7 +47,18 @@ async function readPublic(request: Request, segments: string[]) {
   const [root, second, third, fourth, fifth, sixth] = segments;
   const authed = hasAccessSession(request);
   if (root === "dashboard" && second === "overview" && segments.length === 2) {
-    return readOverview(queryParams(request, z.strictObject({ screenId: uuidSchema.optional() })).screenId);
+    const overview = await readOverview(queryParams(request, z.strictObject({ screenId: uuidSchema.optional() })).screenId);
+    // Signal stays private on the public surface until an explicit product decision.
+    return {
+      ...overview,
+      data: {
+        ...overview.data,
+        signalCards: [],
+        blocks: overview.data.blocks.map(block => block.type === "signal_flow"
+          ? { ...block, data: null, availability: "unavailable" as const, stale: false, lastUpdated: null }
+          : block),
+      },
+    };
   }
   if (root === "settings" && second === "presentation" && segments.length === 2) { queryParams(request, emptyQuery); return getPresentation(); }
   if (root === "settings" && second === "resources" && segments.length === 2) { queryParams(request, emptyQuery); return { data: await listResources() }; }

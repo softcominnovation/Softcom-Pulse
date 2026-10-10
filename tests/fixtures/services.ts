@@ -24,6 +24,7 @@ export async function servicesFixture(page: Page) {
   const envelope = <T>(data: T, availability: ReadResult<T>["availability"] = "ready"): ReadResult<T> => ({ data, availability, stale: state.stale, lastUpdated: at, refreshAfterMs: state.pollMs });
   page.on("request", request => { if (request.url().includes("/api/monitoring")) state.requests.push(new URL(request.url()).pathname); });
   await page.route("**/api/monitoring/containers", route => route.fulfill(state.fail ? { status: 503, json: { error: { code: "cache_unavailable" } } } : { json: envelope([...state.containers, state.other]) }));
+  await page.route("**/api/monitoring/signal-targets", route => route.fulfill({ json: { data: [] } }));
   await page.route("**/api/monitoring/services", route => route.fulfill({ json: envelope(state.services) }));
   await page.route("**/api/monitoring/services/*", route => {
     const item = state.services.find(item => item.id === new URL(route.request().url()).pathname.split("/").at(-1));

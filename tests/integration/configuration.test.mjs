@@ -577,6 +577,31 @@ test("compact dashboard migration places highlights above two panels and preserv
   }
 });
 
+test("signal_flow layout migration replaces problems on screen 1 and keeps existing signal_flow intact", async () => {
+  const sql = await readFile(new URL("../../prisma/migrations/20261009190000_signal_flow_layout/migration.sql", import.meta.url), "utf8");
+  const base = initialV2(randomUUID);
+  base.revision = 12;
+  const problems = base.screens[0].blocks.find(block => block.type === "problems");
+  assert.ok(problems);
+  const write = value => getDatabase().query("UPDATE pulse_settings SET value=$1::jsonb WHERE key='dashboardPresentation'", [JSON.stringify(value)]);
+  await write(base); await getDatabase().query(sql);
+  const migrated = (await getPresentation()).data;
+  assert.equal(migrated.revision, 13);
+  assert.equal(migrated.screens.length, 2);
+  assert.equal(migrated.screens[0].blocks.some(block => block.type === "signal_flow"), true);
+  assert.equal(migrated.screens[0].blocks.some(block => block.type === "problems"), false);
+  assert.equal(migrated.screens[1].blocks.some(block => block.type === "problems" && block.id === problems.id), true);
+  const signal = migrated.screens[0].blocks.find(block => block.type === "signal_flow");
+  assert.equal(signal.width, problems.width === "full" ? "full" : "wide");
+  assert.deepEqual(signal.options, { visibleRows: 4 });
+  await getDatabase().query(sql);
+  assert.deepEqual((await getPresentation()).data, migrated);
+  const already = structuredClone(migrated);
+  already.revision = 20;
+  await write(already); await getDatabase().query(sql);
+  assert.deepEqual((await getPresentation()).data, already);
+});
+
 test("options migration preserves identity and preferences, increments once, and leaves excessive legacy screens intact", async () => {
   const sql = await readFile(new URL("../../prisma/migrations/20261003180000_presentation_options/migration.sql", import.meta.url), "utf8");
   const legacy = initialPresentation(randomUUID); legacy.revision = 40; legacy.rotation.intervalSeconds = 52;

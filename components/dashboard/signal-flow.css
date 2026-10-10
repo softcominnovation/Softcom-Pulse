@@ -1,0 +1,148 @@
+.signal-flow-panel {
+  min-height: 0;
+}
+
+.signal-flow-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  flex: 1;
+  min-height: 0;
+  padding: 0 14px 4px;
+  overflow: hidden;
+}
+
+.signal-flow-top {
+  display: grid;
+  gap: 0.45rem;
+  flex: none;
+  min-width: 0;
+}
+
+.signal-flow-jobs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.signal-flow-job {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--pulse-line, #29343d);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--pulse-elevated, #18232c) 70%, transparent);
+}
+
+.signal-flow-job strong {
+  font: 1.35rem/1.1 var(--font-numeric, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
+  color: var(--pulse-text, #eef3f5);
+}
+
+.signal-flow-job span {
+  color: var(--pulse-muted, #9daeb9);
+  font-size: 0.7rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.signal-flow-meta {
+  margin: 0;
+  color: var(--pulse-muted, #9daeb9);
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.signal-flow-uptime {
+  flex: none;
+  min-width: 0;
+  min-height: 0;
+}
+
+.signal-flow-uptime .uptime-track {
+  display: block;
+  width: 100%;
+  height: 18px;
+  max-height: 18px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.signal-flow-events {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: calc(var(--visible-rows, 4) * 1.85rem);
+  overflow: auto;
+}
+
+.signal-flow-events li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  min-height: 1.85rem;
+  padding: 0.2rem 0;
+  border-top: 1px solid var(--pulse-line, #29343d);
+  font-size: 0.8125rem;
+  color: var(--pulse-text, #eef3f5);
+}
+
+.signal-flow-events li:first-child {
+  border-top: 0;
+}
+
+.signal-flow-events li span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.signal-flow-events li strong {
+  font: 0.8125rem/1.2 var(--font-numeric, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-variant-numeric: tabular-nums;
+  color: inherit;
+}
+
+.signal-flow-events li.tone-good { color: var(--pulse-green, #64d6b0); }
+.signal-flow-events li.tone-warn { color: var(--pulse-amber, #d6ab65); }
+.signal-flow-events li.tone-bad { color: var(--pulse-red, #e17878); }
+.signal-flow-events li.tone-unknown { color: var(--pulse-muted, #9daeb9); }
+
+.signal-flow-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: auto;
+  flex: none;
+}
+
+.signal-flow-foot p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .signal-flow-jobs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.35rem;
+  }
+  .signal-flow-job strong {
+    font-size: 1.1rem;
+  }
+  .signal-flow-foot {
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+}

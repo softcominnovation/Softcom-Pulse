@@ -1,6 +1,4 @@
-import {
-  signalInboxAgeLimitSeconds, signalOutboxAgeLimitSeconds, signalStates,
-} from "../../config/signal-targets.ts";
+import { signalDefaultTimeoutMs, signalStates } from "../../config/signal-targets.ts";
 import { pipelineNumbers, sanitizeSignalChecks } from "./sanitize.ts";
 
 export type SignalHttpError = "timeout" | "network" | "tls" | "dns" | "http";
@@ -25,23 +23,23 @@ export type SignalClassification = {
   checks: Record<string, unknown> | null;
 };
 
-function depDown(value: unknown) {
-  if (value === "down" || value === "unavailable") return true;
-  if (value && typeof value === "object" && "status" in value) {
-    const status = (value as { status?: string }).status;
-    return status === "down" || status === "unavailable";
-  }
-  return false;
-}
-function knowledgeAttention(value: unknown) {
-  if (value === "unavailable") return true;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const row = value as Record<string, unknown>;
-  return [row.itemsFailed, row.jobsFailedCurrent, row.expiredLeases, row.itemsWithoutActiveJob].some(n => typeof n === "number" && n > 0);
+/** Same half-timeout rule as external application probes. */
+export function signalSlowAfterMs(timeoutMs: number) {
+  return Math.max(1, Math.floor(timeoutMs / 2));
 }
 
-export function classifySignalSample(live: SignalHttpResult, ready: SignalHttpResult): SignalClassification {
-  const latencyMs = [live.latencyMs, ready.latencyMs].filter((value): value is number => value !== null).reduce((a, b) => Math.max(a, b), 0) || null;
+/**
+ * Availability like applications: responds = Disponível; slow (above half timeout) = Atenção;
+ * no useful response = Indisponível. Pipeline/DLQ/deps stay in metrics, not in the state badge.
+ */
+export function classifySignalSample(
+  live: SignalHttpResult,
+  ready: SignalHttpResult,
+  timeoutMs = signalDefaultTimeoutMs,
+): SignalClassification {
+  const latencyMs = [live.latencyMs, ready.latencyMs]
+    .filter((value): value is number => value !== null)
+    .reduce((a, b) => Math.max(a, b), 0) || null;
   const liveOk = live.ok && live.status === 200 && !!(live.body && typeof live.body === "object" && (live.body as { status?: string }).status === "ok");
   const readyBody = ready.ok || (!ready.ok && ready.error === "http") ? ready.body : undefined;
   const readyRecord = readyBody && typeof readyBody === "object" ? readyBody as Record<string, unknown> : null;
@@ -60,26 +58,19 @@ export function classifySignalSample(live: SignalHttpResult, ready: SignalHttpRe
     ...pipe, checks,
   };
 
-  if (!live.ok && !ready.ok) return { ...base, state: signalStates.down, liveOk: false, readyStatus: null };
-  if (!ready.ok && ready.error !== "http") return { ...base, state: signalStates.down };
-  if (ready.status !== null && ready.status !== 200 && ready.status !== 503) return { ...base, state: signalStates.down };
+  const timedOut = (!live.ok && live.error === "timeout") || (!ready.ok && ready.error === "timeout");
+  const noResponse = timedOut
+    || (!live.ok && !ready.ok)
+    || (!ready.ok && ready.error !== "http")
+    || (ready.status !== null && ready.status !== 200 && ready.status !== 503);
 
-  const depBad = !!(checks && (
-    depDown(checks.database) || depDown(checks.redis) || depDown(checks.objectStorage) || depDown(checks.workdeskAudio)
-  ));
-  const workerBad = workerStatus === "stale" || workerStatus === "missing" || workerStatus === "unavailable";
-  const ageBad = (pipe.oldestOutboxSeconds ?? 0) >= signalOutboxAgeLimitSeconds
-    || (pipe.oldestInboxSeconds ?? 0) >= signalInboxAgeLimitSeconds;
-  const degraded = ready.status === 503 || readyStatus === "degraded" || depBad || workerBad || ageBad;
-  if (degraded) return { ...base, state: signalStates.degraded };
+  if (noResponse) return { ...base, state: signalStates.down, liveOk: timedOut || !live.ok ? false : base.liveOk, readyStatus: timedOut ? null : base.readyStatus };
 
-  const deadOnly = ((pipe.outboxDead ?? 0) > 0 || (pipe.inboxDead ?? 0) > 0) && readyStatus === "ok" && !depBad && !workerBad && !ageBad;
-  const knowledgeSoft = knowledgeAttention(checks?.knowledgeIndex);
-  if (deadOnly || knowledgeSoft) return { ...base, state: signalStates.attention };
+  const responded = ready.status === 200 || ready.status === 503 || ready.ok;
+  if (!responded) return { ...base, state: signalStates.down };
 
-  if (ready.status === 200 && readyStatus === "ok" && workerStatus === "up" && liveOk !== false) {
-    return { ...base, state: signalStates.ok };
+  if (latencyMs !== null && latencyMs > signalSlowAfterMs(timeoutMs)) {
+    return { ...base, state: signalStates.attention };
   }
-  if (readyStatus === "ok") return { ...base, state: signalStates.attention };
-  return { ...base, state: signalStates.degraded };
+  return { ...base, state: signalStates.ok };
 }

@@ -1,0 +1,234 @@
+.signal-services {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.signal-service-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.signal-service-title {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.signal-service-actions {
+  margin-left: auto;
+  flex: none;
+  align-self: flex-start;
+}
+
+.signal-strip-block {
+  padding: 0 14px 12px;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.signal-uptime-line {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--pulse-muted, #9daeb9);
+  font-variant-numeric: tabular-nums;
+}
+
+.signal-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  padding: 0 14px 14px;
+}
+
+.signal-metric-card {
+  border: 1px solid var(--pulse-line, #29343d);
+  border-radius: 10px;
+  background: var(--pulse-elevated, #18232c);
+  padding: 10px 12px;
+}
+
+.signal-metric-card h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.signal-metric-card dl {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.signal-metric-card dl > div {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.signal-metric-card dt {
+  color: var(--pulse-muted, #9daeb9);
+  margin: 0;
+}
+
+.signal-metric-card dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.signal-pipeline-card {
+  grid-column: span 1;
+  min-width: min(100%, 280px);
+}
+
+.signal-pipeline-lead {
+  margin: -0.15rem 0 0.65rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--pulse-muted, #9daeb9);
+}
+
+.signal-pipeline-lanes {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.signal-pipeline-lane {
+  border: 1px solid var(--pulse-line, #29343d);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--pulse-surface, #121a21) 70%, transparent);
+}
+
+.signal-pipeline-lane h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--pulse-text, #eef3f5);
+}
+
+.signal-pipeline-lane .has-dead dt,
+.signal-pipeline-lane .has-dead dd {
+  color: var(--pulse-amber, #f2c275);
+}
+
+.signal-vm-links {
+  border-top: 1px solid var(--pulse-line, #29343d);
+  padding: 12px 14px 14px;
+}
+
+.signal-linked-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.signal-vm-links h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.signal-vm-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.signal-vm-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--pulse-line, #29343d);
+  font-size: 0.8125rem;
+}
+
+.signal-linked-grid {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 230px));
+  gap: 8px;
+  justify-content: start;
+}
+
+.signal-linked-card-wrap {
+  position: relative;
+  max-width: 230px;
+}
+
+.signal-linked-card {
+  width: 100%;
+  max-width: 230px;
+  cursor: default;
+  pointer-events: none;
+}
+
+.signal-linked-card .availability-name {
+  padding-right: 28px;
+}
+
+.signal-linked-unlink {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+.signal-link-dialog {
+  width: min(720px, calc(100% - 32px));
+}
+
+.signal-link-filters {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.signal-link-modal-list {
+  max-height: min(50vh, 360px);
+  overflow: auto;
+  margin-top: 0.25rem;
+}
+
+.signal-edit-form {
+  padding: 0 14px 14px;
+}
+
+@media (max-width: 700px) {
+  .signal-service-heading {
+    flex-wrap: wrap;
+  }
+  .signal-service-actions {
+    margin-left: 0;
+  }
+  .signal-vm-list li {
+    grid-template-columns: 1fr;
+  }
+  .signal-linked-grid {
+    grid-template-columns: 1fr;
+  }
+  .signal-linked-card-wrap,
+  .signal-linked-card {
+    max-width: none;
+  }
+  .signal-metrics-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .signal-pipeline-card {
+    grid-column: 1 / -1;
+  }
+  .signal-link-filters {
+    grid-template-columns: 1fr;
+  }
+}

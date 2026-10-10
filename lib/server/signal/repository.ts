@@ -68,12 +68,12 @@ async function strips(ids: string[]) {
   return map;
 }
 
-async function uptime24h(ids: string[]) {
+async function uptimeWindow(ids: string[], hours: number) {
   if (!ids.length) return new Map<string, { available: number; total: number }>();
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
   const rows = await getPrisma().$queryRaw<{ target_id: string; available: number; total: number }[]>`
     SELECT target_id,
-      COUNT(*) FILTER (WHERE state = ${signalStates.ok})::int AS available,
+      COUNT(*) FILTER (WHERE state IN (${signalStates.ok}, ${signalStates.attention}))::int AS available,
       COUNT(*)::int AS total
     FROM signal_monitor_sample
     WHERE target_id IN (${Prisma.join(ids.map(id => Prisma.sql`${id}::uuid`))}) AND checked_at >= ${since}
@@ -81,28 +81,60 @@ async function uptime24h(ids: string[]) {
   return new Map(rows.map(row => [row.target_id, { available: Number(row.available), total: Number(row.total) }]));
 }
 
+type LinkInventory = {
+  status: "ready" | "missing" | "stale";
+  name: string | null;
+  availability: string | null;
+  cpuUsagePercent: number | null;
+  memoryUsagePercent: number | null;
+};
+
 async function resolveInventory(links: LinkRow[]) {
-  if (!links.length) return new Map<string, "ready" | "missing" | "stale">();
+  const empty = new Map<string, LinkInventory>();
+  if (!links.length) return empty;
   const batch = await readSnapshotBatch([snapshotKeys.hosts]).catch(() => null);
   const hosts = batch ? snapshotData(batch, snapshotKeys.hosts, z.array(hostSchema), []) : [];
   const inventory = batch ? readResult(hosts, batch, [snapshotKeys.hosts]) : null;
   const stale = inventory?.stale ?? true;
-  const map = new Map<string, "ready" | "missing" | "stale">();
+  const map = new Map<string, LinkInventory>();
   for (const link of links) {
     const host = hosts.find(row => row.hostKey === link.hostKey);
-    if (!host) { map.set(link.id, "missing"); continue; }
+    if (!host) {
+      map.set(link.id, { status: "missing", name: null, availability: null, cpuUsagePercent: null, memoryUsagePercent: null });
+      continue;
+    }
     if (link.vmKey) {
       const vm = host.vms.find(row => row.vmKey === link.vmKey);
-      map.set(link.id, !vm ? "missing" : stale ? "stale" : "ready");
-    } else map.set(link.id, stale ? "stale" : "ready");
+      if (!vm) {
+        map.set(link.id, { status: "missing", name: null, availability: null, cpuUsagePercent: null, memoryUsagePercent: null });
+        continue;
+      }
+      map.set(link.id, {
+        status: stale ? "stale" : "ready",
+        name: vm.displayName ?? vm.name,
+        availability: vm.state,
+        cpuUsagePercent: vm.metrics.cpuUsagePercent?.value ?? null,
+        memoryUsagePercent: vm.metrics.memoryUsagePercent?.value ?? null,
+      });
+    } else {
+      map.set(link.id, {
+        status: stale ? "stale" : "ready",
+        name: host.displayName ?? host.name,
+        availability: host.availability,
+        cpuUsagePercent: host.metrics.cpuUsagePercent?.value ?? null,
+        memoryUsagePercent: host.metrics.memoryUsagePercent?.value ?? null,
+      });
+    }
   }
   return map;
 }
 
-function publicLink(link: LinkRow, inventoryStatus: "ready" | "missing" | "stale") {
+function publicLink(link: LinkRow, inventory: LinkInventory) {
   return {
     id: link.id, role: link.role, label: link.label, hostKey: link.hostKey, vmKey: link.vmKey,
-    parentHostKey: link.parentHostKey, inventoryStatus,
+    parentHostKey: link.parentHostKey, inventoryStatus: inventory.status,
+    inventoryName: inventory.name, inventoryAvailability: inventory.availability,
+    cpuUsagePercent: inventory.cpuUsagePercent, memoryUsagePercent: inventory.memoryUsagePercent,
     createdAt: link.createdAt.toISOString(), updatedAt: link.updatedAt.toISOString(),
   };
 }
@@ -111,7 +143,9 @@ function publicTarget(
   row: TargetRow,
   sample: SampleRow | null,
   strip: number[],
-  uptime: { available: number; total: number } | null,
+  uptime24h: { available: number; total: number } | null,
+  uptime7d: { available: number; total: number } | null,
+  uptime30d: { available: number; total: number } | null,
   links: ReturnType<typeof publicLink>[],
   redis: Awaited<ReturnType<typeof readSignalResults>> extends Map<string, infer V> ? V : never,
 ) {
@@ -121,7 +155,7 @@ function publicTarget(
     activeInstances: sample.activeInstances, outboxPending: sample.outboxPending, inboxPending: sample.inboxPending,
     outboxDead: sample.outboxDead, inboxDead: sample.inboxDead, oldestOutboxSeconds: sample.oldestOutboxSeconds,
     oldestInboxSeconds: sample.oldestInboxSeconds, checks: sample.checksJson as Record<string, unknown> | null,
-    strip, uptime24h: uptime, checkedAt: sample.checkedAt.toISOString(),
+    strip, uptime24h, checkedAt: sample.checkedAt.toISOString(),
   } : null)) : null;
   const state = !row.enabled ? signalStates.no_data : recent?.state ?? signalStates.no_data;
   return {
@@ -134,7 +168,8 @@ function publicTarget(
     outboxPending: recent?.outboxPending ?? null, inboxPending: recent?.inboxPending ?? null,
     outboxDead: recent?.outboxDead ?? null, inboxDead: recent?.inboxDead ?? null,
     oldestOutboxSeconds: recent?.oldestOutboxSeconds ?? null, oldestInboxSeconds: recent?.oldestInboxSeconds ?? null,
-    checks: recent?.checks ?? null, strip: recent?.strip ?? strip, uptime24h: recent?.uptime24h ?? uptime,
+    checks: recent?.checks ?? null, strip: recent?.strip ?? (!row.enabled ? [] : strip),
+    uptime24h: recent?.uptime24h ?? uptime24h, uptime7d, uptime30d,
     checkedAt: recent && "checkedAt" in recent ? recent.checkedAt : sample?.checkedAt.toISOString() ?? null,
     links,
     createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
@@ -143,10 +178,12 @@ function publicTarget(
 
 async function assemble(rows: TargetRow[]) {
   const ids = rows.map(row => row.id);
-  const [samples, presence, uptimes, redis, allLinks] = await Promise.all([
+  const [samples, presence, day, week, month, redis, allLinks] = await Promise.all([
     latestSamples(ids),
     strips(ids),
-    uptime24h(ids),
+    uptimeWindow(ids, 24),
+    uptimeWindow(ids, 24 * 7),
+    uptimeWindow(ids, 24 * 30),
     readSignalResults(ids).catch(() => new Map()),
     database(() => getPrisma().signalInfraLink.findMany({ where: { targetId: { in: ids } }, orderBy: [{ role: "asc" }, { hostKey: "asc" }] }) as Promise<LinkRow[]>),
   ]);
@@ -157,12 +194,15 @@ async function assemble(rows: TargetRow[]) {
     list.push(link);
     byTarget.set(link.targetId, list);
   }
+  const missing: LinkInventory = { status: "missing", name: null, availability: null, cpuUsagePercent: null, memoryUsagePercent: null };
   return rows.map(row => publicTarget(
     row,
     samples.get(row.id) ?? null,
     presence.get(row.id) ?? [],
-    uptimes.get(row.id) ?? null,
-    (byTarget.get(row.id) ?? []).map(link => publicLink(link, inventory.get(link.id) ?? "missing")),
+    day.get(row.id) ?? null,
+    week.get(row.id) ?? null,
+    month.get(row.id) ?? null,
+    (byTarget.get(row.id) ?? []).map(link => publicLink(link, inventory.get(link.id) ?? missing)),
     redis.get(row.id) ?? null,
   ));
 }
@@ -207,16 +247,38 @@ export function listSignalTargets() {
 export function listHighlightedSignalTargets() {
   return database(async () => {
     const rows = await getPrisma().signalTarget.findMany({
-      where: { enabled: true, dashboardEnabled: true },
+      where: { dashboardEnabled: true },
       orderBy: [{ displayOrder: "asc" }, { id: "asc" }],
     }) as TargetRow[];
     const items = await assemble(rows);
     return items.map(item => ({
       id: item.id, displayName: item.displayName, description: item.description, critical: item.critical,
-      displayOrder: item.displayOrder, state: item.state, latencyMs: item.latencyMs, readyStatus: item.readyStatus,
-      workerStatus: item.workerStatus, activeInstances: item.activeInstances, strip: item.strip,
-      uptime24h: item.uptime24h, checkedAt: item.checkedAt,
+      displayOrder: item.displayOrder, enabled: item.enabled, state: item.state, latencyMs: item.latencyMs,
+      readyStatus: item.readyStatus, workerStatus: item.workerStatus, activeInstances: item.activeInstances,
+      strip: item.strip, uptime24h: item.uptime24h, checkedAt: item.checkedAt,
     }));
+  });
+}
+
+/** First enabled target for the signal_flow dashboard block (display order). */
+export function listSignalFlowTarget() {
+  return database(async () => {
+    const rows = await getPrisma().signalTarget.findMany({
+      where: { enabled: true },
+      orderBy: [{ displayOrder: "asc" }, { id: "asc" }],
+      take: 1,
+    }) as TargetRow[];
+    if (!rows.length) return null;
+    const [item] = await assemble(rows);
+    return {
+      id: item.id, displayName: item.displayName, description: item.description, state: item.state,
+      latencyMs: item.latencyMs, readyStatus: item.readyStatus, workerStatus: item.workerStatus,
+      activeInstances: item.activeInstances, strip: item.strip, checkedAt: item.checkedAt,
+      outboxPending: item.outboxPending, inboxPending: item.inboxPending,
+      outboxDead: item.outboxDead, inboxDead: item.inboxDead,
+      oldestOutboxSeconds: item.oldestOutboxSeconds, oldestInboxSeconds: item.oldestInboxSeconds,
+      checks: item.checks,
+    };
   });
 }
 
@@ -336,7 +398,7 @@ export function recordSignalSample(targetId: string, checkedAt: Date, classifica
       },
     });
     const presence = await strips([targetId]);
-    const uptime = await uptime24h([targetId]);
+    const uptime = await uptimeWindow([targetId], 24);
     await publishSignalResult(targetId, checkedAt.toISOString(), {
       state: classification.state, latencyMs: classification.latencyMs, httpStatus: classification.httpStatus,
       liveOk: classification.liveOk, readyStatus: classification.readyStatus, workerStatus: classification.workerStatus,
@@ -344,7 +406,7 @@ export function recordSignalSample(targetId: string, checkedAt: Date, classifica
       inboxPending: classification.inboxPending, outboxDead: classification.outboxDead, inboxDead: classification.inboxDead,
       oldestOutboxSeconds: classification.oldestOutboxSeconds, oldestInboxSeconds: classification.oldestInboxSeconds,
       checks: classification.checks, strip: presence.get(targetId) ?? [classification.state],
-      uptime24h: uptime.get(targetId) ?? { available: classification.state === signalStates.ok ? 1 : 0, total: 1 },
+      uptime24h: uptime.get(targetId) ?? { available: classification.state === signalStates.ok || classification.state === signalStates.attention ? 1 : 0, total: 1 },
     }).catch(() => undefined);
   });
 }

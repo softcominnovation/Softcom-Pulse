@@ -11,7 +11,7 @@ type Consult = (baseUrl: string, timeoutMs: number, signal?: AbortSignal) => Pro
 
 async function consult(target: Target, transport: Consult, signal?: AbortSignal) {
   const { live, ready } = await transport(target.baseUrl, target.timeoutMs, signal);
-  const classification = classifySignalSample(live, ready);
+  const classification = classifySignalSample(live, ready, target.timeoutMs);
   await recordSignalSample(target.id, new Date(), classification);
 }
 

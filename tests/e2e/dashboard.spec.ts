@@ -9,7 +9,7 @@ async function enter(page: Page) {
   await page.getByLabel("E-mail", { exact: true }).fill("dashboard@example.test");
   await page.getByLabel("Senha", { exact: true }).fill("test-password");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar.", exact: true })).toBeVisible();
 }
 async function mock(page: Page, count = 1, autoStart = false) {
   const state = { document: presentation(count, 1, autoStart), fail: false, configFail: false, stale: false, empty: false, calls: [] as string[], delay: 0, transform: null as ((body: ReturnType<typeof overview>) => void) | null };
@@ -146,7 +146,7 @@ test("ASGARD summary follows the prototype and opens the protected detailed view
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({path:`.cache/screenshots/asgard-details-${width}.png`,fullPage:true});
     await page.getByRole("link", {name:"Voltar ao dashboard"}).click();
-    await expect(page.getByRole("heading", {name:"Dashboard",exact:true})).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar.", exact: true })).toBeVisible();
   }
   await page.getByRole("link", {name:"Ver ASGARD"}).click();
   await expect(page.getByText("16 em execução com evidência atual", {exact:true})).toBeVisible();
@@ -279,7 +279,7 @@ test("fullscreen refusal keeps TV and playback available; shortcuts ignore form 
   await expect(page.getByText(/Tela cheia indisponível neste navegador/)).toBeVisible();
   await page.getByLabel("Escolher tela").focus(); await page.keyboard.press("t");
   await expect(page.getByRole("button", { name: "Modo TV", exact: true })).toHaveAttribute("aria-pressed", "false");
-  await page.getByRole("heading", { name: "Dashboard", exact: true }).click(); await page.keyboard.press("t");
+  await page.getByRole("heading", { name: "Toda a operação. Um só lugar.", exact: true }).click(); await page.keyboard.press("t");
   await expect(page.getByRole("button", { name: "Sair do modo TV" })).toBeVisible();
   await page.keyboard.press("r"); await expect(page.getByRole("button", { name: "Parar alternância" })).toBeVisible();
 });
@@ -300,7 +300,7 @@ test("two and three presentations saved through the real BFF play without writin
     const unchanged = (await (await page.request.get("/api/settings/presentation", { headers })).json()).data;
     expect(unchanged).toEqual(current);
     await expect(page.locator(".dashboard-status-banner")).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar.", exact: true })).toBeVisible();
   }
 });
 

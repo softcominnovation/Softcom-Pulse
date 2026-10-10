@@ -7,7 +7,7 @@ async function enter(page: Page, email: string) {
   await page.getByLabel("E-mail", { exact: true }).fill(email);
   await page.getByLabel("Senha", { exact: true }).fill("test-password");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
 }
 const sizes = [[1920,1080],[1366,768],[1024,768],[1023,768],[768,1024],[390,844],[320,640],[360,640],[640,450]];
 for (const [width, height] of sizes) {
@@ -78,7 +78,7 @@ test("form validation, keyboard, error messages and loading prevent duplicate su
   await expect(page.getByRole("button", { name: "Entrar", exact: true })).toHaveCSS("outline-style", "solid");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Entrando…" })).toBeDisabled();
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
   expect(await (await page.request.get("http://127.0.0.1:3102/test-state?email=slow-ui@example.test")).json()).toMatchObject({ logins: 1 });
 });
 test("password visibility stays inside the input, supports keyboard and never submits the form", async ({ page }) => {
@@ -133,7 +133,7 @@ test("BFF login, reload, protected shell and logout work without direct corporat
   expect(saved.session.user.administrador).toBe(false);
   expect(saved.session.user.permissoes).toEqual([]);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
   await page.goto("/login");
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByText("FORTALEZA · UTC−3", { exact: true })).toBeVisible();
@@ -151,15 +151,15 @@ test("two real browser tabs rotate once, preserve thin user and synchronize logo
   await enter(page, "tabs@example.test");
   const other = await context.newPage();
   await other.goto("/");
-  await expect(other.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(other.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
   await page.evaluate(key => {
     const record = JSON.parse(localStorage.getItem(key)!);
     record.session.expiresAt = Date.now() - 1;
     localStorage.setItem(key, JSON.stringify(record));
   }, key);
   await Promise.all([page.reload(), other.reload()]);
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-  await expect(other.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
+  await expect(other.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
   const counters = await (await page.request.get("http://127.0.0.1:3102/test-state?email=tabs@example.test")).json();
   expect(counters.refreshes).toBe(1);
   const a = JSON.parse((await page.evaluate(key => localStorage.getItem(key), key))!).session;

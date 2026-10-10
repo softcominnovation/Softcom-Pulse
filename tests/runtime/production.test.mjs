@@ -202,7 +202,7 @@ test("standalone serves packaged login assets and authenticates through the BFF"
       await page.getByLabel("E-mail", { exact: true }).fill("standalone@example.test");
       await page.getByLabel("Senha", { exact: true }).fill("test-password");
       await page.getByRole("button", { name: "Entrar", exact: true }).click();
-      await page.getByRole("heading", { name: "Dashboard" }).waitFor();
+      await page.getByRole("heading", { name: "Toda a operação. Um só lugar." }).waitFor();
       const saved = JSON.parse(await page.evaluate(() => localStorage.getItem("pulse.auth.v1")));
       assert.ok(saved.session.accessToken.startsWith("v1."));
       assert.ok(!JSON.stringify(saved).includes("test-raw-refresh"));

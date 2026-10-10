@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { initialPresentation, presentationDocumentSchema, effectiveOptions, blockTypes, presentationWriteSchema } from "../lib/config/presentation.ts";
 import { sortInventory, selectVms, selectProblems, selectHighlights } from "../lib/dashboard/block-options.ts";
-import { isBalancedComposition } from "../lib/dashboard/layout.ts";
+import { isBalancedComposition, overviewBlockWidth } from "../lib/dashboard/layout.ts";
 
 test("version 2 has type-specific defaults, strict options and six enabled blocks; version 1 stays readable", () => {
   const document = initialPresentation(randomUUID), screen = document.screens[0];
@@ -62,4 +62,17 @@ test("problem filters use original severity and recent evidence; configured high
 test("only default options use the compact balanced preset; custom row windows may scroll", () => {
   const blocks = initialPresentation(randomUUID).screens[0].blocks;
   assert.equal(isBalancedComposition(blocks), true); blocks[2].options.visibleRows = 10; assert.equal(isBalancedComposition(blocks), false);
+});
+test("overview pair width widens ASGARD+Signal alone but keeps three compact panels standard", () => {
+  const pair = [
+    { id: randomUUID(), type: "summary", width: "full", enabled: true, options: effectiveOptions({ type: "summary" }) },
+    { id: randomUUID(), type: "asgard_summary", width: "standard", enabled: true, options: effectiveOptions({ type: "asgard_summary" }) },
+    { id: randomUUID(), type: "signal_flow", width: "standard", enabled: true, options: effectiveOptions({ type: "signal_flow" }) },
+  ];
+  assert.equal(overviewBlockWidth(pair[1], pair, false), "wide");
+  assert.equal(overviewBlockWidth(pair[2], pair, false), "wide");
+  assert.equal(overviewBlockWidth(pair[1], pair, true), "standard");
+  const triple = [...pair, { id: randomUUID(), type: "resource_card", width: "standard", enabled: true, options: effectiveOptions({ type: "resource_card" }), resourceConfigId: randomUUID() }];
+  assert.equal(overviewBlockWidth(triple[1], triple, false), "standard");
+  assert.equal(overviewBlockWidth(triple[2], triple, false), "standard");
 });

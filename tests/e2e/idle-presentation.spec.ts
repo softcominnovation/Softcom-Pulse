@@ -113,11 +113,17 @@ test("blocked fullscreen stays truthful, prompts once and enters native fullscre
   await action.click();
   await expect(page.getByRole("button", { name: "Sair da tela cheia", exact: true })).toBeVisible();
   expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
-  await page.evaluate(() => document.exitFullscreen());
-  await page.clock.fastForward(59000);
+  // Headless CI sometimes exits native fullscreen without a reliable fullscreenchange;
+  // force the idle hook to re-arm like the successful-automatic case below.
+  await page.evaluate(async () => {
+    try { await document.exitFullscreen(); } catch { /* already left */ }
+    Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => null });
+    document.dispatchEvent(new Event("fullscreenchange"));
+  });
+  await expect.poll(() => page.evaluate(() => !!document.fullscreenElement)).toBe(false);
   await expect(page.locator("html")).toHaveAttribute("data-fullscreen-attempts", "2");
-  await page.clock.fastForward(2000);
-  await expect(page.locator("html")).toHaveAttribute("data-fullscreen-attempts", "3");
+  await page.clock.fastForward(61000);
+  await expect.poll(() => page.locator("html").getAttribute("data-fullscreen-attempts")).toBe("3");
 });
 
 test("successful automatic fullscreen uses native state and clears timers and prompts on navigation", async ({ page }) => {

@@ -4,7 +4,7 @@ As rotas `/admin/recursos`, `/admin/aplicacoes`, `/admin/vps` e `/admin/configur
 
 ## Softcom Signal
 
-Não há rota Admin Signal. O serviço único fica no topo de `/servicos#signal`: faixa de 40, disponibilidade 24h/7d/30d, métricas do ready (worker, pipeline, deps, knowledge) e lista de VMs com Agent para vincular/desvincular. `/admin/signal` redireciona para `/servicos#signal`. Disponibilidade segue o modelo das aplicações: responde = Disponível; latência acima da metade do timeout = Atenção; sem resposta = Indisponível. DLQ e demais campos aparecem como métricas, sem mudar o selo sozinhos.
+Não há rota Admin Signal. O serviço único fica no topo de `/servicos#signal` (e de `/monitor/servicos#signal` na superfície pública): faixa de 40, disponibilidade 24h/7d/30d, métricas do ready (worker, pipeline, deps, knowledge) e lista de VMs. Vincular/desvincular e formulário de cadastro só para editor autenticado. `/admin/signal` redireciona para `/servicos#signal`. Disponibilidade segue o modelo das aplicações: responde = Disponível; latência acima da metade do timeout = Atenção; sem resposta = Indisponível. DLQ e demais campos aparecem como métricas, sem mudar o selo sozinhos.
 
 ## Escopo Zabbix
 

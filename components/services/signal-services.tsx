@@ -179,7 +179,7 @@ export function SignalServicesPanel() {
             ? <span className={`app-presence tone-${target.enabled ? signalStateTone(target.state) : "unknown"}`}>{target.enabled ? signalStateLabel(target.state) : "Pausado"}</span>
             : null}
           <h2>{target?.displayName ?? "Softcom Signal"}</h2>
-          <p className="app-monitor-meta">{target?.baseUrl ?? "Nenhum alvo cadastrado. Defina SIGNAL_API_BASE_URL ou cadastre pelo formulário."}</p>
+          <p className="app-monitor-meta">{target?.baseUrl ?? (editor ? "Nenhum alvo cadastrado. Defina SIGNAL_API_BASE_URL ou cadastre pelo formulário." : "Nenhum alvo Softcom Signal cadastrado.")}</p>
           {target && <p className="app-monitor-meta">
             {signalWorkersLabel(target.activeInstances, target.checkedAt)}
             {target.latencyMs !== null ? ` · ${target.latencyMs} ms` : ""}
@@ -271,7 +271,7 @@ export function SignalServicesPanel() {
                 onConfirm={() => unlink(link.id)}
               />}
             </li>;
-          })}</ul> : <p className="panel-empty">Nenhuma VM vinculada. Use Vincular VM para associar manager ou workers.</p>}
+          })}</ul> : <p className="panel-empty">{editor ? "Nenhuma VM vinculada. Use Vincular VM para associar manager ou workers." : "Nenhuma VM vinculada."}</p>}
         </section>
 
         <LinkVmDialog

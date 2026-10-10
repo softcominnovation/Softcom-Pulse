@@ -14,6 +14,8 @@ test("public path detection and href mapping", () => {
   assert.equal(toPublicHref("/admin/aplicacoes"), "/monitor/aplicacoes");
   assert.equal(toPublicHref("/admin/recursos"), "/monitor/recursos");
   assert.equal(toPublicHref("/servicos"), "/monitor/servicos");
+  assert.equal(toPublicHref("/servicos#signal"), "/monitor/servicos#signal");
+  assert.equal(toPublicHref("/admin/signal"), "/monitor/servicos#signal");
   assert.equal(toPublicHref("/exibicao/vps"), "/monitor/vps");
   assert.equal(toPublicHref("/asgard?hostKey=x"), null);
   assert.equal(toPublicHref("/admin/configuracoes"), null);

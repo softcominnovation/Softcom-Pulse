@@ -46,6 +46,15 @@
 .dashboard-block { min-width: 0; grid-column: span 4; }
 .dashboard-block.width-wide { grid-column: span 6; }
 .dashboard-block.width-full, .dashboard-loading, .dashboard-skeleton { grid-column: 1 / -1; }
+/* Overview padrão: ASGARD / Problemas / Signal ocupam metade da linha (como na Visão geral),
+   mesmo se a tela adicional salvou largura “standard” e deixaria buraco à direita. */
+@media (min-width: 1201px) {
+  .dashboard.overview .dashboard-blocks:not(.overview-split) > .block-asgard_summary:not(.width-full),
+  .dashboard.overview .dashboard-blocks:not(.overview-split) > .block-problems:not(.width-full),
+  .dashboard.overview .dashboard-blocks:not(.overview-split) > .block-signal_flow:not(.width-full) {
+    grid-column: span 6;
+  }
+}
 /* Split = mesma grade do protótipo: 2 colunas × 2 fileiras (esquerda um pouco mais larga). */
 .overview-split { align-content: stretch; align-items: stretch; }
 .overview-split > .block-summary,

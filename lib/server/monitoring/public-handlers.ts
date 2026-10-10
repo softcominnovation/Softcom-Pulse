@@ -11,6 +11,8 @@ import { listExternalServicesWithUptime } from "../probe/overview.ts";
 import { externalServiceHistory } from "../probe/repository.ts";
 import { vpsDetailQuerySchema } from "../../config/standalone-vps.ts";
 import { listStandaloneVps, readStandaloneVps } from "../vps/repository.ts";
+import { signalHistoryRangeSchema } from "../../config/signal-targets.ts";
+import { getSignalTarget, listSignalTargets, signalTargetHistory } from "../signal/repository.ts";
 
 const emptyQuery = z.strictObject({});
 const historyQuery = z.strictObject({ range: historyRangeSchema.default("1h") });
@@ -47,32 +49,7 @@ async function readPublic(request: Request, segments: string[]) {
   const [root, second, third, fourth, fifth, sixth] = segments;
   const authed = hasAccessSession(request);
   if (root === "dashboard" && second === "overview" && segments.length === 2) {
-    const overview = await readOverview(queryParams(request, z.strictObject({ screenId: uuidSchema.optional() })).screenId);
-    // Signal stays private on the public surface until an explicit product decision.
-    return {
-      ...overview,
-      data: {
-        ...overview.data,
-        signalCards: [],
-        summary: {
-          ...overview.data.summary,
-          jobsWaiting: null,
-          jobsWaitingOldestSeconds: null,
-        },
-        blocks: overview.data.blocks.map(block => {
-          if (block.type === "signal_flow") {
-            return { ...block, data: null, availability: "unavailable" as const, stale: false, lastUpdated: null };
-          }
-          if (block.type === "summary" && block.data && typeof block.data === "object") {
-            return {
-              ...block,
-              data: { ...block.data as object, jobsWaiting: null, jobsWaitingOldestSeconds: null },
-            };
-          }
-          return block;
-        }),
-      },
-    };
+    return readOverview(queryParams(request, z.strictObject({ screenId: uuidSchema.optional() })).screenId);
   }
   if (root === "settings" && second === "presentation" && segments.length === 2) { queryParams(request, emptyQuery); return getPresentation(); }
   if (root === "settings" && second === "resources" && segments.length === 2) { queryParams(request, emptyQuery); return { data: await listResources() }; }
@@ -102,6 +79,22 @@ async function readPublic(request: Request, segments: string[]) {
     const query = queryParams(request, vpsDetailQuerySchema);
     const data = await readStandaloneVps(uuidSchema.parse(third), { range: query.range, samples: query.samples === "1" });
     return { data: withManagerVisibility(withoutVpsPrivate(data), authed) };
+  }
+  if (second === "signal-targets" && segments.length === 2) {
+    queryParams(request, emptyQuery);
+    return { data: await listSignalTargets() };
+  }
+  if (second === "signal-targets" && third && segments.length === 3) {
+    queryParams(request, emptyQuery);
+    return { data: await getSignalTarget(uuidSchema.parse(third)) };
+  }
+  if (second === "signal-targets" && third && fourth === "history" && segments.length === 4) {
+    return {
+      data: await signalTargetHistory(
+        uuidSchema.parse(third),
+        queryParams(request, z.strictObject({ range: signalHistoryRangeSchema.default("24h") })).range,
+      ),
+    };
   }
   throw new BffError(404, "not_found");
 }

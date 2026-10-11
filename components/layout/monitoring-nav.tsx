@@ -16,7 +16,6 @@ export function MonitoringNav() {
       { href: "/monitor/vps", label: "VPS", icon: Cloud, active: path === "/monitor/vps" || path.startsWith("/monitor/vps/") },
       { href: "/monitor/servicos", label: "Serviços", icon: Box, active: path === "/monitor/servicos" },
       { href: "/monitor/aplicacoes", label: "Aplicações", icon: AppWindow, active: path === "/monitor/aplicacoes" },
-      { href: "/monitor/recursos", label: "Recursos", icon: SlidersHorizontal, active: path === "/monitor/recursos" },
     ];
     return <nav className="monitoring-nav" aria-label="Navegação principal">
       {links.map(item => <Link key={item.href} href={item.href} aria-current={item.active ? "page" : undefined}><item.icon aria-hidden="true" />{item.label}</Link>)}

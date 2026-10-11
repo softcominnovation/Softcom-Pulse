@@ -7,14 +7,14 @@ import { usePoll } from "@/components/dashboard/use-poll";
 import { readSchema } from "@/components/infrastructure/data";
 
 const delay = (result: { refreshAfterMs: number }) => result.refreshAfterMs;
-export function useContainers(hostKey?: string) {
+export function useContainers(hostKey?: string, enabled = true) {
   const load = useCallback(async (signal: AbortSignal) => {
     const path = hostKey ? `/monitoring/hosts/${encodeURIComponent(hostKey)}/containers` : "/monitoring/containers";
     const result = readSchema(containerSchema.array()).parse((await api.get(path, { signal })).data);
     if (hostKey && result.data.some(item => item.hostKey !== hostKey)) throw new Error("Unexpected host");
     return result;
   }, [hostKey]);
-  return usePoll(`containers:${hostKey ?? "all"}`, load, delay, "Não foi possível atualizar o inventário de containers.", true);
+  return usePoll(enabled ? `containers:${hostKey ?? "all"}` : null, load, delay, "Não foi possível atualizar o inventário de containers.", true);
 }
 export function useServices(id?: string) {
   const load = useCallback(async (signal: AbortSignal) => {
@@ -25,13 +25,14 @@ export function useServices(id?: string) {
   }, [id]);
   return usePoll(`services:${id ?? "all"}`, load, delay, "Não foi possível atualizar os serviços configurados.", true);
 }
-export function useVmWorkloads(parentHostKey: string, vmKey: string) {
+export function useVmWorkloads(parentHostKey: string | null, vmKey: string | null) {
   const load = useCallback(async (signal: AbortSignal) => {
+    if (!parentHostKey || !vmKey) throw new Error("Missing VM identity");
     const path = `/monitoring/hosts/${encodeURIComponent(parentHostKey)}/vms/${encodeURIComponent(vmKey)}/containers`;
     const result = readSchema(vmWorkloadsSchema).parse((await api.get(path, { signal })).data);
     const data = result.data, linked = data.vm.linuxHostKey;
     if (data.vm.vmKey !== vmKey || data.vm.parentHostKey !== parentHostKey || data.containers.some(item => item.hostKey !== linked) || data.configuredServices.some(item => item.config.zabbixHostKey !== linked || item.config.resourceType !== "docker_container" || item.resource && (!("reference" in item.resource) || item.resource.hostKey !== linked))) throw new Error("Unexpected VM workload identity");
     return result;
   }, [parentHostKey, vmKey]);
-  return usePoll(JSON.stringify([parentHostKey, vmKey]), load, delay, "Não foi possível atualizar os serviços e containers desta VM.", true);
+  return usePoll(parentHostKey && vmKey ? JSON.stringify([parentHostKey, vmKey]) : null, load, delay, "Não foi possível atualizar os serviços e containers desta VM.", true);
 }

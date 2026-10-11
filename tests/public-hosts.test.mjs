@@ -55,6 +55,10 @@ test("public GET refuses hosts outside the list and unknown paths", async () => 
     const missing = await publicGet(new Request("http://localhost/api/public/monitoring/standalone-vps", { headers: { Host: "localhost" } }), ["monitoring", "unknown"]);
     assert.equal(missing.status, 404);
     assert.deepEqual(await missing.json(), { error: { code: "not_found" } });
+    const containers = await publicGet(new Request("http://localhost/api/public/monitoring/containers", { headers: { Host: "localhost" } }), ["monitoring", "containers"]);
+    assert.equal(containers.status, 404);
+    const vmWorkloads = await publicGet(new Request("http://localhost/api/public/monitoring/hosts/ASGARD/vms/vm-1/containers", { headers: { Host: "localhost" } }), ["monitoring", "hosts", "ASGARD", "vms", "vm-1", "containers"]);
+    assert.equal(vmWorkloads.status, 404);
   } finally {
     if (previous === undefined) delete process.env.PULSE_PUBLIC_HOSTS;
     else process.env.PULSE_PUBLIC_HOSTS = previous;

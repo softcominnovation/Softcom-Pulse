@@ -1,6 +1,6 @@
 # Administração da visualização
 
-As rotas `/admin/recursos`, `/admin/aplicacoes`, `/admin/vps` e `/admin/configuracoes` usam a sessão corporativa existente. Em Recursos, o bloco **Escopo Zabbix** (associar Agents) aparece só para editor (`PULSE_EDITOR_EMAILS`). Configurações e escritas de Aplicações/VPS/Signal exigem editor. Os links ficam na navegação normal e são ocultos no modo TV. Não há cadastro de usuários, permissão nova nem ação operacional no Zabbix/Proxmox.
+As rotas `/admin/recursos`, `/admin/aplicacoes`, `/admin/vps` e `/admin/configuracoes` usam a sessão corporativa existente. Em Recursos, o bloco **Escopo Zabbix** (associar Agents) aparece só para editor (`PULSE_EDITOR_EMAILS`). Configurações e escritas de Aplicações/VPS/Signal exigem editor. Os links ficam na navegação normal e são ocultos no modo TV. Recursos não tem espelho em `/monitor`: some do menu público e `/monitor/recursos` redireciona para login. Não há cadastro de usuários, permissão nova nem ação operacional no Zabbix/Proxmox.
 
 ## Softcom Signal
 

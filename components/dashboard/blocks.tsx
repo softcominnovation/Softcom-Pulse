@@ -1,8 +1,11 @@
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { PlaceLink } from "@/components/layout/place-link";
 import { Activity, ArrowRight, Box, Layers, Server, TriangleAlert } from "lucide-react";
 import { useContext, type CSSProperties, type ReactNode } from "react";
 import { effectiveOptions, type IndicatorKey, type OptionsByType } from "@/lib/config/presentation";
 import { selectHighlights, selectProblems, sortInventory } from "@/lib/dashboard/block-options";
+import { isPublicPath } from "@/lib/public/paths";
 import { EvidenceTimeContext } from "./metrics";
 import type { AsgardSummary, ConfiguredResource, Container, Host, OverviewBlock, ProbeCard, Problem, SignalFlowBlockData, Summary } from "@/lib/monitoring/contracts";
 import { HostInventory } from "@/components/infrastructure/host-panels";
@@ -88,9 +91,13 @@ export function DashboardBlock({ block, failed, probes = [], vps = [], signalCar
   hostMetricsSources?: Record<string, "auto" | "agent" | "hypervisor">;
 }) {
   const stale = failed || block.stale, now = useContext(EvidenceTimeContext);
+  const publicSurface = isPublicPath(usePathname());
   if (block.type === "signal_flow") {
     if (block.availability === "unavailable") return <Panel title="Signal · fluxo de processamento" icon={<TriangleAlert aria-hidden="true" />}><p className="panel-empty">Este bloco não está disponível nesta superfície.</p></Panel>;
     return <SignalFlowPanel data={(block.data as SignalFlowBlockData | null) ?? { target: null }} options={effectiveOptions({ ...block, type: "signal_flow" })} />;
+  }
+  if (block.type === "container_inventory" && publicSurface) {
+    return <Panel title="Containers descobertos" icon={<Box aria-hidden="true" />}><p className="panel-empty">O inventário de containers só está disponível para usuários logados. <Link href="/login">Entrar</Link></p></Panel>;
   }
   if (block.availability === "unavailable" || block.data === null) return <Panel title="Bloco indisponível" icon={<TriangleAlert aria-hidden="true" />}><p className="panel-empty">Este bloco não está disponível na configuração atual.</p></Panel>;
   switch (block.type) {

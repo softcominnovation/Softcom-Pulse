@@ -127,8 +127,8 @@ test("public monitor shows Signal flow and read-only services metrics", async ({
   });
   await page.route("**/api/public/monitoring/signal-targets", route => route.fulfill({ json: { data: [signalTarget] } }));
   await page.route("**/api/public/monitoring/hosts", route => route.fulfill({ json: { data: [], availability: "ready", stale: false, lastUpdated: checkedAt, refreshAfterMs: 20000 } }));
-  await page.route("**/api/public/monitoring/containers", route => route.fulfill({ json: { data: [], availability: "ready", stale: false, lastUpdated: checkedAt, refreshAfterMs: 20000 } }));
   await page.route("**/api/public/monitoring/services", route => route.fulfill({ json: { data: [], availability: "ready", stale: false, lastUpdated: checkedAt, refreshAfterMs: 20000 } }));
+  await page.route("**/api/public/monitoring/problems", route => route.fulfill({ json: { data: [], availability: "ready", stale: false, lastUpdated: checkedAt, refreshAfterMs: 20000 } }));
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto("/monitor");
   await expect(page.locator("#signal-flow")).toBeVisible();
@@ -140,6 +140,7 @@ test("public monitor shows Signal flow and read-only services metrics", async ({
   await expect(page.getByRole("heading", { name: "Softcom Signal" })).toBeVisible();
   await expect(page.getByText(/Disponibilidade · 24h/)).toBeVisible();
   await expect(page.getByText("Filas de processamento")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Inventário de containers" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Vincular VM" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Cadastrar Signal" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Editar" })).toHaveCount(0);

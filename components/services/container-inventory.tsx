@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { displayName } from "@/lib/monitoring/display-names";
 import type { WindowRange } from "@/lib/infrastructure/navigation";
 import { Box } from "lucide-react";
@@ -8,6 +9,7 @@ import type { CSSProperties } from "react";
 import type { Availability, ConfiguredResource, Container } from "@/lib/monitoring/contracts";
 import { number, timestamp } from "@/lib/dashboard/format";
 import { resolutionLabel } from "@/lib/services/presentation";
+import { isPublicPath } from "@/lib/public/paths";
 import { MetricValue } from "@/components/dashboard/metrics";
 import { ReadNotice } from "@/components/infrastructure/data";
 import { useCanEdit } from "@/store/auth.store";
@@ -32,6 +34,10 @@ export function ContainerInventory({ containers, configuredServices = [], stale,
   </div>;
 }
 export function HostContainers({ hostKey }: { hostKey: string }) {
-  const poll = useContainers(hostKey);
+  const publicSurface = isPublicPath(usePathname());
+  const poll = useContainers(hostKey, !publicSurface);
+  if (publicSurface) {
+    return <section className="dashboard-panel"><div className="panel-heading"><Box aria-hidden="true" /><h2>Containers do Agent</h2></div><p className="panel-empty">O inventário de containers só está disponível para usuários logados. <Link href="/login">Entrar</Link></p></section>;
+  }
   return <section className="dashboard-panel"><div className="panel-heading"><Box aria-hidden="true" /><h2>Containers do Agent</h2></div><ReadNotice result={poll.data} failed={poll.failed} refresh={poll.refresh} label="containers do Agent" />{poll.data && <ContainerInventory containers={poll.data.data} stale={poll.failed || poll.data.stale} availability={poll.data.availability} />}</section>;
 }

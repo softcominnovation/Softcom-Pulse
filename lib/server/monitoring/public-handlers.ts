@@ -4,8 +4,7 @@ import { hostKeySchema, uuidSchema, historyRangeSchema } from "../../config/reso
 import { getPresentation, getResource, listResources } from "../config/repository.ts";
 import { requireSession } from "../auth/index.ts";
 import { BffError, publicResponse, queryParams } from "../bff.ts";
-import { readHosts, readHost, readContainers, readProblems, readServices, readOverview, readHistory } from "./read.ts";
-import { readVmWorkloads } from "./vm-workloads.ts";
+import { readHosts, readHost, readProblems, readServices, readOverview, readHistory } from "./read.ts";
 import { externalServiceHistoryRangeSchema } from "../../config/external-services.ts";
 import { listExternalServicesWithUptime } from "../probe/overview.ts";
 import { externalServiceHistory } from "../probe/repository.ts";
@@ -49,18 +48,24 @@ async function readPublic(request: Request, segments: string[]) {
   const [root, second, third, fourth, fifth, sixth] = segments;
   const authed = hasAccessSession(request);
   if (root === "dashboard" && second === "overview" && segments.length === 2) {
-    return readOverview(queryParams(request, z.strictObject({ screenId: uuidSchema.optional() })).screenId);
+    const overview = await readOverview(queryParams(request, z.strictObject({ screenId: uuidSchema.optional() })).screenId);
+    return {
+      ...overview,
+      data: {
+        ...overview.data,
+        blocks: overview.data.blocks.map(block => block.type === "container_inventory"
+          ? { ...block, data: null, availability: "unavailable" as const, stale: false, lastUpdated: null }
+          : block),
+      },
+    };
   }
   if (root === "settings" && second === "presentation" && segments.length === 2) { queryParams(request, emptyQuery); return getPresentation(); }
   if (root === "settings" && second === "resources" && segments.length === 2) { queryParams(request, emptyQuery); return { data: await listResources() }; }
   if (root !== "monitoring") throw new BffError(404, "not_found");
   if (second === "hosts" && segments.length === 2) { queryParams(request, emptyQuery); return readHosts(); }
   if (second === "hosts" && third && segments.length === 3) { queryParams(request, emptyQuery); return readHost(hostKeySchema.parse(third)); }
-  if (second === "hosts" && third && fourth === "containers" && segments.length === 4) { queryParams(request, emptyQuery); return readContainers(hostKeySchema.parse(third)); }
   if (second === "hosts" && third && fourth === "history" && segments.length === 4) return readHistory({ type: "host", hostKey: hostKeySchema.parse(third), reference: null }, queryParams(request, historyQuery).range, request.signal);
   if (second === "hosts" && third && fourth === "vms" && fifth && sixth === "history" && segments.length === 6) return readHistory({ type: "vm", hostKey: hostKeySchema.parse(third), reference: hostKeySchema.parse(fifth) }, queryParams(request, historyQuery).range, request.signal);
-  if (second === "hosts" && third && fourth === "vms" && fifth && sixth === "containers" && segments.length === 6) { queryParams(request, emptyQuery); return readVmWorkloads(hostKeySchema.parse(third), hostKeySchema.parse(fifth), request.signal); }
-  if (second === "containers" && segments.length === 2) return readContainers(queryParams(request, z.strictObject({ hostKey: hostKeySchema.optional() })).hostKey);
   if (second === "problems" && segments.length === 2) { queryParams(request, emptyQuery); return readProblems(); }
   if (second === "services" && segments.length === 2) { queryParams(request, emptyQuery); return readServices(); }
   if (second === "services" && third && segments.length === 3) { queryParams(request, emptyQuery); return readServices(uuidSchema.parse(third)); }

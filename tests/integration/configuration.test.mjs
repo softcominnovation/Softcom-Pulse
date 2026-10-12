@@ -610,7 +610,13 @@ test("options migration preserves identity and preferences, increments once, and
   const current = (await getPresentation()).data;
   assert.equal(current.schemaVersion, 2); assert.equal(current.revision, 41); assert.equal(current.rotation.intervalSeconds, 52);
   assert.deepEqual(current.screens.map(screen => ({ ...screen, blocks: screen.blocks.map(({ options, ...block }) => { void options; return block; }) })), legacy.screens);
-  for (const block of current.screens[0].blocks) assert.deepEqual(block.options, effectiveOptions({ type: block.type }));
+  // Frozen migration writes the 2026-10-03 option shapes; newer Zod defaults (e.g. selection/cards) resolve at read time.
+  for (const block of current.screens[0].blocks) {
+    if (block.type === "highlighted_resources") {
+      assert.deepEqual(block.options, { sortBy: "configured", sortDirection: "asc", criticalOnly: false, visibleRows: 1 });
+      assert.deepEqual(effectiveOptions(block), { sortBy: "configured", sortDirection: "asc", criticalOnly: false, visibleRows: 1, selection: "default", cards: [] });
+    } else assert.deepEqual(block.options, effectiveOptions({ type: block.type }));
+  }
   await getDatabase().query(sql); assert.deepEqual((await getPresentation()).data, current);
   const excessive = structuredClone(legacy); excessive.screens[0].blocks = Array.from({ length: 7 }, () => ({ id: randomUUID(), type: "summary", enabled: true, width: "full" }));
   await write(excessive); await getDatabase().query(sql); assert.deepEqual((await getPresentation()).data, excessive);

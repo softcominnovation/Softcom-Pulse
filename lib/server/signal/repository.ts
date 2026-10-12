@@ -244,19 +244,34 @@ export function listSignalTargets() {
   return database(async () => assemble(await getPrisma().signalTarget.findMany({ orderBy: [{ displayOrder: "asc" }, { id: "asc" }] }) as TargetRow[]));
 }
 
+function signalHighlight(item: Awaited<ReturnType<typeof assemble>>[number]) {
+  return {
+    id: item.id, displayName: item.displayName, description: item.description, critical: item.critical,
+    displayOrder: item.displayOrder, enabled: item.enabled, state: item.state, latencyMs: item.latencyMs,
+    readyStatus: item.readyStatus, workerStatus: item.workerStatus, activeInstances: item.activeInstances,
+    strip: item.strip, uptime24h: item.uptime24h, checkedAt: item.checkedAt,
+  };
+}
+
 export function listHighlightedSignalTargets() {
   return database(async () => {
     const rows = await getPrisma().signalTarget.findMany({
       where: { dashboardEnabled: true },
       orderBy: [{ displayOrder: "asc" }, { id: "asc" }],
     }) as TargetRow[];
-    const items = await assemble(rows);
-    return items.map(item => ({
-      id: item.id, displayName: item.displayName, description: item.description, critical: item.critical,
-      displayOrder: item.displayOrder, enabled: item.enabled, state: item.state, latencyMs: item.latencyMs,
-      readyStatus: item.readyStatus, workerStatus: item.workerStatus, activeInstances: item.activeInstances,
-      strip: item.strip, uptime24h: item.uptime24h, checkedAt: item.checkedAt,
-    }));
+    return (await assemble(rows)).map(signalHighlight);
+  });
+}
+
+/** Signal cards for custom availability blocks (enabled only; may omit dashboardEnabled). */
+export function listSignalTargetsByIds(ids: string[]) {
+  if (!ids.length) return Promise.resolve([] as ReturnType<typeof signalHighlight>[]);
+  return database(async () => {
+    const rows = await getPrisma().signalTarget.findMany({
+      where: { id: { in: ids }, enabled: true },
+      orderBy: [{ displayOrder: "asc" }, { id: "asc" }],
+    }) as TargetRow[];
+    return (await assemble(rows)).map(signalHighlight);
   });
 }
 

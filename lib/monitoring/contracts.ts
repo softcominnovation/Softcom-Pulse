@@ -102,12 +102,27 @@ export type SignalFlowBlockData = {
     oldestInboxSeconds: number | null; checks: Record<string, unknown> | null;
   } | null;
 };
-export type OverviewBlock = Omit<ReadResult<Summary | AsgardSummary | ConfiguredResource | ConfiguredResource[] | Problem[] | Host[] | Container[] | ProbeCard[] | SignalFlowBlockData | null>, "refreshAfterMs"> & { blockId: string; type: BlockType; options?: Record<string, unknown> };
 export type ProbeCard = {
   id: string; displayName: string; description: string | null; serviceType: string | null; displayOrder: number; critical: boolean; dashboardEnabled: boolean; paused: boolean; progressStartedAt: string | null;
   reason: number | null; latencyMs: number | null; checkedAt: string | null; httpStatus: number | null; certNotAfter: string | null;
   uptime24h: { available: number; total: number } | null; strip: number[];
 };
+export type SignalOverviewCard = {
+  id: string; displayName: string; description: string | null; critical: boolean; displayOrder: number;
+  enabled: boolean; state: number; latencyMs: number | null; readyStatus: string | null; workerStatus: string | null;
+  activeInstances: number | null; strip: number[];
+  uptime24h: { available: number; total: number } | null; checkedAt: string | null;
+};
+/** Per-block availability payload (default or custom). Prefer over joining global pools. */
+export type AvailabilityPanelData = {
+  cards: Array<
+    | { kind: "resource"; item: ConfiguredResource }
+    | { kind: "external_service"; item: ProbeCard }
+    | { kind: "standalone_vps"; item: import("../config/standalone-vps.ts").StandaloneVpsHighlight }
+    | { kind: "signal_target"; item: SignalOverviewCard }
+  >;
+};
+export type OverviewBlock = Omit<ReadResult<Summary | AsgardSummary | ConfiguredResource | ConfiguredResource[] | Problem[] | Host[] | Container[] | ProbeCard[] | SignalFlowBlockData | AvailabilityPanelData | null>, "refreshAfterMs"> & { blockId: string; type: BlockType; options?: Record<string, unknown> };
 export type Overview = {
   summary: Summary; highlightedResources: ConfiguredResource[]; problems: Problem[]; asgardSummary: AsgardSummary;
   screenId: string; presentationRevision: number; blocks: OverviewBlock[];
@@ -115,12 +130,7 @@ export type Overview = {
   hostMetricsSources?: Record<string, "auto" | "agent" | "hypervisor">;
   externalServices?: ProbeCard[]; uptimeBoard?: ProbeCard[];
   standaloneVps?: import("../config/standalone-vps.ts").StandaloneVpsHighlight[];
-  signalCards?: {
-    id: string; displayName: string; description: string | null; critical: boolean; displayOrder: number;
-    enabled: boolean; state: number; latencyMs: number | null; readyStatus: string | null; workerStatus: string | null;
-    activeInstances: number | null; strip: number[];
-    uptime24h: { available: number; total: number } | null; checkedAt: string | null;
-  }[];
+  signalCards?: SignalOverviewCard[];
 };
 export function emptySummary(): Summary {
   return {

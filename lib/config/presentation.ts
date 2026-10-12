@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { availabilityCardRefSchema } from "./availability-card-refs.ts";
 import { hostKeySchema, uuidSchema } from "./resources.ts";
 
 export const blockTypes = ["summary", "highlighted_resources", "problems", "asgard_summary", "resource_card", "host_inventory", "container_inventory", "uptime_list", "signal_flow"] as const;
@@ -30,7 +31,9 @@ export const blockOptionsSchemas = {
     criticalOnly: z.boolean().default(false),
     // Legacy documents may store 3; clamp to 1–2 so saves stay valid without migration.
     visibleRows: z.preprocess(value => typeof value === "number" ? Math.min(2, Math.max(1, value)) : value, z.number().int().min(1).max(2)).default(1),
-  }),
+    selection: z.enum(["default", "custom"]).default("default"),
+    cards: z.array(availabilityCardRefSchema).max(8).refine(unique).default([]),
+  }).transform(options => options.selection === "default" ? { ...options, cards: [] } : options),
   resource_card: z.strictObject({}),
   host_inventory: z.strictObject({ sortBy: z.enum(["name", "state", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows }),
   container_inventory: z.strictObject({ sortBy: z.enum(["name", "status", "health", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows, hostKeys: z.array(hostKeySchema).max(32).refine(unique).optional() }),

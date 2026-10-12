@@ -34,3 +34,21 @@ export async function readProbeOverview(includeBoard: boolean) {
   };
   return { externalServices: services.filter(service => service.dashboardEnabled).map(card), uptimeBoard: includeBoard ? services.filter(service => service.enabled).map(card) : [] };
 }
+
+/** Probe cards for custom availability blocks (enabled only; may omit dashboardEnabled). */
+export async function listProbeCardsByIds(ids: string[]) {
+  if (!ids.length) return [] as ProbeCard[];
+  const wanted = new Set(ids);
+  const services = (await listExternalServices()).filter(service => wanted.has(service.id) && service.enabled);
+  const results = await readProbeResults(services.map(service => service.id)).catch(() => new Map());
+  const strips = await visualStrips(services.map(service => service.id)).catch(() => new Map<string, number[]>());
+  return services.map(service => {
+    const result = results.get(service.id);
+    return {
+      id: service.id, displayName: service.displayName, description: service.description, serviceType: service.serviceType, displayOrder: service.displayOrder,
+      critical: service.critical, dashboardEnabled: service.dashboardEnabled, paused: !service.enabled, progressStartedAt: service.progressStartedAt,
+      reason: result?.reason ?? null, latencyMs: result?.latencyMs ?? null, checkedAt: null, httpStatus: null,
+      certNotAfter: result?.certNotAfter ?? null, uptime24h: result?.uptime24h ?? null, strip: shownStrip(service.enabled, strips.get(service.id)),
+    } satisfies ProbeCard;
+  });
+}

@@ -104,7 +104,7 @@ Bloco v2: `{id, type, enabled, width, options, resourceConfigId?}`. Largura stan
 | Tipo | Contrato BFF/gravação nesta entrega | Interface prevista |
 |---|---|---|
 | summary | disponível | fase 05 |
-| highlighted_resources | disponível | fase 05 |
+| highlighted_resources | disponível; `data` = `{ cards[] }` por bloco (`default` ou `custom`) | fase 05 + disponibilidade por bloco |
 | problems | disponível | fase 05; detalhe ampliado na 07 |
 | asgard_summary | disponível | fase 05 |
 | resource_card | disponível | fase 05 |

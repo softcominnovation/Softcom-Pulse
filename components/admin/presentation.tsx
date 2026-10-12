@@ -1,20 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
+import { z } from "zod";
 import { ArrowUp, ArrowDown, Copy, Plus } from "lucide-react";
 import { api } from "@/lib/client/api";
 import { blockCatalog, blockTypes, defaultDisplayScalePercent, displayScaleOptions, effectiveOptions, initialPresentation, presentationDocumentSchema, presentationSettingsSchema, type BlockType, type PresentationBlock, type PresentationDocument, type PresentationSettings } from "@/lib/config/presentation";
 import type { ResourceConfig } from "@/lib/config/resources";
+import { externalServicePublicSchema } from "@/lib/config/external-services";
+import { standaloneVpsCardSchema } from "@/lib/config/standalone-vps";
 import { useHosts } from "@/components/infrastructure/data";
 import { Button } from "@/components/ui/button";
 import { ConfirmationDialog } from "@/components/confirmation-dialog";
 import { Check, Field, ReadError, errorText, useAdminRead, useMutation } from "./shared";
 import { parseResources } from "./resources";
-import { BlockOptionsEditor } from "./block-options";
+import { BlockOptionsEditor, type AvailabilityCatalogItem } from "./block-options";
 import { PresentationPreview } from "./presentation-preview";
 import { FullscreenHelp } from "./fullscreen-help";
+
+const parseApps = (data: unknown) => z.object({ data: z.array(externalServicePublicSchema.pick({ id: true, displayName: true, enabled: true, dashboardEnabled: true })) }).parse(data).data;
+const parseVps = (data: unknown) => z.object({ data: z.array(standaloneVpsCardSchema.pick({ id: true, name: true, enabled: true, dashboardEnabled: true })) }).parse(data).data;
+const parseSignal = (data: unknown) => z.object({ data: z.array(z.object({ id: z.string(), displayName: z.string(), enabled: z.boolean(), dashboardEnabled: z.boolean().optional() })) }).parse(data).data;
 
 const parseDocument = (data: unknown) => presentationDocumentSchema.parse((data as { data: unknown }).data);
 function editable(document: PresentationDocument): PresentationSettings {
@@ -33,7 +40,10 @@ function reorder<T>(array: T[], index: number, direction: number) { const result
 function MoveButtons({ label, index, length, move }: { label: string; index: number; length: number; move: (direction: number) => void }) {
   return <><Button type="button" size="icon" disabled={index === 0} aria-label={`Mover ${label} para cima`} onClick={() => move(-1)}><ArrowUp aria-hidden="true" /></Button><Button type="button" size="icon" disabled={index === length - 1} aria-label={`Mover ${label} para baixo`} onClick={() => move(1)}><ArrowDown aria-hidden="true" /></Button></>;
 }
-function PresentationForm({ saved, resources, hosts, reload }: { saved: PresentationDocument; resources: ResourceConfig[]; hosts: { hostKey: string; name: string }[]; reload: () => void }) {
+function PresentationForm({ saved, resources, hosts, reload, availabilityCatalog }: {
+  saved: PresentationDocument; resources: ResourceConfig[]; hosts: { hostKey: string; name: string }[]; reload: () => void;
+  availabilityCatalog: AvailabilityCatalogItem[];
+}) {
   const form = useForm<PresentationSettings>({ defaultValues: editable(saved) }), settings = useWatch({ control: form.control }) as PresentationSettings, mutation = useMutation();
   const [confirmed, setConfirmed] = useState(saved), [readingError, setReadingError] = useState("");
   const [error, setError] = useState(""), [previewId, setPreviewId] = useState<string | null>(null);
@@ -105,7 +115,7 @@ function PresentationForm({ saved, resources, hosts, reload }: { saved: Presenta
         {screen.blocks.map((block, blockIndex) => <article className="admin-block" key={block.id} aria-label={`${blockCatalog[block.type].label} na tela ${screenIndex + 1}`}><div className="admin-block-heading"><h3>{blockCatalog[block.type].label}</h3><div className="admin-actions"><MoveButtons label={`${blockCatalog[block.type].label} na tela ${screenIndex + 1}`} index={blockIndex} length={screen.blocks.length} move={direction => changeBlocks(screenIndex, reorder(screen.blocks, blockIndex, direction))} /><Button type="button" size="icon" aria-label={`Duplicar ${blockCatalog[block.type].label}`} disabled={screen.blocks.length >= 24} onClick={() => changeBlocks(screenIndex, [...screen.blocks, { ...structuredClone(block), id: crypto.randomUUID(), enabled: count < 6 && block.enabled }])}><Copy aria-hidden="true" /></Button><ConfirmationDialog trigger={<Button type="button">Remover bloco</Button>} title="Remover bloco desta tela?" description="O bloco será retirado do rascunho. As configurações do recurso e as demais telas serão preservadas." confirmLabel="Remover bloco" destructive onConfirm={() => changeBlocks(screenIndex, screen.blocks.filter(item => item.id !== block.id))} /></div></div>
           <div className="admin-fields"><Check label="Bloco habilitado"><input type="checkbox" checked={block.enabled} disabled={!block.enabled && count >= 6} onChange={event => changeBlock(screenIndex, blockIndex, { ...block, enabled: event.target.checked })} /></Check><Field label="Largura"><select value={block.width} onChange={event => changeBlock(screenIndex, blockIndex, { ...block, width: event.target.value as PresentationBlock["width"] })}><option value="standard">Padrão · um terço</option><option value="wide">Ampla · metade</option><option value="full">Inteira</option></select></Field><Field label="Associado à tela"><select value={screen.id} onChange={event => { const target = settings.screens.find(item => item.id === event.target.value)!; if (target.blocks.length >= 24 || block.enabled && target.blocks.filter(item => item.enabled).length >= 6) { setError("A tela de destino atingiu o limite. Desabilite um bloco antes de mover."); return; } changeScreens(settings.screens.map(item => item.id === screen.id ? { ...item, blocks: item.blocks.filter(candidate => candidate.id !== block.id) } : item.id === target.id ? { ...item, blocks: [...item.blocks, block] } : item)); }} >{settings.screens.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field></div>
           {block.type === "resource_card" && <Field label="Recurso individual"><select value={block.resourceConfigId ?? ""} onChange={event => changeBlock(screenIndex, blockIndex, { ...block, resourceConfigId: event.target.value })}>{!eligibleResources.some(item => item.id === block.resourceConfigId) && <option value={block.resourceConfigId ?? ""}>Referência indisponível · escolha um recurso</option>}{eligibleResources.map(item => <option key={item.id} value={item.id}>{item.displayName ?? item.selectorValue ?? item.zabbixHostKey} · {item.zabbixHostKey}</option>)}</select></Field>}
-          <BlockOptionsEditor block={block} hosts={hosts} onChange={options => changeBlock(screenIndex, blockIndex, { ...block, options })} />
+          <BlockOptionsEditor block={block} hosts={hosts} availabilityCatalog={availabilityCatalog} onChange={options => changeBlock(screenIndex, blockIndex, { ...block, options })} />
         </article>)}
         <div className="admin-add"><Field label="Novo bloco"><select value={newTypes[screen.id] ?? "summary"} onChange={event => setNewTypes({ ...newTypes, [screen.id]: event.target.value as BlockType })}>{blockTypes.map(type => <option key={type} value={type} disabled={!blockCatalog[type].available || (type === "resource_card" && !eligibleResources.length)}>{blockCatalog[type].label}</option>)}</select></Field><Button type="button" disabled={screen.blocks.length >= 24} onClick={() => { const type = newTypes[screen.id] ?? "summary"; if (!blockCatalog[type].available || (type === "resource_card" && !eligibleResources.length)) return; const width = type === "summary" || type === "highlighted_resources" ? "full" : type === "asgard_summary" || type === "problems" || type === "signal_flow" ? "wide" : "standard"; changeBlocks(screenIndex, [...screen.blocks, { id: crypto.randomUUID(), type, enabled: count < 6, width, options: effectiveOptions({ type }), ...(type === "resource_card" ? { resourceConfigId: eligibleResources[0].id } : {}) }]); }}><Plus aria-hidden="true" />Adicionar bloco</Button><Button type="button" onClick={() => setPreviewId(previewId === screen.id ? null : screen.id)}>{previewId === screen.id ? "Fechar prévia" : "Ver prévia"}</Button></div>{count >= 6 && <p className="admin-muted">Limite de seis habilitados. Novos blocos entram desabilitados; mova-os para outra tela ou desative um existente.</p>}
         </div>
@@ -119,9 +129,34 @@ function PresentationForm({ saved, resources, hosts, reload }: { saved: Presenta
 }
 export function PresentationAdmin() {
   const document = useAdminRead("/settings/presentation", parseDocument), resources = useAdminRead("/settings/resources", parseResources), hosts = useHosts();
+  const apps = useAdminRead("/monitoring/external-services", parseApps);
+  const vps = useAdminRead("/monitoring/standalone-vps", parseVps);
+  const signals = useAdminRead("/monitoring/signal-targets", parseSignal);
   const [reloadKey, setReloadKey] = useState(0);
-  const reload = () => { document.refresh(); resources.refresh(); setReloadKey(value => value + 1); };
+  const reload = () => { document.refresh(); resources.refresh(); apps.refresh(); vps.refresh(); signals.refresh(); setReloadKey(value => value + 1); };
+  const availabilityCatalog = useMemo<AvailabilityCatalogItem[]>(() => [
+    ...(resources.data ?? []).filter(item => item.enabled).map(item => ({
+      kind: "resource" as const, id: item.id,
+      label: item.displayName ?? item.selectorValue ?? item.zabbixHostKey,
+      detail: [
+        item.resourceType === "host" ? "Host / hipervisor" : "Container (Agent)",
+        item.dashboardEnabled ? "destaque no dashboard" : null,
+      ].filter(Boolean).join(" · "),
+    })),
+    ...(apps.data ?? []).filter(item => item.enabled).map(item => ({
+      kind: "external_service" as const, id: item.id, label: item.displayName,
+      detail: item.dashboardEnabled ? "Sonda · destaque no dashboard" : "Sonda",
+    })),
+    ...(vps.data ?? []).filter(item => item.enabled).map(item => ({
+      kind: "standalone_vps" as const, id: item.id, label: item.name,
+      detail: item.dashboardEnabled ? "VPS · destaque no dashboard" : "VPS",
+    })),
+    ...(signals.data ?? []).filter(item => item.enabled).map(item => ({
+      kind: "signal_target" as const, id: item.id, label: item.displayName,
+      detail: item.dashboardEnabled ? "Signal · destaque no dashboard" : "Signal",
+    })),
+  ], [resources.data, apps.data, vps.data, signals.data]);
   if (document.loading) return <p className="panel-empty" role="status">Carregando apresentação salva…</p>;
   if (document.failed || !document.data) return <ReadError refresh={document.refresh}>Não foi possível carregar a apresentação. Nenhum padrão será salvo sobre ela.</ReadError>;
-  return <>{resources.failed && <ReadError refresh={resources.refresh}>Não foi possível ler os recursos para os blocos individuais. As referências existentes foram preservadas.</ReadError>}<PresentationForm key={`${document.data.revision}:${reloadKey}`} saved={document.data} resources={resources.data ?? []} hosts={hosts.data?.data ?? []} reload={reload} /></>;
+  return <>{resources.failed && <ReadError refresh={resources.refresh}>Não foi possível ler os recursos para os blocos individuais. As referências existentes foram preservadas.</ReadError>}<PresentationForm key={`${document.data.revision}:${reloadKey}`} saved={document.data} resources={resources.data ?? []} hosts={hosts.data?.data ?? []} availabilityCatalog={availabilityCatalog} reload={reload} /></>;
 }

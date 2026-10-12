@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { initialPresentation, presentationDocumentSchema, effectiveOptions, blockTypes, presentationWriteSchema } from "../lib/config/presentation.ts";
+import { formatAvailabilityCardRef, parseAvailabilityCardRef } from "../lib/config/availability-card-refs.ts";
+import { buildCustomAvailabilityCards, buildDefaultAvailabilityCards } from "../lib/dashboard/availability-cards.ts";
 import { sortInventory, selectVms, selectProblems, selectHighlights } from "../lib/dashboard/block-options.ts";
 import { displayBlockWidth, isBalancedComposition, overviewBlockWidth } from "../lib/dashboard/layout.ts";
 
@@ -25,7 +27,41 @@ test("version 2 has type-specific defaults, strict options and six enabled block
   assert.equal(document.screens[0].overviewGrid, "default");
   assert.equal(effectiveOptions({ type: "highlighted_resources" }).visibleRows, 1);
   assert.equal(effectiveOptions({ type: "highlighted_resources", options: { visibleRows: 3 } }).visibleRows, 2);
+  assert.equal(effectiveOptions({ type: "highlighted_resources" }).selection, "default");
+  assert.deepEqual(effectiveOptions({ type: "highlighted_resources" }).cards, []);
   assert.deepEqual(effectiveOptions({ type: "summary", options: { indicators: ["jobs_waiting", "hosts", "problems"] } }).indicators, ["jobs_waiting", "hosts", "problems"]);
+});
+test("availability custom cards validate kind, uuid, duplicates and max 8; default clears cards", () => {
+  const a = randomUUID(), b = randomUUID();
+  const custom = effectiveOptions({ type: "highlighted_resources", options: { selection: "custom", cards: [`resource:${a}`, `external_service:${b}`] } });
+  assert.equal(custom.selection, "custom");
+  assert.deepEqual(custom.cards, [`resource:${a}`, `external_service:${b}`]);
+  assert.deepEqual(effectiveOptions({ type: "highlighted_resources", options: { selection: "default", cards: [`resource:${a}`] } }).cards, []);
+  assert.equal(parseAvailabilityCardRef("probe:not-uuid"), null);
+  assert.equal(parseAvailabilityCardRef(`resource:${a}`)?.kind, "resource");
+  assert.equal(formatAvailabilityCardRef({ kind: "signal_target", id: a }), `signal_target:${a}`);
+  for (const options of [
+    { selection: "custom", cards: ["nope:x"] },
+    { selection: "custom", cards: [`resource:${a}`, `resource:${a}`] },
+    { selection: "custom", cards: Array.from({ length: 9 }, () => `resource:${randomUUID()}`) },
+  ]) assert.throws(() => effectiveOptions({ type: "highlighted_resources", options }), JSON.stringify(options));
+});
+test("custom availability order omits orphans; default ignores cards list", () => {
+  const r1 = randomUUID(), r2 = randomUUID(), orphan = randomUUID(), p1 = randomUUID();
+  const resources = [r1, r2].map((id, index) => ({ id, config: { critical: true, displayOrder: index, displayName: `R${index}` } }));
+  const probes = [{ id: p1, displayName: "App" }];
+  const defaultCards = buildDefaultAvailabilityCards(resources, probes, [], [], effectiveOptions({ type: "highlighted_resources", options: { cards: [`resource:${orphan}`] } }));
+  assert.deepEqual(defaultCards.map(card => card.kind === "resource" ? card.item.id : card.item.id), [r1, r2, p1]);
+  const custom = buildCustomAvailabilityCards(
+    [`external_service:${p1}`, `resource:${r2}`, `resource:${orphan}`, `resource:${r1}`],
+    {
+      resources: new Map(resources.map(item => [item.id, item])),
+      probes: new Map(probes.map(item => [item.id, item])),
+      vps: new Map(),
+      signalCards: new Map(),
+    },
+  );
+  assert.deepEqual(custom.map(card => `${card.kind}:${card.item.id}`), [`external_service:${p1}`, `resource:${r2}`, `resource:${r1}`]);
 });
 test("invalid ranges, duplicate and empty filters and options from another type are rejected", () => {
   for (const [type, options] of [["summary", { indicators: [] }], ["summary", { indicators: ["hosts", "hosts"] }], ["summary", { indicators: ["hosts", "containers_running", "containers_stopped", "problems", "jobs_waiting"] }], ["asgard_summary", { states: [] }], ["asgard_summary", { sortBy: "health" }], ["problems", { severities: [6] }], ["problems", { severities: [0,0] }], ["host_inventory", { visibleRows: 2 }], ["host_inventory", { visibleRows: 11 }], ["highlighted_resources", { sortBy: "cpu" }], ["container_inventory", { hostKeys: ["a", "a"] }], ["container_inventory", { hostKeys: ["../a"] }]]) {

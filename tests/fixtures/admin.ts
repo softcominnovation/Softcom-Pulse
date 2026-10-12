@@ -52,5 +52,8 @@ export async function adminFixture(page: Page) {
     state.preferences = [...state.preferences.filter(item => item.templateKey !== key), value]; return route.fulfill({ json: { data: value } });
   });
   await page.route("**/api/settings/vms", route => route.fulfill({ json: { data: [] } }));
+  await page.route("**/api/monitoring/external-services", route => route.fulfill({ json: { data: [] } }));
+  await page.route("**/api/monitoring/standalone-vps", route => route.fulfill({ json: { data: [] } }));
+  await page.route("**/api/monitoring/signal-targets", route => route.fulfill({ json: { data: [] } }));
   return state;
 }

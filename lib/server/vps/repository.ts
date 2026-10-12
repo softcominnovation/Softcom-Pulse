@@ -100,6 +100,15 @@ function highlightCard(item: Awaited<ReturnType<typeof cards>>[number]) {
 export function listHighlightedStandaloneVps() {
   return database(async () => (await cards(await getPrisma().standaloneVps.findMany({ where: { dashboardEnabled: true }, orderBy: [{ name: "asc" }, { id: "asc" }] }) as VpsRow[])).map(highlightCard));
 }
+
+/** VPS cards for custom availability blocks (enabled only; may omit dashboardEnabled). */
+export function listStandaloneVpsByIds(ids: string[]) {
+  if (!ids.length) return Promise.resolve([] as ReturnType<typeof highlightCard>[]);
+  return database(async () => (await cards(await getPrisma().standaloneVps.findMany({
+    where: { id: { in: ids }, enabled: true },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+  }) as VpsRow[])).map(highlightCard));
+}
 export function listEnabledMonitoredVps() {
   return database(async () => getPrisma().standaloneVps.findMany({
     where: { enabled: true, monitorPaused: false, baseUrl: { not: null }, apiKeyCiphertext: { not: null } },

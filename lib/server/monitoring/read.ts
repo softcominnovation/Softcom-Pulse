@@ -2,10 +2,11 @@ import "server-only";
 import { z } from "zod";
 import { blockCatalog, effectiveOptions } from "../../config/presentation.ts";
 import type { ResourceConfig } from "../../config/resources.ts";
+import { buildCustomAvailabilityCards, buildDefaultAvailabilityCards, collectCustomAvailabilityRefs } from "../../dashboard/availability-cards.ts";
 import { resolveResource } from "../../monitoring/selectors.ts";
 import {
   hostSchema, problemSchema, overviewSnapshotSchema, emptySummary,
-  type Host, type Container, type ConfiguredResource, type Metrics, type Overview, type OverviewBlock, type History,
+  type AvailabilityPanelData, type Host, type Container, type ConfiguredResource, type Metrics, type Overview, type OverviewBlock, type History,
 } from "../../monitoring/contracts.ts";
 import { BffError } from "../bff.ts";
 import { getPresentation, getResource, listResources } from "../config/repository.ts";
@@ -18,9 +19,9 @@ import { isVmTemplate, operationalHost, operationalProblems } from "./virtual-ma
 import { readDisplayNames } from "./display-names.ts";
 import { visibleMetric } from "../../services/presentation.ts";
 import { hostMetricsPreference, mergeCardCpuRam, resolveCardCpuRam } from "../../monitoring/card-metrics.ts";
-import { readProbeOverview } from "../probe/overview.ts";
-import { listHighlightedStandaloneVps } from "../vps/repository.ts";
-import { listHighlightedSignalTargets, listSignalFlowTarget } from "../signal/repository.ts";
+import { listProbeCardsByIds, readProbeOverview } from "../probe/overview.ts";
+import { listHighlightedStandaloneVps, listStandaloneVpsByIds } from "../vps/repository.ts";
+import { listHighlightedSignalTargets, listSignalFlowTarget, listSignalTargetsByIds } from "../signal/repository.ts";
 
 export function linkedMachineName(hostKey: string, hosts: Host[]) {
   const vm = hosts.flatMap(host => host.vms).find(item => item.linuxHostKey === hostKey);
@@ -106,9 +107,18 @@ export async function readOverview(screenId?: string) {
   if (!screen) throw new BffError(404, "screen_not_found");
   const visibleBlocks = screen.blocks.filter(block => block.enabled);
   const includeHighlights = visibleBlocks.some(block => block.type === "highlighted_resources");
+  const customRefs = collectCustomAvailabilityRefs(visibleBlocks);
+  const customResourceIds = new Set(customRefs.filter(ref => ref.kind === "resource").map(ref => ref.id));
+  const customProbeIds = customRefs.filter(ref => ref.kind === "external_service").map(ref => ref.id);
+  const customVpsIds = customRefs.filter(ref => ref.kind === "standalone_vps").map(ref => ref.id);
+  const customSignalIds = customRefs.filter(ref => ref.kind === "signal_target").map(ref => ref.id);
   const references = new Set(visibleBlocks.flatMap(block => block.resourceConfigId ? [block.resourceConfigId] : []));
   const allConfigs = await listResources();
-  const configs = allConfigs.filter(config => config.enabled && config.dashboardEnabled && (includeHighlights || references.has(config.id)));
+  const configs = allConfigs.filter(config => {
+    if (!config.enabled) return false;
+    if (customResourceIds.has(config.id)) return true;
+    return config.dashboardEnabled && (includeHighlights || references.has(config.id));
+  });
   const containerHosts = [...new Set(configs.filter(config => config.resourceType === "docker_container").map(config => config.zabbixHostKey))];
   const current = await readInventory(visibleBlocks.some(block => block.type === "container_inventory" || block.type === "problems") ? "all" : containerHosts, [snapshotKeys.overview, snapshotKeys.problems]);
   const base = freshness(snapshotData(current.batch, snapshotKeys.overview, overviewSnapshotSchema, {
@@ -117,6 +127,7 @@ export async function readOverview(screenId?: string) {
   const names = await readDisplayNames(current.hosts, current.containers, allConfigs);
   const named = { ...current, hosts: current.hosts.map(names.host), containers: current.containers.map(names.container) };
   const resources = configs.map(config => ({ ...cardResource(configuredResource(config, named), named.hosts), linkedVmName: linkedMachineName(config.zabbixHostKey, named.hosts) }));
+  const highlightedResources = resources.filter(resource => resource.config.dashboardEnabled);
   const hostMetricsSources = Object.fromEntries(allConfigs
     .filter(config => config.resourceType === "host" && config.enabled)
     .map(config => [config.zabbixHostKey, hostMetricsPreference(config.presentation)]));
@@ -127,6 +138,15 @@ export async function readOverview(screenId?: string) {
   const probe = await readProbeOverview(visibleBlocks.some(block => block.type === "uptime_list")).catch(() => ({ externalServices: [], uptimeBoard: [] }));
   const standaloneVps = await listHighlightedStandaloneVps().catch(() => []);
   const signalCards = await listHighlightedSignalTargets().catch(() => []);
+  const [customProbes, customVps, customSignal] = await Promise.all([
+    listProbeCardsByIds(customProbeIds).catch(() => []),
+    listStandaloneVpsByIds(customVpsIds).catch(() => []),
+    listSignalTargetsByIds(customSignalIds).catch(() => []),
+  ]);
+  const resourcePool = new Map(resources.map(item => [item.id, item]));
+  const probePool = new Map([...probe.externalServices, ...customProbes].map(item => [item.id, item]));
+  const vpsPool = new Map([...standaloneVps, ...customVps].map(item => [item.id, item]));
+  const signalPool = new Map([...signalCards, ...customSignal].map(item => [item.id, item]));
   const needsSignalFlow = visibleBlocks.some(block => block.type === "signal_flow");
   const needsSummaryJobs = visibleBlocks.some(block => block.type === "summary");
   const signalFlow = (needsSignalFlow || needsSummaryJobs) ? await listSignalFlowTarget().catch(() => null) : null;
@@ -150,10 +170,19 @@ export async function readOverview(screenId?: string) {
     if (block.type === "problems") { data = problems; keys = [snapshotKeys.problems]; }
     if (block.type === "host_inventory") { data = named.hosts.map(operationalHost); keys = [snapshotKeys.hosts]; }
     if (block.type === "container_inventory") { data = named.containers; keys = current.keys.filter(key => key.startsWith("pulse:inventory:containers:")); }
-    if (block.type === "highlighted_resources") { data = resources; keys = configs.flatMap(resourceKeys); }
+    if (block.type === "highlighted_resources") {
+      const options = effectiveOptions({ ...block, type: "highlighted_resources" });
+      const panel: AvailabilityPanelData = {
+        cards: options.selection === "custom"
+          ? buildCustomAvailabilityCards(options.cards, { resources: resourcePool, probes: probePool, vps: vpsPool, signalCards: signalPool })
+          : buildDefaultAvailabilityCards(highlightedResources, probe.externalServices, standaloneVps, signalCards, options),
+      };
+      data = panel;
+      keys = configs.flatMap(resourceKeys);
+    }
     if (block.type === "resource_card") {
       data = resources.find(resource => resource.id === block.resourceConfigId) ?? null;
-      keys = data ? resourceKeys(data.config) : [];
+      keys = data && typeof data === "object" && "config" in data ? resourceKeys(data.config) : [];
     }
     const probeBlock = block.type === "uptime_list";
     if (probeBlock) data = probe.uptimeBoard;
@@ -164,7 +193,7 @@ export async function readOverview(screenId?: string) {
     const signalCheckedAt = signalFlow?.checkedAt ?? null;
     return { blockId: block.id, type: block.type, options: effectiveOptions(block), data, availability: !blockCatalog[block.type].available || (block.type === "resource_card" && !data) ? "unavailable" : probeBlock ? (probe.uptimeBoard.length ? "ready" : "no_data") : signalBlock ? (signalFlow ? "ready" : "no_data") : result.availability, stale: probeBlock || signalBlock ? false : result.stale, lastUpdated: probeBlock ? checkedAt : signalBlock ? signalCheckedAt : result.lastUpdated };
   });
-  const data: Overview = { ...base, highlightedResources: resources, problems, screenId: screen.id, presentationRevision: presentation.data.revision, blocks, hostMetricsSources, externalServices: probe.externalServices, uptimeBoard: probe.uptimeBoard, standaloneVps, signalCards };
+  const data: Overview = { ...base, highlightedResources, problems, screenId: screen.id, presentationRevision: presentation.data.revision, blocks, hostMetricsSources, externalServices: probe.externalServices, uptimeBoard: probe.uptimeBoard, standaloneVps, signalCards };
   return { ...readResult(data, current.batch, current.keys), presentationStatus: names.status };
 }
 export async function readHistory(resource: History["resource"], window: History["window"] = "1h", signal?: AbortSignal) {

@@ -1,6 +1,6 @@
 # Minicards de Disponibilidade de Serviços
 
-A grade **Disponibilidade de Serviços** é um único grid. Hoje entram três origens, nesta ordem: recurso destacado do Zabbix, aplicação da sonda e VPS avulsa com destaque. Um serviço novo que também apareça aqui entra nessa mesma grade, com o mesmo retângulo. O miolo muda conforme a leitura que o serviço tem. A caixa não muda.
+A grade **Disponibilidade de Serviços** é um único grid. No modo **default** do bloco entram as origens globais nesta ordem: recurso Zabbix destacado, aplicação da sonda, VPS destacada e Signal destacado. No modo **custom**, a ordem é a lista `cards` daquele bloco (`kind:uuid`). Um serviço novo que também apareça aqui entra nessa mesma grade, com o mesmo retângulo. O miolo muda conforme a leitura que o serviço tem. A caixa não muda.
 
 ## A grade
 

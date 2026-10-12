@@ -4,7 +4,8 @@ import { PlaceLink } from "@/components/layout/place-link";
 import { Activity, ArrowRight, Box, Layers, Server, TriangleAlert } from "lucide-react";
 import { useContext, type CSSProperties, type ReactNode } from "react";
 import { effectiveOptions, type IndicatorKey, type OptionsByType } from "@/lib/config/presentation";
-import { selectHighlights, selectProblems, sortInventory } from "@/lib/dashboard/block-options";
+import { resolveAvailabilityPanel } from "@/lib/dashboard/availability-cards";
+import { selectProblems, sortInventory } from "@/lib/dashboard/block-options";
 import { isPublicPath } from "@/lib/public/paths";
 import { EvidenceTimeContext } from "./metrics";
 import type { AsgardSummary, ConfiguredResource, Container, Host, OverviewBlock, ProbeCard, Problem, SignalFlowBlockData, Summary } from "@/lib/monitoring/contracts";
@@ -113,9 +114,29 @@ export function DashboardBlock({ block, failed, probes = [], vps = [], signalCar
       return <Panel title="Containers descobertos" icon={<Box aria-hidden="true" />} note={items.length !== all.length ? `${items.length} exibidos de ${all.length} descobertos` : undefined}><ContainerInventory containers={items} stale={stale} availability={block.availability} compact visibleRows={options.visibleRows} emptyLabel={all.length && !items.length ? "Nenhum container corresponde ao filtro." : undefined} /></Panel>;
     }
     case "highlighted_resources": {
-      const options = effectiveOptions({ ...block, type: "highlighted_resources" }), all = block.data as ConfiguredResource[], items = selectHighlights(all, options);
-      const visible = items.length > 0 || probes.length > 0 || vps.length > 0 || signalCards.length > 0;
-      return <section className="dashboard-panel availability-panel" style={{ "--service-rows": options.visibleRows } as CSSProperties} data-service-rows={options.visibleRows}><div className="panel-heading"><Box aria-hidden="true" /><h2>Disponibilidade de Serviços</h2><PlaceLink className="panel-link" href="/servicos">Todos os serviços <ArrowRight aria-hidden="true" /></PlaceLink></div>{visible ? <div className="availability-grid" tabIndex={0} role="region" aria-label="Recursos destacados">{items.map(item => <ServiceAvailabilityCard key={item.id} item={item} stale={stale} />)}{probes.map(item => <ProbeAvailabilityCard key={item.id} item={item} />)}{vps.map(item => <VpsAvailabilityCard key={item.id} item={item} />)}{signalCards.map(item => <SignalAvailabilityCard key={item.id} item={item} />)}</div> : <p className="panel-empty">{all.length ? "Nenhum destaque corresponde ao filtro." : "Nenhum serviço destacado. Configure os recursos que deseja acompanhar."}</p>}<p className="panel-foot">{items.length !== all.length ? `${items.length} exibidos de ${all.length} destacados · ` : ""}{items.length && probes.length ? "Estado do recurso · CPU / RAM na infraestrutura · latência nas aplicações" : items.length ? "Estado do recurso · CPU / RAM atuais · detalhes ao selecionar" : probes.length ? "Estado da consulta · latência atual · detalhes ao selecionar" : signalCards.length ? "Estado do Signal · workers · faixa de presença" : "Estado da VPS · faixa de presença · detalhes ao selecionar"}{(vps.length || signalCards.length) && (items.length || probes.length) ? " · faixa Signal/VPS" : ""}</p></section>;
+      const options = effectiveOptions({ ...block, type: "highlighted_resources" });
+      const panel = resolveAvailabilityPanel(block.data, options, { probes, vps, signalCards: signalCards ?? [] });
+      const cards = panel.cards;
+      const resourceCount = cards.filter(card => card.kind === "resource").length;
+      const probeCount = cards.filter(card => card.kind === "external_service").length;
+      const vpsCount = cards.filter(card => card.kind === "standalone_vps").length;
+      const signalCount = cards.filter(card => card.kind === "signal_target").length;
+      const visible = cards.length > 0;
+      const empty = options.selection === "custom"
+        ? "Nenhum card neste bloco."
+        : panel.legacyResourceCount ? "Nenhum destaque corresponde ao filtro." : "Nenhum serviço destacado. Configure os recursos que deseja acompanhar.";
+      const countNote = options.selection === "custom"
+        ? `${cards.length} ${cards.length === 1 ? "card" : "cards"} neste bloco · `
+        : panel.legacyResourceCount !== null && resourceCount !== panel.legacyResourceCount
+          ? `${resourceCount} exibidos de ${panel.legacyResourceCount} destacados · `
+          : "";
+      const hint = resourceCount && probeCount ? "Estado do recurso · CPU / RAM na infraestrutura · latência nas aplicações"
+        : resourceCount ? "Estado do recurso · CPU / RAM atuais · detalhes ao selecionar"
+        : probeCount ? "Estado da consulta · latência atual · detalhes ao selecionar"
+        : signalCount ? "Estado do Signal · workers · faixa de presença"
+        : "Estado da VPS · faixa de presença · detalhes ao selecionar";
+      const stripNote = (vpsCount || signalCount) && (resourceCount || probeCount) ? " · faixa Signal/VPS" : "";
+      return <section className="dashboard-panel availability-panel" style={{ "--service-rows": options.visibleRows } as CSSProperties} data-service-rows={options.visibleRows}><div className="panel-heading"><Box aria-hidden="true" /><h2>Disponibilidade de Serviços</h2><PlaceLink className="panel-link" href="/servicos">Todos os serviços <ArrowRight aria-hidden="true" /></PlaceLink></div>{visible ? <div className="availability-grid" tabIndex={0} role="region" aria-label="Recursos destacados">{cards.map(card => card.kind === "resource" ? <ServiceAvailabilityCard key={`resource:${card.item.id}`} item={card.item} stale={stale} /> : card.kind === "external_service" ? <ProbeAvailabilityCard key={`external_service:${card.item.id}`} item={card.item} /> : card.kind === "standalone_vps" ? <VpsAvailabilityCard key={`standalone_vps:${card.item.id}`} item={card.item} /> : <SignalAvailabilityCard key={`signal_target:${card.item.id}`} item={card.item} />)}</div> : <p className="panel-empty">{empty}</p>}<p className="panel-foot">{countNote}{hint}{stripNote}</p></section>;
     }
     case "resource_card": return <ResourceCard item={block.data as ConfiguredResource} stale={stale} />;
     case "uptime_list": return <UptimeList items={block.data as ProbeCard[]} options={effectiveOptions({ ...block, type: "uptime_list" })} />;

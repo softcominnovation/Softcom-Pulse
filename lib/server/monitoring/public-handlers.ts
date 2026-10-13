@@ -33,6 +33,10 @@ export function withoutVpsKey<T extends { apiKey: unknown }>(data: T[]) {
     return next;
   });
 }
+/** Public surface never exposes the VPS address (list, detail, overview cards). */
+export function withoutVpsAddress<T extends { ip: string }>(item: T): T {
+  return { ...item, ip: "" };
+}
 /** Public VPS detail: no monitor key and no service stacks (notes may hold secrets). */
 export function withoutVpsPrivate<T extends { apiKey: unknown; stacks?: unknown }>(item: T) {
   const { apiKey, stacks, ...next } = item;
@@ -43,6 +47,24 @@ export function withoutVpsPrivate<T extends { apiKey: unknown; stacks?: unknown 
 export function withManagerVisibility<T extends { managerUrl: string | null }>(item: T, authed: boolean): T {
   return authed ? item : { ...item, managerUrl: null };
 }
+function redactPublicOverviewIps<T extends {
+  standaloneVps?: { ip: string }[];
+  blocks: { type: string; data: unknown }[];
+}>(overview: T): T {
+  return {
+    ...overview,
+    standaloneVps: overview.standaloneVps?.map(withoutVpsAddress),
+    blocks: overview.blocks.map(block => {
+      if (block.type !== "highlighted_resources" || !block.data || typeof block.data !== "object" || !("cards" in block.data) || !Array.isArray((block.data as { cards: unknown }).cards)) return block;
+      const cards = (block.data as { cards: { kind: string; item: { ip?: string } }[] }).cards.map(card =>
+        card.kind === "standalone_vps" && card.item && typeof card.item.ip === "string"
+          ? { ...card, item: withoutVpsAddress(card.item as { ip: string }) }
+          : card,
+      );
+      return { ...block, data: { ...(block.data as object), cards } };
+    }),
+  };
+}
 
 async function readPublic(request: Request, segments: string[]) {
   const [root, second, third, fourth, fifth, sixth] = segments;
@@ -51,12 +73,12 @@ async function readPublic(request: Request, segments: string[]) {
     const overview = await readOverview(queryParams(request, z.strictObject({ screenId: uuidSchema.optional() })).screenId);
     return {
       ...overview,
-      data: {
+      data: redactPublicOverviewIps({
         ...overview.data,
         blocks: overview.data.blocks.map(block => block.type === "container_inventory"
           ? { ...block, data: null, availability: "unavailable" as const, stale: false, lastUpdated: null }
           : block),
-      },
+      }),
     };
   }
   if (root === "settings" && second === "presentation" && segments.length === 2) { queryParams(request, emptyQuery); return getPresentation(); }
@@ -78,12 +100,12 @@ async function readPublic(request: Request, segments: string[]) {
   if (second === "external-services" && third && fourth === "history" && segments.length === 4) return { data: await externalServiceHistory(uuidSchema.parse(third), queryParams(request, z.strictObject({ range: externalServiceHistoryRangeSchema.default("24h") })).range) };
   if (second === "standalone-vps" && segments.length === 2) {
     queryParams(request, emptyQuery);
-    return { data: withoutVpsKey(await listStandaloneVps()).map(item => withManagerVisibility(item, authed)) };
+    return { data: withoutVpsKey(await listStandaloneVps()).map(item => withManagerVisibility(withoutVpsAddress(item), authed)) };
   }
   if (second === "standalone-vps" && third && segments.length === 3) {
     const query = queryParams(request, vpsDetailQuerySchema);
     const data = await readStandaloneVps(uuidSchema.parse(third), { range: query.range, samples: query.samples === "1" });
-    return { data: withManagerVisibility(withoutVpsPrivate(data), authed) };
+    return { data: withManagerVisibility(withoutVpsAddress(withoutVpsPrivate(data)), authed) };
   }
   if (second === "signal-targets" && segments.length === 2) {
     queryParams(request, emptyQuery);

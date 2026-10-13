@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ComponentProps } from "react";
+import { usePathname } from "next/navigation";
 import { PlaceLink } from "@/components/layout/place-link";
 import { Eye, EyeOff, Pause, Pencil, Play, Power, Trash2 } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -9,7 +10,8 @@ import { z } from "zod";
 import { isAxiosError } from "axios";
 import { api } from "@/lib/client/api";
 import { standaloneVpsCardSchema, standaloneVpsWriteSchema, type StandaloneVpsCard } from "@/lib/config/standalone-vps";
-import { vpsAvailability, vpsMonitorLabel, vpsReasonColor, vpsStrip } from "@/lib/vps/labels";
+import { isPublicPath } from "@/lib/public/paths";
+import { publicVpsNetworkLabel, vpsAvailability, vpsMonitorLabel, vpsReasonColor, vpsStrip } from "@/lib/vps/labels";
 import { useVpsSelectionStore } from "@/store/vps-selection.store";
 import { ConfirmationDialog } from "@/components/confirmation-dialog";
 import { probeLiveRefreshMs, ProbeStrip } from "@/components/dashboard/probe-strip";
@@ -82,12 +84,13 @@ export function VpsForm({ existing, onSaved, onCancel, onReload }: { existing?: 
 }
 export function VpsAdmin() {
   const list = useAdminRead("/monitoring/standalone-vps", parseList), mutation = useMutation(), editor = useCanEdit();
+  const publicSurface = isPublicPath(usePathname());
   const authenticated = useAuthStore(state => state.status === "authenticated");
   const [query, setQuery] = useState(""), [draft, setDraft] = useState<StandaloneVpsCard | "new" | null>(null);
   const pendingId = useVpsSelectionStore(state => state.vpsId), consume = useVpsSelectionStore(state => state.consume);
   const items = list.data ?? [];
   const term = query.trim().toLocaleLowerCase("pt");
-  const visible = items.filter(item => !term || [item.name, item.ip, item.domain ?? "", item.provider ?? ""].some(value => value.toLocaleLowerCase("pt").includes(term)));
+  const visible = items.filter(item => !term || [item.name, publicSurface ? "" : item.ip, item.domain ?? "", item.provider ?? ""].some(value => value.toLocaleLowerCase("pt").includes(term)));
   const refreshList = list.refresh;
   useEffect(() => { if (pendingId) consume(); }, [pendingId, consume]);
   useEffect(() => { if (authenticated) refreshList(); }, [authenticated, refreshList]);
@@ -118,7 +121,7 @@ export function VpsAdmin() {
   }
   return <div className="admin-page">
     <header className="admin-heading app-monitor-heading"><div><h1>VPS</h1><p>Cadastro das VPS avulsas. O monitor, quando existe, é consultado pelo Pulse. O navegador não chama essa URL.</p></div>{editor && <Button type="button" variant="primary" onClick={() => setDraft("new")}>Nova VPS</Button>}</header>
-    <Field label="Buscar"><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Nome, IP, domínio ou provedor" /></Field>
+    <Field label="Buscar"><input value={query} onChange={event => setQuery(event.target.value)} placeholder={publicSurface ? "Nome, domínio ou provedor" : "Nome, IP, domínio ou provedor"} /></Field>
     {list.failed && <ReadError refresh={list.refresh}>Não foi possível ler as VPS cadastradas.</ReadError>}
     {list.loading && !list.data && <p className="panel-empty">Carregando VPS…</p>}
     {list.data && !items.length && <p className="panel-empty">{editor ? "Ainda não há VPS. Use o botão Nova VPS para cadastrar a primeira." : "Ainda não há VPS."}</p>}
@@ -129,7 +132,7 @@ export function VpsAdmin() {
       return <li key={item.id}><article className={`dashboard-panel vps-card ${item.enabled ? "" : "is-inactive"}`}>
         <div className="vps-card-head"><PlaceLink href={`/admin/vps/${item.id}`}><strong>{item.name}</strong></PlaceLink><span className={`app-presence tone-${availability.tone}`}>{availability.label}</span></div>
         {item.provider && <p className="app-monitor-meta">{item.provider}</p>}
-        <p>{item.ip}</p>
+        <p>{publicSurface ? publicVpsNetworkLabel : item.ip}</p>
         {item.domain && <p className="app-monitor-meta">{item.domain}</p>}
         {authenticated && item.managerUrl && <a href={item.managerUrl} target="_blank" rel="noreferrer">Abrir manager</a>}
         {monitor && monitor.label !== availability.label && <p className={`vps-monitor tone-${monitor.tone}`}>{monitor.label}</p>}

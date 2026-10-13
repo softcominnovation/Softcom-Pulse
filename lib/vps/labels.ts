@@ -1,5 +1,8 @@
 import type { MonitorState } from "@/lib/config/standalone-vps";
 
+/** Shown on the public monitor instead of the VPS IP (keeps card/list density without sounding like missing data). */
+export const publicVpsNetworkLabel = "Rede interna";
+
 export function vpsReasonColor(reason: number) {
   if (reason === 0 || reason === 4) return "#64d6b0";
   if (reason === 1) return "#f2c275";

@@ -11,7 +11,7 @@ import { api } from "@/lib/client/api";
 import { standaloneVpsDetailSchema, vpsStackWriteSchema, type StandaloneVpsDetail, type VpsStackRecord } from "@/lib/config/standalone-vps";
 import { timestamp } from "@/lib/dashboard/format";
 import { isPublicPath } from "@/lib/public/paths";
-import { vpsAvailability, vpsMonitorLabel, vpsReasonColor, vpsStrip } from "@/lib/vps/labels";
+import { publicVpsNetworkLabel, vpsAvailability, vpsMonitorLabel, vpsReasonColor, vpsStrip } from "@/lib/vps/labels";
 import { ConfirmationDialog } from "@/components/confirmation-dialog";
 import { probeLiveRefreshMs, ProbeStrip } from "@/components/dashboard/probe-strip";
 import { Button } from "@/components/ui/button";
@@ -118,7 +118,7 @@ function VpsBody({ item, editor, authenticated, publicRead, editing, setEditing,
         <span className={`app-presence tone-${availability.tone}`}>{availability.label}</span>
         <h2>{item.name}</h2>
         {item.provider && <p className="app-monitor-meta">{item.provider}</p>}
-        <p>{item.ip}{item.domain ? ` · ${item.domain}` : ""}</p>
+        <p>{publicRead ? publicVpsNetworkLabel : item.ip}{item.domain ? ` · ${item.domain}` : ""}</p>
         {monitor && <p className={`vps-monitor tone-${monitor.tone}`}>{monitor.label}</p>}
         {authenticated && item.managerUrl && <a href={item.managerUrl} target="_blank" rel="noreferrer">Abrir manager</a>}
       </div>{editor && <div className="admin-actions app-monitor-actions">

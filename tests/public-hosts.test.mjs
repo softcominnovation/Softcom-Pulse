@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { isPublicHost, normalizePublicHost, publicHosts } from "../lib/server/auth/public-hosts.ts";
 import { publicResponse } from "../lib/server/bff.ts";
-import { withoutProbeRecipe, withoutVpsKey, withoutVpsPrivate, publicGet } from "../lib/server/monitoring/public-handlers.ts";
+import { withoutProbeRecipe, withoutVpsAddress, withoutVpsKey, withoutVpsPrivate, publicGet } from "../lib/server/monitoring/public-handlers.ts";
 
 test("public hosts ignore blanks, scheme, path and port", () => {
   assert.equal(normalizePublicHost(" LocalHost:3000 "), "localhost");
@@ -39,8 +39,9 @@ test("empty public host list refuses every public read", async () => {
   }
 });
 
-test("public responses omit VPS key and probe recipe fields", () => {
+test("public responses omit VPS key, address and probe recipe fields", () => {
   assert.deepEqual(withoutVpsKey([{ id: "1", apiKey: "secret", name: "vps" }]), [{ id: "1", name: "vps" }]);
+  assert.deepEqual(withoutVpsAddress({ id: "1", ip: "10.1.1.8", name: "vps" }), { id: "1", ip: "", name: "vps" });
   assert.deepEqual(withoutProbeRecipe([{ id: "1", bodyTemplate: "{}", headerName: "X", expectedValue: true, displayName: "app" }]), [{ id: "1", displayName: "app" }]);
   assert.deepEqual(withoutVpsPrivate({ id: "1", apiKey: "secret", name: "vps", stacks: [{ id: "s1", notes: "senha" }] }), { id: "1", name: "vps", stacks: [] });
 });

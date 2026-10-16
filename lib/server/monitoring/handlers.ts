@@ -22,95 +22,270 @@ import {
   addSignalInfraLink, createSignalTarget, deleteSignalTarget, getSignalTarget, listSignalTargets,
   removeSignalInfraLink, signalTargetHistory, updateSignalTarget,
 } from "../signal/repository.ts";
+import {
+  buildDemoConfiguredResources,
+  buildDemoContainers,
+  buildDemoExternalServiceHistory,
+  buildDemoExternalServices,
+  buildDemoHistory,
+  buildDemoHosts,
+  buildDemoMonitoringScope,
+  buildDemoOverview,
+  buildDemoPresentation,
+  buildDemoProblems,
+  buildDemoResourceConfigs,
+  buildDemoSignalHistory,
+  buildDemoSignalTargets,
+  buildDemoStandaloneVpsDetail,
+  buildDemoStandaloneVpsList,
+  buildDemoTemplates,
+  buildDemoVmWorkloads,
+  isDemoMode,
+} from "./demo-data.ts";
 
 type Params<K extends string> = { params: Promise<Record<K, string>> };
 const emptyQuery = z.strictObject({});
 const historyQuery = z.strictObject({ range: historyRangeSchema.default("1h") });
 
+const demoEnv = <T>(data: T) => ({
+  presentationStatus: "ready" as const,
+  data,
+  availability: "ready" as const,
+  stale: false,
+  lastUpdated: new Date().toISOString(),
+  refreshAfterMs: 20000,
+});
+
 export function monitoringScopeGet(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readMonitoringScopeDocument(); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    if (isDemoMode()) return buildDemoMonitoringScope();
+    return readMonitoringScopeDocument();
+  });
 }
 export function monitoringScopeLinkPost(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return postMonitoringScopeLink(await jsonBody(request)); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const body = await jsonBody(request);
+    if (isDemoMode()) return buildDemoMonitoringScope();
+    return postMonitoringScopeLink(body);
+  });
 }
 export function monitoringScopeLinkDelete(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return deleteMonitoringScopeLink(await jsonBody(request)); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const body = await jsonBody(request);
+    if (isDemoMode()) return buildDemoMonitoringScope();
+    return deleteMonitoringScopeLink(body);
+  });
 }
 
 export function vmConfigsGet(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listVmConfigs() }; });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    if (isDemoMode()) return { data: [] };
+    return { data: await listVmConfigs() };
+  });
 }
 export function vmConfigPut(request: Request, context: Params<"vmKey">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await saveVmConfig(vmKeySchema.parse((await context.params).vmKey), await jsonBody(request)) }; });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const vmKey = vmKeySchema.parse((await context.params).vmKey);
+    const body = await jsonBody(request) as Record<string, unknown>;
+    if (isDemoMode()) return { data: { vmKey, hostKey: "ASGARD", displayName: (body.displayName as string | null) ?? null, revision: 1, updatedAt: new Date().toISOString() } };
+    return { data: await saveVmConfig(vmKey, body) };
+  });
 }
 
 export function resourceConfigsGet(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listResources() }; });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    if (isDemoMode()) return { data: buildDemoResourceConfigs() };
+    return { data: await listResources() };
+  });
 }
 
 export function templatesGet(request: Request) {
-  return protectedResponse(request, async () => readTemplates(queryParams(request, z.strictObject({ hostKey: hostKeySchema.optional() }))));
+  return protectedResponse(request, async () => {
+    const query = queryParams(request, z.strictObject({ hostKey: hostKeySchema.optional() }));
+    if (isDemoMode()) return buildDemoTemplates();
+    return readTemplates(query);
+  });
 }
 export function templateGet(request: Request, context: Params<"templateKey">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readTemplates({ templateKey: templateKeySchema.parse((await context.params).templateKey) }); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const key = templateKeySchema.parse((await context.params).templateKey);
+    if (isDemoMode()) {
+      const all = buildDemoTemplates();
+      return { ...all, data: all.data.find(t => t.templateKey === key) ?? all.data[0] };
+    }
+    return readTemplates({ templateKey: key });
+  });
 }
 export function templateConfigsGet(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listTemplateConfigs() }; });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    if (isDemoMode()) return { data: [] };
+    return { data: await listTemplateConfigs() };
+  });
 }
 export function templateConfigPut(request: Request, context: Params<"templateKey">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await saveTemplateConfig(templateKeySchema.parse((await context.params).templateKey), await jsonBody(request)) }; });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const templateKey = templateKeySchema.parse((await context.params).templateKey);
+    const body = await jsonBody(request) as Record<string, unknown>;
+    if (isDemoMode()) {
+      const tpl = buildDemoTemplates().data.find(t => t.templateKey === templateKey) ?? buildDemoTemplates().data[0];
+      return {
+        data: {
+          templateKey,
+          hostKey: tpl.hostKey,
+          templateId: tpl.templateId ?? "901",
+          originalName: tpl.technicalName,
+          virtualizationType: tpl.virtualizationType ?? "qemu",
+          displayName: (body.displayName as string | null) ?? null,
+          roleOverride: (body.roleOverride as "worker" | "manager" | null) ?? null,
+          revision: 1,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+    }
+    return { data: await saveTemplateConfig(templateKey, body) };
+  });
 }
 
 export function presentationGet(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return getPresentation(); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    if (isDemoMode()) return buildDemoPresentation();
+    return getPresentation();
+  });
 }
 export function presentationPut(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return savePresentation(await jsonBody(request)); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const body = await jsonBody(request) as { settings?: Record<string, unknown>; expectedRevision?: number };
+    if (isDemoMode()) {
+      const current = buildDemoPresentation();
+      return {
+        data: { ...current.data, ...(body.settings ?? {}), revision: (body.expectedRevision ?? current.data.revision) + 1 },
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    return savePresentation(body);
+  });
 }
 export function overviewGet(request: Request) {
-  return protectedResponse(request, async () => readOverview(queryParams(request, z.strictObject({ screenId: uuidSchema.optional() })).screenId));
+  return protectedResponse(request, async () => {
+    const screenId = queryParams(request, z.strictObject({ screenId: uuidSchema.optional() })).screenId;
+    if (isDemoMode()) return buildDemoOverview(screenId);
+    return readOverview(screenId);
+  });
 }
 export function hostsGet(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readHosts(); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    if (isDemoMode()) return { ...demoEnv(buildDemoHosts()), asgardHostKey: "ASGARD" };
+    return readHosts();
+  });
 }
 export function hostGet(request: Request, context: Params<"hostKey">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readHost(hostKeySchema.parse((await context.params).hostKey)); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const key = hostKeySchema.parse((await context.params).hostKey);
+    if (isDemoMode()) {
+      const hosts = buildDemoHosts();
+      return demoEnv(hosts.find(h => h.hostKey === key) ?? hosts[0]);
+    }
+    return readHost(key);
+  });
 }
 export function containersGet(request: Request) {
-  return protectedResponse(request, async () => readContainers(queryParams(request, z.strictObject({ hostKey: hostKeySchema.optional() })).hostKey));
+  return protectedResponse(request, async () => {
+    const hostKey = queryParams(request, z.strictObject({ hostKey: hostKeySchema.optional() })).hostKey;
+    if (isDemoMode()) return demoEnv(buildDemoContainers(hostKey));
+    return readContainers(hostKey);
+  });
 }
 export function hostContainersGet(request: Request, context: Params<"hostKey">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readContainers(hostKeySchema.parse((await context.params).hostKey)); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const hostKey = hostKeySchema.parse((await context.params).hostKey);
+    if (isDemoMode()) return demoEnv(buildDemoContainers(hostKey));
+    return readContainers(hostKey);
+  });
 }
 export function vmContainersGet(request: Request, context: Params<"hostKey" | "vmKey">) {
   return protectedResponse(request, async () => {
     queryParams(request, emptyQuery);
     const params = await context.params;
-    return readVmWorkloads(hostKeySchema.parse(params.hostKey), hostKeySchema.parse(params.vmKey), request.signal);
+    const hostKey = hostKeySchema.parse(params.hostKey);
+    const vmKey = hostKeySchema.parse(params.vmKey);
+    if (isDemoMode()) return buildDemoVmWorkloads(hostKey, vmKey);
+    return readVmWorkloads(hostKey, vmKey, request.signal);
   });
 }
 export function problemsGet(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readProblems(); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    if (isDemoMode()) return demoEnv(buildDemoProblems());
+    return readProblems();
+  });
 }
 export function servicesGet(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readServices(); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    if (isDemoMode()) return demoEnv(buildDemoConfiguredResources());
+    return readServices();
+  });
 }
 export function serviceGet(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readServices(uuidSchema.parse((await context.params).id)); });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    if (isDemoMode()) {
+      const list = buildDemoConfiguredResources();
+      return demoEnv(list.find(r => r.id === id) ?? list[0]);
+    }
+    return readServices(id);
+  });
 }
 export function servicePost(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); const { context, ...body } = z.object({ context: resourceContextSchema.optional() }).passthrough().parse(await jsonBody(request)); return { data: await createResource(body, context) }; }, 201);
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const { context, ...body } = z.object({ context: resourceContextSchema.optional() }).passthrough().parse(await jsonBody(request));
+    if (isDemoMode()) {
+      const now = new Date().toISOString();
+      return { data: { ...buildDemoResourceConfigs()[0], ...body, id: crypto.randomUUID(), createdAt: now, updatedAt: now } };
+    }
+    return { data: await createResource(body, context) };
+  }, 201);
 }
 export function servicePatch(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); const { context: origin, ...body } = z.object({ context: resourceContextSchema.optional() }).passthrough().parse(await jsonBody(request)); return { data: await updateResource(uuidSchema.parse((await context.params).id), body, origin) }; });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    const { context: origin, ...body } = z.object({ context: resourceContextSchema.optional() }).passthrough().parse(await jsonBody(request));
+    if (isDemoMode()) {
+      const existing = buildDemoResourceConfigs().find(r => r.id === id) ?? buildDemoResourceConfigs()[0];
+      return { data: { ...existing, ...body, id, updatedAt: new Date().toISOString() } };
+    }
+    return { data: await updateResource(id, body, origin) };
+  });
 }
 export function serviceDelete(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return deleteResource(uuidSchema.parse((await context.params).id)); }, 204);
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    if (isDemoMode()) return;
+    return deleteResource(id);
+  }, 204);
 }
 export function externalServicesGet(request: Request) {
   return protectedResponse(request, async editor => {
     queryParams(request, emptyQuery);
-    const data = await listExternalServicesWithUptime();
+    const data = isDemoMode() ? buildDemoExternalServices() : await listExternalServicesWithUptime();
     return { data: editor ? data : data.map(service => {
       const { bodyTemplate, headerName, expectedValue, ...publicService } = service;
       void bodyTemplate; void headerName; void expectedValue;
@@ -119,18 +294,40 @@ export function externalServicesGet(request: Request) {
   });
 }
 export function externalServicePost(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await createExternalService(await jsonBody(request)) }; }, 201);
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const body = await jsonBody(request) as Record<string, unknown>;
+    if (isDemoMode()) {
+      const now = new Date().toISOString();
+      return { data: { ...buildDemoExternalServices()[0], ...body, id: crypto.randomUUID(), revision: 1, createdAt: now, updatedAt: now } };
+    }
+    return { data: await createExternalService(body) };
+  }, 201);
 }
 export function externalServicePatch(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await updateExternalService(uuidSchema.parse((await context.params).id), await jsonBody(request)) }; });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    const body = await jsonBody(request) as Record<string, unknown>;
+    if (isDemoMode()) {
+      const existing = buildDemoExternalServices().find(s => s.id === id) ?? buildDemoExternalServices()[0];
+      return { data: { ...existing, ...body, id, revision: existing.revision + 1, updatedAt: new Date().toISOString() } };
+    }
+    return { data: await updateExternalService(id, body) };
+  });
 }
 export function externalServiceDelete(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); await deleteExternalService(uuidSchema.parse((await context.params).id)); }, 204);
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    if (isDemoMode()) return;
+    await deleteExternalService(id);
+  }, 204);
 }
 export function standaloneVpsGet(request: Request) {
   return protectedResponse(request, async editor => {
     queryParams(request, emptyQuery);
-    const data = await listStandaloneVps();
+    const data = isDemoMode() ? buildDemoStandaloneVpsList() : await listStandaloneVps();
     return { data: editor ? data : data.map(item => {
       const { apiKey, ...publicItem } = item;
       void apiKey;
@@ -139,18 +336,43 @@ export function standaloneVpsGet(request: Request) {
   });
 }
 export function standaloneVpsPost(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await createStandaloneVps(await jsonBody(request)) }; }, 201);
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const body = await jsonBody(request) as Record<string, unknown>;
+    if (isDemoMode()) {
+      const now = new Date().toISOString();
+      return { data: { ...buildDemoStandaloneVpsList()[0], ...body, id: crypto.randomUUID(), revision: 1, createdAt: now, updatedAt: now } };
+    }
+    return { data: await createStandaloneVps(body) };
+  }, 201);
 }
 export function standaloneVpsPatch(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await updateStandaloneVps(uuidSchema.parse((await context.params).id), await jsonBody(request)) }; });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    const body = await jsonBody(request) as Record<string, unknown>;
+    if (isDemoMode()) {
+      const existing = buildDemoStandaloneVpsList().find(v => v.id === id) ?? buildDemoStandaloneVpsList()[0];
+      return { data: { ...existing, ...body, id, revision: existing.revision + 1, updatedAt: new Date().toISOString() } };
+    }
+    return { data: await updateStandaloneVps(id, body) };
+  });
 }
 export function standaloneVpsDelete(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); await deleteStandaloneVps(uuidSchema.parse((await context.params).id)); }, 204);
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    if (isDemoMode()) return;
+    await deleteStandaloneVps(id);
+  }, 204);
 }
 export function standaloneVpsDetailGet(request: Request, context: Params<"id">) {
   return protectedResponse(request, async editor => {
     const query = queryParams(request, vpsDetailQuerySchema);
-    const data = await readStandaloneVps(uuidSchema.parse((await context.params).id), { range: query.range, samples: query.samples === "1" });
+    const id = uuidSchema.parse((await context.params).id);
+    const data = isDemoMode()
+      ? buildDemoStandaloneVpsDetail(id, query.range)
+      : await readStandaloneVps(id, { range: query.range, samples: query.samples === "1" });
     if (editor) return { data };
     const { apiKey, ...item } = data;
     void apiKey;
@@ -158,66 +380,156 @@ export function standaloneVpsDetailGet(request: Request, context: Params<"id">) 
   });
 }
 export function vpsStackPost(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await createVpsStack(uuidSchema.parse((await context.params).id), await jsonBody(request)) }; }, 201);
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const vpsId = uuidSchema.parse((await context.params).id);
+    const body = await jsonBody(request) as Record<string, unknown>;
+    if (isDemoMode()) {
+      const now = new Date().toISOString();
+      return { data: { id: crypto.randomUUID(), vpsId, name: String(body.name ?? ""), link: (body.link as string | null) ?? null, notes: (body.notes as string | null) ?? null, createdAt: now, updatedAt: now } };
+    }
+    return { data: await createVpsStack(vpsId, body) };
+  }, 201);
 }
 export function vpsStackPatch(request: Request, context: Params<"id" | "stackId">) {
   return protectedResponse(request, async () => {
     queryParams(request, emptyQuery);
     const route = await context.params;
-    return { data: await updateVpsStack(uuidSchema.parse(route.id), uuidSchema.parse(route.stackId), await jsonBody(request)) };
+    const vpsId = uuidSchema.parse(route.id);
+    const stackId = uuidSchema.parse(route.stackId);
+    const body = await jsonBody(request) as Record<string, unknown>;
+    if (isDemoMode()) {
+      const now = new Date().toISOString();
+      return { data: { id: stackId, vpsId, name: String(body.name ?? ""), link: (body.link as string | null) ?? null, notes: (body.notes as string | null) ?? null, createdAt: now, updatedAt: now } };
+    }
+    return { data: await updateVpsStack(vpsId, stackId, body) };
   });
 }
 export function vpsStackDelete(request: Request, context: Params<"id" | "stackId">) {
   return protectedResponse(request, async () => {
     queryParams(request, emptyQuery);
     const route = await context.params;
-    await deleteVpsStack(uuidSchema.parse(route.id), uuidSchema.parse(route.stackId));
+    const vpsId = uuidSchema.parse(route.id);
+    const stackId = uuidSchema.parse(route.stackId);
+    if (isDemoMode()) return;
+    await deleteVpsStack(vpsId, stackId);
   }, 204);
 }
 export function externalServiceHistoryGet(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => ({ data: await externalServiceHistory(uuidSchema.parse((await context.params).id), queryParams(request, z.strictObject({ range: externalServiceHistoryRangeSchema.default("24h") })).range) }));
+  return protectedResponse(request, async () => {
+    const id = uuidSchema.parse((await context.params).id);
+    const range = queryParams(request, z.strictObject({ range: externalServiceHistoryRangeSchema.default("24h") })).range;
+    if (isDemoMode()) return { data: buildDemoExternalServiceHistory(id, range) };
+    return { data: await externalServiceHistory(id, range) };
+  });
 }
 export function signalTargetsGet(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await listSignalTargets() }; });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    if (isDemoMode()) return { data: buildDemoSignalTargets() };
+    return { data: await listSignalTargets() };
+  });
 }
 export function signalTargetPost(request: Request) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await createSignalTarget(await jsonBody(request)) }; }, 201);
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const body = await jsonBody(request) as Record<string, unknown>;
+    if (isDemoMode()) {
+      const now = new Date().toISOString();
+      return { data: { ...buildDemoSignalTargets()[0], ...body, id: crypto.randomUUID(), revision: 1, createdAt: now, updatedAt: now } };
+    }
+    return { data: await createSignalTarget(body) };
+  }, 201);
 }
 export function signalTargetGet(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await getSignalTarget(uuidSchema.parse((await context.params).id)) }; });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    if (isDemoMode()) {
+      const list = buildDemoSignalTargets();
+      return { data: list.find(t => t.id === id) ?? list[0] };
+    }
+    return { data: await getSignalTarget(id) };
+  });
 }
 export function signalTargetPatch(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await updateSignalTarget(uuidSchema.parse((await context.params).id), await jsonBody(request)) }; });
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    const body = await jsonBody(request) as Record<string, unknown>;
+    if (isDemoMode()) {
+      const existing = buildDemoSignalTargets().find(t => t.id === id) ?? buildDemoSignalTargets()[0];
+      return { data: { ...existing, ...body, id, revision: existing.revision + 1, updatedAt: new Date().toISOString() } };
+    }
+    return { data: await updateSignalTarget(id, body) };
+  });
 }
 export function signalTargetDelete(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); await deleteSignalTarget(uuidSchema.parse((await context.params).id)); }, 204);
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    if (isDemoMode()) return;
+    await deleteSignalTarget(id);
+  }, 204);
 }
 export function signalTargetHistoryGet(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => ({ data: await signalTargetHistory(uuidSchema.parse((await context.params).id), queryParams(request, z.strictObject({ range: signalHistoryRangeSchema.default("24h") })).range) }));
+  return protectedResponse(request, async () => {
+    const id = uuidSchema.parse((await context.params).id);
+    const range = queryParams(request, z.strictObject({ range: signalHistoryRangeSchema.default("24h") })).range;
+    if (isDemoMode()) return { data: buildDemoSignalHistory(id, range) };
+    return { data: await signalTargetHistory(id, range) };
+  });
 }
 export function signalInfraLinkPost(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return { data: await addSignalInfraLink(uuidSchema.parse((await context.params).id), await jsonBody(request)) }; }, 201);
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    const body = await jsonBody(request) as Record<string, unknown>;
+    if (isDemoMode()) {
+      const existing = buildDemoSignalTargets().find(t => t.id === id) ?? buildDemoSignalTargets()[0];
+      return { data: { ...existing, revision: existing.revision + 1 } };
+    }
+    return { data: await addSignalInfraLink(id, body) };
+  }, 201);
 }
 export function signalInfraLinkDelete(request: Request, context: Params<"id" | "linkId">) {
   return protectedResponse(request, async () => {
     queryParams(request, emptyQuery);
     const route = await context.params;
-    return { data: await removeSignalInfraLink(uuidSchema.parse(route.id), uuidSchema.parse(route.linkId), await jsonBody(request)) };
+    const id = uuidSchema.parse(route.id);
+    const linkId = uuidSchema.parse(route.linkId);
+    const body = await jsonBody(request);
+    if (isDemoMode()) {
+      const existing = buildDemoSignalTargets().find(t => t.id === id) ?? buildDemoSignalTargets()[0];
+      return { data: { ...existing, links: existing.links.filter(l => l.id !== linkId), revision: existing.revision + 1 } };
+    }
+    return { data: await removeSignalInfraLink(id, linkId, body) };
   });
 }
 export function hostHistoryGet(request: Request, context: Params<"hostKey">) {
-  return protectedResponse(request, async () => readHistory({ type: "host", hostKey: hostKeySchema.parse((await context.params).hostKey), reference: null }, queryParams(request, historyQuery).range, request.signal));
+  return protectedResponse(request, async () => {
+    const hostKey = hostKeySchema.parse((await context.params).hostKey);
+    const range = queryParams(request, historyQuery).range;
+    if (isDemoMode()) return buildDemoHistory({ type: "host", hostKey, reference: null }, range);
+    return readHistory({ type: "host", hostKey, reference: null }, range, request.signal);
+  });
 }
 export function vmHistoryGet(request: Request, context: Params<"hostKey" | "vmKey">) {
   return protectedResponse(request, async () => {
     const params = await context.params;
-    return readHistory({ type: "vm", hostKey: hostKeySchema.parse(params.hostKey), reference: hostKeySchema.parse(params.vmKey) }, queryParams(request, historyQuery).range, request.signal);
+    const hostKey = hostKeySchema.parse(params.hostKey);
+    const vmKey = hostKeySchema.parse(params.vmKey);
+    const range = queryParams(request, historyQuery).range;
+    if (isDemoMode()) return buildDemoHistory({ type: "vm", hostKey, reference: vmKey }, range);
+    return readHistory({ type: "vm", hostKey, reference: vmKey }, range, request.signal);
   });
 }
 export function serviceHistoryGet(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => {
     const { range } = queryParams(request, historyQuery);
-    const config = await getResource(uuidSchema.parse((await context.params).id));
+    const id = uuidSchema.parse((await context.params).id);
+    if (isDemoMode()) return buildDemoHistory({ type: "configured_resource", hostKey: "ASGARD", reference: id }, range);
+    const config = await getResource(id);
     return readHistory({ type: "configured_resource", hostKey: config.zabbixHostKey, reference: config.id }, range, request.signal);
   });
 }

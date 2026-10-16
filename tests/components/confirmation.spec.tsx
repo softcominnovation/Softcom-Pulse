@@ -60,7 +60,7 @@ test("labels, runtime provider and toast retain their visual contract", async ({
   await page.getByRole("button", { name: "Mostrar alerta" }).click();
   const toast = page.locator("[data-sonner-toast]");
   await expect(toast).toBeVisible();
-  await expect(toast).toHaveCSS("background-color", "rgb(24, 35, 44)");
+  await expect(toast).toHaveCSS("background-color", "oklch(0.205 0 0)");
   await expect(toast).toBeInViewport();
 });
 

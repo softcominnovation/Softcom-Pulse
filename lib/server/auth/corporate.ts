@@ -6,6 +6,24 @@ import { AuthError } from "./errors.ts";
 import { sealEnvelope, type Envelope } from "./envelope.ts";
 
 export async function corporateRequest(action: "login" | "refresh" | "logout", body: unknown) {
+  if (process.env.PULSE_DEMO_MODE === "1" && process.env.PULSE_E2E !== "1") {
+    if (action === "logout") return null;
+    const email = (body as { email?: string } | null)?.email ?? "operacao@softcom.com.br";
+    return {
+      accessToken: "demo-access-" + randomUUID(),
+      refreshToken: "demo-refresh-" + randomUUID(),
+      expiresIn: 7200,
+      user: {
+        id: 1,
+        nome: "Central de Operações",
+        nomeCompleto: "Central de Operações Softcom",
+        email,
+        setor: "Infraestrutura & SRE",
+        empresa: "Softcom Tecnologia",
+        administrador: true,
+      },
+    };
+  }
   let base: URL;
   try {
     base = new URL(process.env.API_BASE_URL || process.env.CORPORATE_API_URL || "https://api.softcom.cloud");

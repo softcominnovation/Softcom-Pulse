@@ -26,8 +26,8 @@ export function usePoll<T>(
     const pollKey = key;
     let disposed = false, running = false, pendingRefresh = false, timer: ReturnType<typeof setTimeout> | undefined, interval = 20000;
     let controller = new AbortController();
-    async function run() {
-      if (running || disposed || (visibleOnly && document.hidden)) return;
+    async function run(initial = false) {
+      if (running || disposed || (!initial && visibleOnly && document.hidden)) return;
       clearTimeout(timer); running = true;
       controller = new AbortController();
       try {
@@ -54,10 +54,10 @@ export function usePoll<T>(
     }
     const visible = () => { if (!document.hidden) void run(); else if (visibleOnly) { clearTimeout(timer); controller.abort(); } };
     const preferencesChanged = () => { if (running) pendingRefresh = true; else visible(); };
-    refreshRef.current = () => { void run(); };
+    refreshRef.current = () => { void run(true); };
     document.addEventListener("visibilitychange", visible);
     window.addEventListener("pulse:preferences-changed", preferencesChanged);
-    void run();
+    void run(true);
     return () => { disposed = true; controller.abort(); clearTimeout(timer); refreshRef.current = () => {}; document.removeEventListener("visibilitychange", visible); window.removeEventListener("pulse:preferences-changed", preferencesChanged); };
   }, [key, load, delay, message, visibleOnly, store]);
 

@@ -12,6 +12,22 @@ import { vpsDetailQuerySchema } from "../../config/standalone-vps.ts";
 import { listStandaloneVps, readStandaloneVps } from "../vps/repository.ts";
 import { signalHistoryRangeSchema } from "../../config/signal-targets.ts";
 import { getSignalTarget, listSignalTargets, signalTargetHistory } from "../signal/repository.ts";
+import {
+  buildDemoConfiguredResources,
+  buildDemoExternalServiceHistory,
+  buildDemoExternalServices,
+  buildDemoHistory,
+  buildDemoHosts,
+  buildDemoOverview,
+  buildDemoPresentation,
+  buildDemoProblems,
+  buildDemoResourceConfigs,
+  buildDemoSignalHistory,
+  buildDemoSignalTargets,
+  buildDemoStandaloneVpsDetail,
+  buildDemoStandaloneVpsList,
+  isDemoMode,
+} from "./demo-data.ts";
 
 const emptyQuery = z.strictObject({});
 const historyQuery = z.strictObject({ range: historyRangeSchema.default("1h") });
@@ -19,14 +35,14 @@ const historyQuery = z.strictObject({ range: historyRangeSchema.default("1h") })
 function hasAccessSession(request: Request) {
   try { requireSession(request); return true; } catch { return false; }
 }
-export function withoutProbeRecipe<T extends { bodyTemplate: unknown; headerName: unknown; expectedValue: unknown }>(data: T[]) {
+export function withoutProbeRecipe<T extends { bodyTemplate?: unknown; headerName?: unknown; expectedValue?: unknown }>(data: T[]) {
   return data.map(item => {
     const { bodyTemplate, headerName, expectedValue, ...service } = item;
     void bodyTemplate; void headerName; void expectedValue;
     return service;
   });
 }
-export function withoutVpsKey<T extends { apiKey: unknown }>(data: T[]) {
+export function withoutVpsKey<T extends { apiKey?: unknown }>(data: T[]) {
   return data.map(item => {
     const { apiKey, ...next } = item;
     void apiKey;
@@ -38,7 +54,7 @@ export function withoutVpsAddress<T extends { ip: string }>(item: T): T {
   return { ...item, ip: "" };
 }
 /** Public VPS detail: no monitor key and no service stacks (notes may hold secrets). */
-export function withoutVpsPrivate<T extends { apiKey: unknown; stacks?: unknown }>(item: T) {
+export function withoutVpsPrivate<T extends { apiKey?: unknown; stacks?: unknown }>(item: T) {
   const { apiKey, stacks, ...next } = item;
   void apiKey; void stacks;
   return { ...next, stacks: [] as const };
@@ -69,6 +85,78 @@ function redactPublicOverviewIps<T extends {
 async function readPublic(request: Request, segments: string[]) {
   const [root, second, third, fourth, fifth, sixth] = segments;
   const authed = hasAccessSession(request);
+  if (isDemoMode()) {
+    const now = new Date().toISOString();
+    const env = <T>(data: T) => ({ presentationStatus: "ready" as const, data, availability: "ready" as const, stale: false, lastUpdated: now, refreshAfterMs: 20000 });
+    if (root === "dashboard" && second === "overview" && segments.length === 2) {
+      const overview = buildDemoOverview(queryParams(request, z.strictObject({ screenId: uuidSchema.optional() })).screenId);
+      return {
+        ...overview,
+        data: redactPublicOverviewIps({
+          ...overview.data,
+          blocks: overview.data.blocks.map(block => block.type === "container_inventory"
+            ? { ...block, data: null, availability: "unavailable" as const, stale: false, lastUpdated: null }
+            : block),
+        }),
+      };
+    }
+    if (root === "settings" && second === "presentation" && segments.length === 2) { queryParams(request, emptyQuery); return buildDemoPresentation(); }
+    if (root === "settings" && second === "resources" && segments.length === 2) { queryParams(request, emptyQuery); return { data: buildDemoResourceConfigs() }; }
+    if (root !== "monitoring") throw new BffError(404, "not_found");
+    if (second === "hosts" && segments.length === 2) {
+      queryParams(request, emptyQuery);
+      const hosts = buildDemoHosts();
+      return { ...env(hosts), asgardHostKey: "ASGARD" };
+    }
+    if (second === "hosts" && third && segments.length === 3) {
+      queryParams(request, emptyQuery);
+      const key = hostKeySchema.parse(third);
+      const host = buildDemoHosts().find(h => h.hostKey === key) ?? buildDemoHosts()[0];
+      return env(host);
+    }
+    if (second === "hosts" && third && fourth === "history" && segments.length === 4) {
+      return buildDemoHistory({ type: "host", hostKey: hostKeySchema.parse(third), reference: null }, queryParams(request, historyQuery).range);
+    }
+    if (second === "hosts" && third && fourth === "vms" && fifth && sixth === "history" && segments.length === 6) {
+      return buildDemoHistory({ type: "vm", hostKey: hostKeySchema.parse(third), reference: hostKeySchema.parse(fifth) }, queryParams(request, historyQuery).range);
+    }
+    if (second === "problems" && segments.length === 2) { queryParams(request, emptyQuery); return env(buildDemoProblems()); }
+    if (second === "services" && segments.length === 2) { queryParams(request, emptyQuery); return env(buildDemoConfiguredResources()); }
+    if (second === "services" && third && segments.length === 3) {
+      queryParams(request, emptyQuery);
+      const id = uuidSchema.parse(third);
+      const list = buildDemoConfiguredResources();
+      return env(list.find(r => r.id === id) ?? list[0]);
+    }
+    if (second === "services" && third && fourth === "history" && segments.length === 4) {
+      const { range } = queryParams(request, historyQuery);
+      return buildDemoHistory({ type: "configured_resource", hostKey: "ASGARD", reference: uuidSchema.parse(third) }, range);
+    }
+    if (second === "external-services" && segments.length === 2) { queryParams(request, emptyQuery); return { data: withoutProbeRecipe(buildDemoExternalServices()) }; }
+    if (second === "external-services" && third && fourth === "history" && segments.length === 4) {
+      return { data: buildDemoExternalServiceHistory(uuidSchema.parse(third), queryParams(request, z.strictObject({ range: externalServiceHistoryRangeSchema.default("24h") })).range) };
+    }
+    if (second === "standalone-vps" && segments.length === 2) {
+      queryParams(request, emptyQuery);
+      return { data: withoutVpsKey(buildDemoStandaloneVpsList()).map(item => withManagerVisibility(withoutVpsAddress(item), authed)) };
+    }
+    if (second === "standalone-vps" && third && segments.length === 3) {
+      const query = queryParams(request, vpsDetailQuerySchema);
+      const data = buildDemoStandaloneVpsDetail(uuidSchema.parse(third), query.range);
+      return { data: withManagerVisibility(withoutVpsAddress(withoutVpsPrivate(data)), authed) };
+    }
+    if (second === "signal-targets" && segments.length === 2) { queryParams(request, emptyQuery); return { data: buildDemoSignalTargets() }; }
+    if (second === "signal-targets" && third && segments.length === 3) {
+      queryParams(request, emptyQuery);
+      const id = uuidSchema.parse(third);
+      const list = buildDemoSignalTargets();
+      return { data: list.find(t => t.id === id) ?? list[0] };
+    }
+    if (second === "signal-targets" && third && fourth === "history" && segments.length === 4) {
+      return { data: buildDemoSignalHistory(uuidSchema.parse(third), queryParams(request, z.strictObject({ range: signalHistoryRangeSchema.default("24h") })).range) };
+    }
+    throw new BffError(404, "not_found");
+  }
   if (root === "dashboard" && second === "overview" && segments.length === 2) {
     const overview = await readOverview(queryParams(request, z.strictObject({ screenId: uuidSchema.optional() })).screenId);
     return {

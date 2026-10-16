@@ -54,8 +54,8 @@
   height: 120px; min-height: 120px; max-height: 120px; min-width: 0; padding: 10px 12px;
   border: 1px solid var(--pulse-line); border-radius: 9px; background: var(--pulse-service);
 }
-.availability-card:hover { background: #1b2a32; }
-.availability-card:focus-visible, .availability-grid:focus-visible { outline: 2px solid var(--pulse-green); outline-offset: -2px; }
+.availability-card:hover { background: var(--pulse-hover); border-color: var(--pulse-selected-border); }
+.availability-card:focus-visible, .availability-grid:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .availability-state { display: flex; align-items: center; gap: 5px; font-size: 10px; line-height: 13px; white-space: nowrap; }
 .availability-state .status-dot { width: 6px; height: 6px; }
 .availability-name { font-size: 13px; font-weight: 600; line-height: 17px; }
@@ -100,7 +100,7 @@
 .probe-admin-link:hover { text-decoration: underline; }
 .probe-ranges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .probe-ranges button { min-height: 36px; padding: 6px 12px; border: 1px solid var(--pulse-line); border-radius: 7px; background: transparent; color: var(--pulse-text); }
-.probe-ranges button[aria-pressed="true"] { border-color: var(--pulse-green); color: var(--pulse-green); }
+.probe-ranges button[aria-pressed="true"] { border-color: var(--pulse-selected-border); background: var(--pulse-selected); color: var(--pulse-text); }
 .probe-cert { color: var(--pulse-muted); font-size: 12px; margin: 0 0 12px; }
 .probe-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
 .probe-summary div { border: 1px solid var(--pulse-line); border-radius: 9px; padding: 10px 12px; background: var(--pulse-surface); }

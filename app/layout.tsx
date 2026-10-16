@@ -10,7 +10,10 @@ export function generateMetadata(): Metadata {
   return {
     title: getPublicConfig().appName,
     description: "Central de monitoramento da Softcom.",
-    icons: { icon: "/logo.ico", apple: "/logo.png" },
+    icons: {
+      icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23171717'/%3E%3Cpath d='M4 16h5l3-8 6 16 3-8h7' stroke='white' stroke-width='2' fill='none'/%3E%3C/svg%3E",
+      apple: "/logo.png",
+    },
   };
 }
 

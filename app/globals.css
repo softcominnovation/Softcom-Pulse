@@ -1,121 +1,158 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "./theme.css";
+@import "./kobra.css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  color-scheme: dark;
-  --pulse-bg: #0c1116;
-  --pulse-surface: #121a21;
-  --pulse-raised: #18232c;
-  --pulse-line: #29343d;
-  --pulse-text: #eef3f5;
-  --pulse-muted: #9daeb9;
-  --pulse-faint: #82949f;
-  --pulse-green: #64d6b0;
-  --pulse-amber: #f2c275;
-  --pulse-red: #ff8585;
-  --pulse-blue: #80bdf2;
-  --pulse-topbar: #0e151b;
-  --pulse-service: #151f27;
-  --pulse-hover: #1b2a32;
-  --pulse-hover-border: #657984;
-  --pulse-active: #15332b;
-  --pulse-selected: #1c302b;
-  --pulse-selected-border: #37564a;
-  --pulse-range-border: #416c5a;
-  --pulse-good-bg: #1b3029;
-  --pulse-warn-bg: #3a2f20;
-  --pulse-bad-bg: #3b262a;
-  --pulse-unknown-bg: #27323a;
-  --pulse-banner-warn: #241f18;
-  --pulse-banner-warn-border: #635132;
-  --pulse-banner-warn-text: #c0b7a7;
-  --pulse-banner-good: #13251e;
-  --pulse-banner-good-border: #315c4d;
-  --pulse-banner-bad: #2a1b1e;
-  --pulse-banner-bad-border: #774343;
-  --pulse-banner-unknown: #1b252c;
-  --pulse-banner-unknown-border: #536470;
-  --pulse-dialog: #152029;
-  --pulse-dialog-border: #43545e;
-  --pulse-dialog-note: #202c35;
-  --pulse-backdrop: #03070ac9;
-  --pulse-meter-track: #29353c;
-  --pulse-chart-grid: #2a3943;
-  --pulse-table-heading: #152028;
-  --pulse-row-selected: #192c29;
-  --background: var(--pulse-bg);
-  --foreground: var(--pulse-text);
-  --card: var(--pulse-surface);
-  --card-foreground: var(--pulse-text);
-  --popover: var(--pulse-dialog);
-  --popover-foreground: var(--pulse-text);
-  --primary: var(--pulse-green);
-  --primary-foreground: var(--pulse-bg);
-  --secondary: var(--pulse-raised);
-  --secondary-foreground: var(--pulse-text);
-  --muted: var(--pulse-raised);
-  --muted-foreground: var(--pulse-muted);
-  --accent: var(--pulse-hover);
-  --accent-foreground: var(--pulse-text);
-  --destructive: var(--pulse-red);
-  --border: var(--pulse-line);
-  --input: var(--pulse-line);
-  --ring: var(--pulse-green);
-  --radius: 14px;
-  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-numeric: ui-monospace, SFMono-Regular, Consolas, monospace;
+  --font-ui: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  --font-numeric: var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  --pulse-bg: var(--shell-canvas, #fafafa);
+  --pulse-surface: var(--card, #ffffff);
+  --pulse-raised: var(--muted, #f5f5f5);
+  --pulse-elevated: var(--muted, #f5f5f5);
+  --pulse-line: var(--border, #e6e6e6);
+  --pulse-text: var(--foreground, #171717);
+  --pulse-muted: var(--muted-foreground, #6d6d6d);
+  --pulse-faint: var(--shell-fg-faint, #6d6d6d);
+  --pulse-green: var(--success, #227a4d);
+  --pulse-amber: var(--warning, #a66c1e);
+  --pulse-red: var(--error, #c43235);
+  --pulse-blue: var(--info, #2563eb);
+  --pulse-topbar: var(--background, #ffffff);
+  --pulse-service: color-mix(in oklab, var(--muted) 45%, var(--card));
+  --pulse-hover: var(--accent, #f2f2f2);
+  --pulse-hover-border: var(--shell-line-strong, #dcdcdc);
+  --pulse-active: var(--secondary, #f2f2f3);
+  --pulse-selected: var(--secondary, #f2f2f3);
+  --pulse-selected-border: var(--shell-line-strong, #dcdcdc);
+  --pulse-range-border: var(--shell-line-strong, #dcdcdc);
+  --pulse-good-bg: var(--badge-green-bg);
+  --pulse-warn-bg: var(--badge-amber-bg);
+  --pulse-bad-bg: color-mix(in oklab, var(--error) 12%, transparent);
+  --pulse-unknown-bg: var(--muted);
+  --pulse-banner-warn: color-mix(in oklab, var(--warning) 10%, var(--card));
+  --pulse-banner-warn-border: color-mix(in oklab, var(--warning) 28%, var(--border));
+  --pulse-banner-warn-text: var(--foreground);
+  --pulse-banner-good: color-mix(in oklab, var(--success) 10%, var(--card));
+  --pulse-banner-good-border: color-mix(in oklab, var(--success) 28%, var(--border));
+  --pulse-banner-bad: color-mix(in oklab, var(--error) 10%, var(--card));
+  --pulse-banner-bad-border: color-mix(in oklab, var(--error) 28%, var(--border));
+  --pulse-banner-unknown: var(--muted);
+  --pulse-banner-unknown-border: var(--border);
+  --pulse-dialog: var(--popover);
+  --pulse-dialog-border: var(--border);
+  --pulse-dialog-note: var(--muted);
+  --pulse-backdrop: rgb(0 0 0 / 0.25);
+  --pulse-meter-track: color-mix(in oklab, var(--foreground) 10%, transparent);
+  --pulse-chart-grid: var(--border);
+  --pulse-table-heading: color-mix(in oklab, var(--muted) 65%, var(--card));
+  --pulse-row-selected: var(--accent);
+}
+
+.dark {
+  --pulse-bg: var(--shell-canvas, #191919);
+  --pulse-surface: var(--card, #1c1c1c);
+  --pulse-raised: var(--muted, #262626);
+  --pulse-elevated: var(--muted, #262626);
+  --pulse-line: var(--border, #2b2b2b);
+  --pulse-text: var(--foreground, #ededed);
+  --pulse-muted: var(--muted-foreground, #a3a3a3);
+  --pulse-faint: var(--shell-fg-faint, #8e8e8e);
+  --pulse-green: var(--success, #4ac285);
+  --pulse-amber: var(--warning, #e0a74c);
+  --pulse-red: var(--error, #f06568);
+  --pulse-blue: var(--info, #63a2f8);
+  --pulse-topbar: var(--background, #171717);
+  --pulse-service: color-mix(in oklab, var(--muted) 40%, var(--card));
+  --pulse-hover: var(--accent, #2c2c30);
+  --pulse-hover-border: var(--shell-line-strong, #38383c);
+  --pulse-active: var(--secondary, #2c2c30);
+  --pulse-selected: var(--secondary, #2c2c30);
+  --pulse-selected-border: var(--shell-line-strong, #38383c);
+  --pulse-range-border: var(--shell-line-strong, #38383c);
+  --pulse-good-bg: var(--badge-green-bg);
+  --pulse-warn-bg: var(--badge-amber-bg);
+  --pulse-bad-bg: color-mix(in oklab, var(--error) 20%, transparent);
+  --pulse-unknown-bg: var(--muted);
+  --pulse-banner-warn: color-mix(in oklab, var(--warning) 14%, var(--card));
+  --pulse-banner-warn-border: color-mix(in oklab, var(--warning) 34%, var(--border));
+  --pulse-banner-warn-text: var(--foreground);
+  --pulse-banner-good: color-mix(in oklab, var(--success) 14%, var(--card));
+  --pulse-banner-good-border: color-mix(in oklab, var(--success) 34%, var(--border));
+  --pulse-banner-bad: color-mix(in oklab, var(--error) 14%, var(--card));
+  --pulse-banner-bad-border: color-mix(in oklab, var(--error) 34%, var(--border));
+  --pulse-banner-unknown: var(--muted);
+  --pulse-banner-unknown-border: var(--border);
+  --pulse-dialog: var(--popover);
+  --pulse-dialog-border: var(--border);
+  --pulse-dialog-note: var(--muted);
+  --pulse-backdrop: rgb(0 0 0 / 0.45);
+  --pulse-meter-track: color-mix(in oklab, var(--foreground) 12%, transparent);
+  --pulse-chart-grid: var(--border);
+  --pulse-table-heading: color-mix(in oklab, var(--muted) 55%, var(--card));
+  --pulse-row-selected: var(--accent);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --font-sans: var(--font-ui);
-  --font-mono: var(--font-numeric);
   --radius-panel: 14px;
-  --radius-control: 7px;
-  --radius-dialog: 16px;
-  --radius-badge: 5px;
+  --radius-control: 8px;
+  --radius-dialog: 24px;
+  --radius-badge: 9999px;
 }
 
 @layer base {
   * { border-color: var(--border); box-sizing: border-box; }
-  body { margin: 0; background: var(--background); color: var(--foreground); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; }
-  :focus-visible { outline: 2px solid var(--ring); outline-offset: 4px; }
+  html { background: var(--pulse-bg); color: var(--foreground); color-scheme: light; }
+  html.dark { color-scheme: dark; }
+  body { margin: 0; background: var(--pulse-bg); color: var(--foreground); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
   button, input, select, textarea { font: inherit; }
   button:not(:disabled), [role="button"]:not([aria-disabled="true"]) { cursor: pointer; }
-  .font-mono { font-variant-numeric: tabular-nums; }
-  ::selection { background: var(--pulse-selected); color: var(--pulse-green); }
+  button:disabled { cursor: not-allowed; }
+  .font-mono, .pulse-mono { font-family: var(--font-numeric); font-variant-numeric: tabular-nums; }
+  ::selection { background: var(--pulse-selected); color: var(--foreground); }
 }
 
-.pulse-toast { background: var(--pulse-raised) !important; color: var(--pulse-text) !important; border: 1px solid var(--pulse-line) !important; border-radius: 8px !important; font-family: var(--font-ui) !important; font-size: 13px !important; }
+.pulse-toast { background: var(--popover) !important; color: var(--popover-foreground) !important; border: 1px solid var(--border) !important; border-radius: 12px !important; font-family: var(--font-ui) !important; font-size: 13px !important; box-shadow: 0 8px 24px rgb(0 0 0 / 0.14) !important; }
+[data-slot="dialog-overlay"] { background: rgb(0 0 0 / 0.58); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+[data-slot="dialog-content"] { background: var(--popover); color: var(--popover-foreground); border: 1px solid var(--border); border-radius: 24px; box-shadow: 0 28px 72px -20px rgb(0 0 0 / 0.65), inset 0 1px 0 0 rgb(255 255 255 / 0.06); }
 
-.pulse-topbar { min-height: 80px; padding: 12px 34px; display: flex; align-items: center; gap: 26px; flex-wrap: wrap; border-bottom: 1px solid var(--pulse-line); background: var(--pulse-topbar); }
-.pulse-top-actions { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+.pulse-app-header { background: var(--background); border-bottom: 1px solid var(--border); }
+.pulse-topbar { min-height: 64px; padding: 12px 34px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; border-bottom: 1px solid var(--border); background: var(--pulse-topbar); }
+.monitoring-main { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; overflow-x: hidden; padding: 0 clamp(16px, 2vw, 42px) 28px; }
+.pulse-brand { display: flex; flex: none; gap: 9px; align-items: center; white-space: nowrap; }
+.pulse-brand-mark { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 9px; background: var(--foreground); color: var(--background); box-shadow: 0 1px 2px #0002; flex-shrink: 0; }
+.pulse-brand strong { font-size: 20px; font-weight: 700; letter-spacing: -0.8px; color: var(--foreground); line-height: 1.1; }
+.pulse-brand strong span { font-weight: 500; color: var(--foreground); }
+.pulse-brand-caption { border-left: 1px solid var(--border); margin-left: 8px; padding-left: 22px; font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
+.pulse-top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.pulse-top-actions kbd { display: inline-flex; font-size: 10px; padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; color: var(--muted-foreground); font-weight: 400; margin-left: 6px; }
+.pulse-clock { padding-left: 12px; margin-left: 4px; border-left: 1px solid var(--border); white-space: nowrap; text-align: right; }
+.pulse-audio-settings { display: flex; flex-direction: column; gap: 20px; padding-block: 6px; }
+.pulse-audio-settings > button { align-self: flex-start; }
+.pulse-audio-settings p { color: var(--muted-foreground); font-size: 12px; line-height: 1.7; margin: 0; }
+.pulse-audio-status { display: flex; align-items: center; gap: 10px; }
+.pulse-audio-status > [data-slot="badge"] { margin-left: auto; }
+.pulse-volume-label { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: -10px; }
+.pulse-volume-label output { font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
+.pulse-status-dot, .dot { width: 6px; height: 6px; display: inline-block; border-radius: 50%; flex: none; background: currentColor; }
+.dot.good { color: var(--pulse-green); }
+.dot.warn { color: var(--pulse-amber); }
+.dot.bad { color: var(--pulse-red); }
+.dot.unknown { color: var(--pulse-muted); }
+
 @media (min-width: 1301px) and (max-height: 1100px) {
-  .pulse-topbar { min-height: 60px; padding-top: 8px; padding-bottom: 8px; }
+  .pulse-topbar { min-height: 58px; padding-top: 8px; padding-bottom: 8px; }
+}
+@media (max-width: 1100px) {
+  .pulse-search-label { display: none; }
 }
 @media (max-width: 600px) {
-  .pulse-topbar { padding: 16px; gap: 12px; }
+  .pulse-topbar { padding: 14px 16px; gap: 10px; }
   .pulse-topbar > p { width: 100%; }
-  .pulse-top-actions { margin-left: 0; width: 100%; justify-content: space-between; }
+  .pulse-top-actions { margin-left: 0; width: 100%; justify-content: space-between; flex-wrap: wrap; }
 }
 
 @media (pointer: coarse) {

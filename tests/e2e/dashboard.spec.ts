@@ -36,7 +36,7 @@ for (const [width, height] of [[320,568],[360,800],[390,844],[768,1024],[1024,76
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await expect(page.locator(".dashboard-panel").first()).toHaveCSS("border-radius", "14px");
     await expect(page.locator(".availability-card").first()).toHaveCSS("border-radius", "9px");
-    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(12, 17, 22)");
+    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(25, 25, 25)");
     expect(await page.locator("body").evaluate(node => getComputedStyle(node).fontFamily)).toContain("Segoe UI");
     const asgard = (await page.locator(".block-asgard_summary").boundingBox())!;
     const problems = (await page.locator(".block-problems").boundingBox())!;

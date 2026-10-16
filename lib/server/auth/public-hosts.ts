@@ -12,8 +12,11 @@ export function normalizePublicHost(value: string) {
 }
 
 export function publicHosts(value = process.env.PULSE_PUBLIC_HOSTS) {
-  if (!value?.trim()) return new Set<string>();
-  return new Set(value.split(",").map(normalizePublicHost).filter(Boolean));
+  const effective = !value?.trim() && process.env.PULSE_DEMO_MODE === "1" && process.env.PULSE_E2E !== "1"
+    ? "localhost,127.0.0.1"
+    : value;
+  if (!effective?.trim()) return new Set<string>();
+  return new Set(effective.split(",").map(normalizePublicHost).filter(Boolean));
 }
 
 export function requestHostname(request: Request) {

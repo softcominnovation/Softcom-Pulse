@@ -38,13 +38,16 @@ function LatencyChart({ points }: { points: Point[] }) {
     const target = holder.current;
     if (!target || data[0].length < 2 || !observed) return;
     let disposed = false, observer: ResizeObserver | undefined;
+    const isLight = typeof document !== "undefined" && document.documentElement.dataset.theme === "light";
+    const axisStroke = isLight ? "#737373" : "#a1a1a1";
+    const gridStroke = isLight ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.08)";
     void import("uplot").then(({ default: Plot }) => {
       if (disposed) return;
       const chart = new Plot({ width: Math.max(220, target.clientWidth), height: 230, legend: { show: false }, select: { show: false, left: 0, top: 0, width: 0, height: 0 }, cursor: { drag: { x: false, y: false }, points: { show: true } },
         scales: { x: { time: true } }, series: [{}, { label: "Latência", stroke: "#64d6b0", width: 1.6, spanGaps: false, points: { show: true, size: 3 } }],
         axes: [
-          { stroke: "#9daeb9", font: "10px Consolas, monospace", grid: { show: false }, size: 44, space: 115, values: (_chart, ticks) => ticks.map(value => axisTime.format(new Date(value * 1000))) },
-          { stroke: "#9daeb9", font: "10px Consolas, monospace", size: 64, grid: { stroke: "#2a3943", dash: [3, 4], width: 1 }, values: (_chart, ticks) => ticks.map(value => `${Math.round(value).toLocaleString("pt-BR")} ms`) },
+          { stroke: axisStroke, font: "10px Consolas, monospace", grid: { show: false }, size: 44, space: 115, values: (_chart, ticks) => ticks.map(value => axisTime.format(new Date(value * 1000))) },
+          { stroke: axisStroke, font: "10px Consolas, monospace", size: 64, grid: { stroke: gridStroke, dash: [3, 4], width: 1 }, values: (_chart, ticks) => ticks.map(value => `${Math.round(value).toLocaleString("pt-BR")} ms`) },
         ], hooks: { setCursor: [onCursor] },
       }, data, target);
       plot.current = chart;
@@ -77,7 +80,7 @@ export function ProbeHistoryPanel({ serviceId, certNotAfter = null, paused = fal
     const schedule = (initial: boolean, delay: number) => { clearTimeout(timer); timer = setTimeout(() => load(initial), delay); };
     const load = (initial: boolean) => {
       clearTimeout(timer);
-      if (document.hidden) { schedule(initial, probeLiveRefreshMs); return; }
+      if (!initial && document.hidden) { schedule(initial, probeLiveRefreshMs); return; }
       if (initial) setState(current => ({ loading: current.data === null, failed: false, data: current.data }));
       void api.get<{ data: History }>(`/monitoring/external-services/${serviceId}/history`, { params: { range }, signal: controller.signal }).then(response => {
         if (!alive || controller.signal.aborted) return;

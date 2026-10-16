@@ -1,0 +1,128 @@
+.login-layout {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 14% 18%, color-mix(in oklab, var(--foreground) 7%, transparent) 0%, transparent 42%),
+    radial-gradient(circle at 86% 82%, color-mix(in oklab, var(--success) 8%, transparent) 0%, transparent 46%),
+    radial-gradient(circle at 52% 10%, color-mix(in oklab, var(--info) 7%, transparent) 0%, transparent 38%),
+    var(--pulse-bg);
+}
+
+.login-ambient-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--foreground) 4%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 4%, transparent) 1px, transparent 1px);
+  background-size: 40px 40px;
+  mask-image: radial-gradient(ellipse 80% 75% at 50% 45%, #000 35%, transparent 100%);
+}
+
+.login-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(88px);
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.login-orb-primary {
+  width: 380px;
+  height: 380px;
+  top: -90px;
+  left: -80px;
+  background: color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+
+.login-orb-secondary {
+  width: 340px;
+  height: 340px;
+  bottom: -100px;
+  right: 8%;
+  background: color-mix(in oklab, var(--success) 14%, transparent);
+}
+
+.login-art {
+  position: relative;
+  z-index: 1;
+  background: color-mix(in oklab, var(--card) 68%, transparent);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border-right: 1px solid color-mix(in oklab, var(--border) 85%, transparent);
+}
+
+.login-showcase-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 20px;
+  border-radius: 20px;
+  background: color-mix(in oklab, var(--background) 62%, transparent);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid color-mix(in oklab, var(--foreground) 10%, var(--border));
+  box-shadow:
+    0 24px 60px -20px rgb(0 0 0 / 0.45),
+    inset 0 1px 0 0 color-mix(in oklab, var(--foreground) 8%, transparent);
+}
+
+.login-glass-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 430px;
+  padding: 32px;
+  border-radius: 22px;
+  background: color-mix(in oklab, var(--card) 74%, transparent);
+  backdrop-filter: blur(28px) saturate(160%);
+  -webkit-backdrop-filter: blur(28px) saturate(160%);
+  border: 1px solid color-mix(in oklab, var(--foreground) 10%, var(--border));
+  box-shadow:
+    0 28px 80px -24px rgb(0 0 0 / 0.5),
+    inset 0 1px 0 0 color-mix(in oklab, var(--foreground) 9%, transparent);
+}
+
+.login-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  background: color-mix(in oklab, var(--secondary) 72%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in oklab, var(--foreground) 8%, var(--border));
+}
+
+.login-metric-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--card) 78%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 90%, transparent);
+}
+
+.login-quick-demo {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+@media (max-width: 520px) {
+  .login-glass-card {
+    padding: 22px 18px;
+    border-radius: 18px;
+  }
+}

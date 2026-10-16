@@ -5,11 +5,13 @@ import type uPlot from "uplot";
 import type { ChartGroup } from "@/lib/infrastructure/history";
 import { alignSeries, historyValue } from "@/lib/infrastructure/history";
 import { timestamp } from "@/lib/dashboard/format";
+import { useUiStore } from "@/store/ui.store";
 import "uplot/dist/uPlot.min.css";
 
 const axisTime = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Fortaleza", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 export function HistoryChart({ group }: { group: ChartGroup }) {
   const holder = useRef<HTMLDivElement>(null), plot = useRef<uPlot | null>(null);
+  const theme = useUiStore(state => state.theme);
   const data = useMemo(() => alignSeries(group.series), [group.series]);
   const [index, setIndex] = useState<number | null>(null), [unavailable, setUnavailable] = useState(false);
   const pointId = useId();
@@ -19,6 +21,8 @@ export function HistoryChart({ group }: { group: ChartGroup }) {
     const target = holder.current;
     if (!target || data[0].length < 2) return;
     let disposed = false, observer: ResizeObserver | undefined;
+    const axisStroke = theme === "light" ? "#737373" : "#a1a1a1";
+    const gridStroke = theme === "light" ? "rgba(0, 0, 0, 0.08)" : "rgba(255, 255, 255, 0.08)";
     void import("uplot").then(({ default: Plot }) => {
       if (disposed) return;
       const chart = new Plot({ width: Math.max(220, target.clientWidth), height: 230,
@@ -26,8 +30,8 @@ export function HistoryChart({ group }: { group: ChartGroup }) {
         scales: { x: { time: true } },
         series: [{}, ...group.series.map((series, i) => ({ label: series.label, stroke: series.color, width: 1.6, spanGaps: false, dash: i > 0 && group.series[i - 1].color === series.color ? [5, 3] : [], points: { show: true, size: 3 } }))],
         axes: [
-          { stroke: "#9daeb9", font: "10px Consolas, monospace", grid: { show: false }, size: 44, space: 115, values: (_chart, ticks) => ticks.map(value => axisTime.format(new Date(value * 1000))) },
-          { stroke: "#9daeb9", font: "10px Consolas, monospace", size: 64, grid: { stroke: "#2a3943", dash: [3, 4], width: 1 }, values: (_chart, ticks) => ticks.map(value => historyValue(value, group.unit)) },
+          { stroke: axisStroke, font: "10px Consolas, monospace", grid: { show: false }, size: 44, space: 115, values: (_chart, ticks) => ticks.map(value => axisTime.format(new Date(value * 1000))) },
+          { stroke: axisStroke, font: "10px Consolas, monospace", size: 64, grid: { stroke: gridStroke, dash: [3, 4], width: 1 }, values: (_chart, ticks) => ticks.map(value => historyValue(value, group.unit)) },
         ], hooks: { setCursor: [onCursor] },
       }, data, target);
       plot.current = chart;
@@ -35,7 +39,7 @@ export function HistoryChart({ group }: { group: ChartGroup }) {
       observer.observe(target);
     }).catch(() => { if (!disposed) setUnavailable(true); });
     return () => { disposed = true; observer?.disconnect(); plot.current?.destroy(); plot.current = null; };
-  }, [data, group, onCursor]);
+  }, [data, group, onCursor, theme]);
   const observed = group.series.some(series => series.points.some(point => point.value !== null));
   const selectedTime = data[0][current];
   return <div className="history-chart">

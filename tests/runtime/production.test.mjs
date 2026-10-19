@@ -51,7 +51,7 @@ async function withServer(environment, run) {
     await run(base);
   } finally {
     child.kill();
-    await exited;
+    await Promise.race([exited, delay(500).then(() => { child.kill("SIGKILL"); return exited; })]);
   }
 }
 test("packaged collector publishes real Redis contracts, serves history and excludes concurrent workers", { timeout: 90000 }, async () => {

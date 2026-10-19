@@ -69,7 +69,7 @@
   --pulse-hover: var(--accent, #2c2c30);
   --pulse-hover-border: var(--shell-line-strong, #38383c);
   --pulse-active: var(--secondary, #2c2c30);
-  --pulse-selected: var(--secondary, #2c2c30);
+  --pulse-selected: #2c2c30;
   --pulse-selected-border: var(--shell-line-strong, #38383c);
   --pulse-range-border: var(--shell-line-strong, #38383c);
   --pulse-good-bg: var(--badge-green-bg);

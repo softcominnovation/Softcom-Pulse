@@ -12,7 +12,7 @@ test("resources preview discovered targets, preserve draft on conflict and requi
   state.resourceConflict = true; await page.getByRole("button", { name: "Salvar recurso" }).click();
   await expect(page.locator(".admin-error[role=alert]")).toContainText("Já existe"); await expect(page.getByLabel("Nome amigável")).toHaveValue("Servidor principal");
   state.resourceConflict = false; await page.getByRole("button", { name: "Salvar recurso" }).click();
-  await expect(page.locator(".admin-saved-list")).toContainText("Servidor principal");
+  await expect(page.locator(".admin-saved-list").first()).toContainText("Servidor principal");
   const row = page.locator(".admin-saved-list > li").filter({ hasText: "Servidor principal" });
   await row.getByRole("button", { name: "Remover", exact: true }).click(); await page.getByRole("button", { name: "Cancelar", exact: true }).click();
   expect(state.writes.filter(item => item.method === "DELETE")).toHaveLength(0);

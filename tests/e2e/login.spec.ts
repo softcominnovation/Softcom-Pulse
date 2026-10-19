@@ -22,7 +22,7 @@ for (const [width, height] of sizes) {
     const font = await page.locator("body").evaluate(node => getComputedStyle(node).fontFamily);
     expect(font).toContain("Segoe UI"); expect(font).not.toContain("Inter");
     const button = page.getByRole("button", { name: "Entrar", exact: true });
-    await expect(button).toHaveCSS("border-radius", "8px");
+    await expect(button).toHaveCSS("border-radius", "10px");
     for (const control of [button, page.getByLabel("E-mail", { exact: true }), page.getByLabel("Senha", { exact: true })]) {
       expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     }

@@ -122,9 +122,9 @@ export function LoginView() {
               <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                 CENTRAL DE OPERAÇÕES SOFTCOM
               </p>
-              <h2 className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground xl:text-[28px]">
+              <p className="mt-2 text-2xl font-bold tracking-[-0.03em] text-foreground xl:text-[28px]">
                 Toda a operação. Um só lugar.
-              </h2>
+              </p>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                 Infraestrutura ASGARD, hipervisores, bancos críticos, sondas HTTP,
                 Softcom Signal e instâncias WhatsApp reunidos em tempo real.

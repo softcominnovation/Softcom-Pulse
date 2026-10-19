@@ -32,6 +32,7 @@ export function useIdlePresentation(settings: IdlePresentation | undefined) {
         else toast.info("Tela cheia indisponível neste navegador. O modo TV continua ativo.");
       }
     };
+    let inFullscreen = !!document.fullscreenElement || useUiStore.getState().isFullscreen;
     const activate = () => {
       timer = undefined;
       if (disposed || consumed || document.hidden || dialogOpen()) return;
@@ -51,11 +52,18 @@ export function useIdlePresentation(settings: IdlePresentation | undefined) {
     };
     const rearm = () => { consumed = false; dismiss(); schedule(); };
     const unsubscribe = useUiStore.subscribe((state, previous) => {
-      if (previous.tvMode && !state.tvMode || previous.isFullscreen && !state.isFullscreen) rearm();
-      else if (state.isFullscreen) dismiss();
+      if (previous.tvMode && !state.tvMode) rearm();
+      else if (previous.isFullscreen && !state.isFullscreen && inFullscreen) { inFullscreen = false; rearm(); }
+      else if (state.isFullscreen) { inFullscreen = true; dismiss(); }
     });
     // Also re-arm from the native event so exitFullscreen is not lost if the store update lags.
-    const onFullscreen = () => { if (!document.fullscreenElement) rearm(); else dismiss(); };
+    const onFullscreen = () => {
+      const next = !!document.fullscreenElement;
+      if (next === inFullscreen) return;
+      inFullscreen = next;
+      if (!next) rearm();
+      else dismiss();
+    };
     const observer = new MutationObserver(suspension);
     observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "data-state", "role"] });
     const events = ["pointermove", "pointerdown", "keydown", "wheel", "touchstart", "touchmove", "scroll", "focusin"];

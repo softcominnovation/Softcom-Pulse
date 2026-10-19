@@ -284,7 +284,7 @@ for (const [width,height] of [[320,568],[360,800],[390,844],[768,1024],[1024,768
     expect(await page.evaluate(() => document.documentElement.scrollHeight > innerHeight)).toBe(true);
     await page.getByLabel("Host ou VM do gráfico").selectOption("vm-1");
     await expect(vmPanel(page).locator("canvas")).toHaveCount(1);
-    await expect(page.locator(".vm-selected")).toHaveCSS("background-color", "oklch(0.269 0 0)");
+    await expect(page.locator(".vm-selected")).toHaveCSS("background-color", "rgb(44, 44, 48)");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await mkdir(".cache/screenshots",{recursive:true});
     await page.screenshot({path:`.cache/screenshots/phase06-vm-${width}.png`,fullPage:true});

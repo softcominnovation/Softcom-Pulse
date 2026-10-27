@@ -20,6 +20,7 @@ import { createPollCache } from "@/lib/dashboard/poll-view";
 import { usePoll } from "./use-poll";
 import { useIdlePresentation } from "./use-idle-presentation";
 import { EvidenceTimeContext } from "./metrics";
+import { StorageComposition } from "./storage-composition";
 
 const configurationDelay = () => 60000;
 const overviewDelay = (result: ReadResult<Overview>) => result.refreshAfterMs;
@@ -107,6 +108,7 @@ export function Dashboard() {
         const enabled = screen.blocks.filter(block => block.enabled);
         const split = layout === "overview" && screen.overviewGrid === "split";
         const wall = layout === "wall";
+        const hasStorage = enabled.some(block => block.type === "storage_summary");
         const renderBlock = (block: typeof enabled[number]) => {
           const payload = result?.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
           const width = displayBlockWidth(block, enabled, { split, wall });
@@ -114,10 +116,11 @@ export function Dashboard() {
             {payload ? <DashboardBlock block={payload} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
           </div>;
         };
-        return <div data-dashboard-content className={`dashboard-blocks${split ? " overview-split" : ""}`} aria-busy={overview.loading}>
+        return <div data-dashboard-content className={`dashboard-blocks${split ? " overview-split" : ""}${hasStorage ? " has-storage" : ""}`} aria-busy={overview.loading}>
           {!result && !overview.failed && <DashboardSkeleton label="Carregando os indicadores da tela…" />}
-          {result && !split && enabled.map(renderBlock)}
-          {result && split && (() => {
+          {result && hasStorage && <StorageComposition blocks={enabled} split={split} wall={wall} render={renderBlock} />}
+          {result && !hasStorage && !split && enabled.map(renderBlock)}
+          {result && !hasStorage && split && (() => {
             const gridTypes = new Set(["highlighted_resources", "problems", "asgard_summary", "signal_flow"]);
             const byType = (type: string) => enabled.filter(block => block.type === type);
             const hasProblems = byType("problems").length > 0;

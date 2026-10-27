@@ -6,6 +6,7 @@ import { EvidenceTimeContext, MetricValue, Status } from "./metrics";
 import { ServiceDetailsTrigger } from "@/components/services/service-details";
 import { ContainerHealth, ContainerStatus } from "@/components/services/states";
 import { affectedResource, resolutionLabel } from "@/lib/services/presentation";
+import { ServiceTitle } from "./service-title";
 
 export function ResourceCard({ item, stale, compact = false, details = true }: { item: ConfiguredResource; stale: boolean; compact?: boolean; details?: boolean }) {
   const now = useContext(EvidenceTimeContext);
@@ -30,13 +31,12 @@ export function ResourceCard({ item, stale, compact = false, details = true }: {
   if (p.showUptime) rows.push({ label: "Tempo ativo", metric: metrics.uptimeSeconds });
   return <article className={`resource-card${affectedResource(item) ? " resource-affected" : ""}`}>
     <div className="resource-top">{config.resourceType === "host" ? <Server aria-hidden="true" /> : <Box aria-hidden="true" />}<span>{config.resourceType === "host" ? "Host" : "Container"}</span>{config.critical && <span className="critical-label">Crítico para a operação</span>}</div>
-    <h3>{config.displayName ?? resource?.displayName ?? resource?.name ?? config.zabbixHostKey}</h3><p className="resource-host">{config.zabbixHostKey}</p>
+    <ServiceTitle status={p.showStatus && (container ? <ContainerStatus container={container} stale={stale} /> : <Status value={state} stale={evidenceOld} />)}><h3>{config.displayName ?? resource?.displayName ?? resource?.name ?? config.zabbixHostKey}</h3></ServiceTitle><p className="resource-host">{config.zabbixHostKey}</p>
     {!config.enabled && <p className="resource-host">Configuração desabilitada</p>}
     {!item.resolved && <p className="resource-missing">{resolutionLabel(item)}</p>}
-    <div className="resource-status">
-      {p.showStatus && (container ? <ContainerStatus container={container} stale={stale} /> : <Status value={state} stale={evidenceOld} />)}
+    {"showHealth" in p && Boolean(p.showHealth) && <div className="resource-status">
       {"showHealth" in p && Boolean(p.showHealth) && (container ? <ContainerHealth container={container} stale={stale} /> : <Status value="unknown" />)}
-    </div>
+    </div>}
     <dl className="resource-metrics">{rows.map(row => <div key={row.label}><dt>{row.label}</dt><dd><MetricValue metric={row.metric} stale={stale} series={row.series} compact={compact} /></dd></div>)}</dl>
     {compact ? <details className="resource-evidence"><summary>Evidência: {timestamp(resource?.evidence.observedAt)}</summary><dl>{rows.map(row => <div key={row.label}><dt>{row.label}</dt><dd>{qualityText(row.metric, stale, now)} · {timestamp(row.metric?.observedAt)}</dd></div>)}</dl></details> : <p className="resource-evidence">Evidência: {timestamp(resource?.evidence.observedAt)}</p>}
     {details && <div className="resource-detail-action"><ServiceDetailsTrigger item={item} /></div>}

@@ -20,6 +20,9 @@ import { ProbeAvailabilityCard } from "./probe-card";
 import { VpsAvailabilityCard } from "./vps-card";
 import { SignalAvailabilityCard } from "./signal-card";
 import { SignalFlowPanel } from "./signal-flow";
+import { StoragePanel } from "@/components/storage/storage-panel";
+import { StorageCard } from "@/components/storage/storage-card";
+import type { StorageBlockData } from "@/lib/monitoring/contracts";
 import type { StandaloneVpsHighlight } from "@/lib/config/standalone-vps";
 import { UptimeList } from "./uptime-list";
 import "./availability.css";
@@ -93,6 +96,7 @@ export function DashboardBlock({ block, failed, probes = [], vps = [], signalCar
 }) {
   const stale = failed || block.stale, now = useContext(EvidenceTimeContext);
   const publicSurface = isPublicPath(usePathname());
+  if (block.type === "storage_summary") return <StoragePanel item={(block.data as StorageBlockData | null)?.target ?? null} stale={stale} visibleRows={effectiveOptions({ ...block, type: "storage_summary" }).visibleRows} />;
   if (block.type === "signal_flow") {
     if (block.availability === "unavailable") return <Panel title="Signal · fluxo de processamento" icon={<TriangleAlert aria-hidden="true" />}><p className="panel-empty">Este bloco não está disponível nesta superfície.</p></Panel>;
     return <SignalFlowPanel data={(block.data as SignalFlowBlockData | null) ?? { target: null }} options={effectiveOptions({ ...block, type: "signal_flow" })} />;
@@ -121,6 +125,7 @@ export function DashboardBlock({ block, failed, probes = [], vps = [], signalCar
       const probeCount = cards.filter(card => card.kind === "external_service").length;
       const vpsCount = cards.filter(card => card.kind === "standalone_vps").length;
       const signalCount = cards.filter(card => card.kind === "signal_target").length;
+      const storageCount = cards.filter(card => card.kind === "storage").length;
       const visible = cards.length > 0;
       const empty = options.selection === "custom"
         ? "Nenhum card neste bloco."
@@ -130,13 +135,13 @@ export function DashboardBlock({ block, failed, probes = [], vps = [], signalCar
         : panel.legacyResourceCount !== null && resourceCount !== panel.legacyResourceCount
           ? `${resourceCount} exibidos de ${panel.legacyResourceCount} destacados · `
           : "";
-      const hint = resourceCount && probeCount ? "Estado do recurso · CPU / RAM na infraestrutura · latência nas aplicações"
-        : resourceCount ? "Estado do recurso · CPU / RAM atuais · detalhes ao selecionar"
+      const hint = (resourceCount || storageCount) && probeCount ? "Estado do recurso · CPU / RAM na infraestrutura · latência nas aplicações"
+        : resourceCount || storageCount ? "Estado do recurso · CPU / RAM atuais · detalhes ao selecionar"
         : probeCount ? "Estado da consulta · latência atual · detalhes ao selecionar"
         : signalCount ? "Estado do Signal · workers · faixa de presença"
         : "Estado da VPS · faixa de presença · detalhes ao selecionar";
-      const stripNote = (vpsCount || signalCount) && (resourceCount || probeCount) ? " · faixa Signal/VPS" : "";
-      return <section className="dashboard-panel availability-panel" style={{ "--service-rows": options.visibleRows } as CSSProperties} data-service-rows={options.visibleRows}><div className="panel-heading"><Box aria-hidden="true" /><h2>Disponibilidade de Serviços</h2><PlaceLink className="panel-link" href="/servicos">Todos os serviços <ArrowRight aria-hidden="true" /></PlaceLink></div>{visible ? <div className="availability-grid" tabIndex={0} role="region" aria-label="Recursos destacados">{cards.map(card => card.kind === "resource" ? <ServiceAvailabilityCard key={`resource:${card.item.id}`} item={card.item} stale={stale} /> : card.kind === "external_service" ? <ProbeAvailabilityCard key={`external_service:${card.item.id}`} item={card.item} /> : card.kind === "standalone_vps" ? <VpsAvailabilityCard key={`standalone_vps:${card.item.id}`} item={card.item} /> : <SignalAvailabilityCard key={`signal_target:${card.item.id}`} item={card.item} />)}</div> : <p className="panel-empty">{empty}</p>}<p className="panel-foot">{countNote}{hint}{stripNote}</p></section>;
+      const stripNote = (vpsCount || signalCount) && (resourceCount || storageCount || probeCount) ? " · faixa Signal/VPS" : "";
+      return <section className="dashboard-panel availability-panel" style={{ "--service-rows": options.visibleRows } as CSSProperties} data-service-rows={options.visibleRows}><div className="panel-heading"><Box aria-hidden="true" /><h2>Disponibilidade de Serviços</h2><PlaceLink className="panel-link" href="/servicos">Todos os serviços <ArrowRight aria-hidden="true" /></PlaceLink></div>{visible ? <div className="availability-grid" tabIndex={0} role="region" aria-label="Recursos destacados">{cards.map(card => card.kind === "resource" ? <ServiceAvailabilityCard key={`resource:${card.item.id}`} item={card.item} stale={stale} /> : card.kind === "external_service" ? <ProbeAvailabilityCard key={`external_service:${card.item.id}`} item={card.item} /> : card.kind === "standalone_vps" ? <VpsAvailabilityCard key={`standalone_vps:${card.item.id}`} item={card.item} /> : card.kind === "storage" ? <StorageCard key={`storage:${card.item.storageKey}`} item={card.item} stale={stale} /> : <SignalAvailabilityCard key={`signal_target:${card.item.id}`} item={card.item} />)}</div> : <p className="panel-empty">{empty}</p>}<p className="panel-foot">{countNote}{hint}{stripNote}</p></section>;
     }
     case "resource_card": return <ResourceCard item={block.data as ConfiguredResource} stale={stale} />;
     case "uptime_list": return <UptimeList items={block.data as ProbeCard[]} options={effectiveOptions({ ...block, type: "uptime_list" })} />;

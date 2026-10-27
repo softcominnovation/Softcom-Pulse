@@ -22,6 +22,7 @@ const availabilityKindMeta: Record<AvailabilityCardKind, { title: string; hint: 
   external_service: { title: "Aplicações", hint: "Sondas HTTP de disponibilidade", short: "Aplicação" },
   standalone_vps: { title: "VPS avulsas", hint: "VPS com monitoramento próprio", short: "VPS" },
   signal_target: { title: "Softcom Signal", hint: "Alvos Signal na grade", short: "Signal" },
+  storage: { title: "Storages", hint: "VMs classificadas no Zabbix e configuradas em Serviços", short: "Storage" },
 };
 
 export type AvailabilityCatalogItem = { kind: AvailabilityCardKind; id: string; label: string; detail?: string };
@@ -74,13 +75,17 @@ export function BlockOptionsEditor({ block, hosts, onChange, availabilityCatalog
   onChange: (options: NonNullable<PresentationBlock["options"]>) => void;
   availabilityCatalog?: AvailabilityCatalogItem[];
 }) {
-  const options = { ...effectiveOptions({ type: block.type }), ...block.options } as NonNullable<PresentationBlock["options"]>;
+  const options = { ...(block.type === "storage_summary" ? { visibleRows: 3 } : effectiveOptions({ type: block.type })), ...block.options } as NonNullable<PresentationBlock["options"]>;
   const set = (key: string, value: string | number | boolean | string[] | number[]) => onChange({ ...options, [key]: value });
   const checkList = (key: string, values: (string | number)[], names?: string[]) => <div className="admin-checks">{values.map((value, index) => <Check key={value} label={names?.[index] ?? labels[value] ?? String(value)}><input type="checkbox" checked={(options[key] as (string | number)[]).includes(value)} onChange={event => { const selected = options[key] as (string | number)[]; set(key, (event.target.checked ? [...selected, value] : selected.filter(item => item !== value)) as string[] | number[]); }} /></Check>)}</div>;
   if (block.type === "summary") {
     return <IndicatorEditor selected={(options.indicators as IndicatorKey[]) ?? [...defaultIndicators]} onChange={next => set("indicators", next)} />;
   }
   if (block.type === "resource_card") return <p className="admin-muted">Métricas e estados seguem as preferências salvas do recurso.</p>;
+  if (block.type === "storage_summary") {
+    const storages = availabilityCatalog.filter(item => item.kind === "storage");
+    return <div className="admin-options"><div className="admin-fields"><Field label="Storage do painel" hint="Configure nome e capacidade em Serviços → Storages."><select value={String(options.storageConfigId ?? "")} onChange={event => set("storageConfigId", event.target.value)}>{!storages.some(item => item.id === options.storageConfigId) && <option value={String(options.storageConfigId ?? "")}>Referência indisponível · selecione um Storage</option>}{storages.map(item => <option key={item.id} value={item.id}>{item.label} · {item.detail}</option>)}</select></Field><Field label="Linhas de volumes" hint="Todos os volumes permanecem acessíveis por rolagem."><select value={Number(options.visibleRows)} onChange={event => set("visibleRows", Number(event.target.value))}>{Array.from({ length: 10 }, (_, i) => i + 1).map(value => <option key={value}>{value}</option>)}</select></Field></div></div>;
+  }
   if (block.type === "uptime_list") return <div className="admin-options"><div className="admin-fields"><Field label="Ordenar por"><select value={String(options.sortBy)} onChange={event => set("sortBy", event.target.value)}>{(["name", "uptime", "state"] as const).map(key => <option key={key} value={key}>{labels[key]}</option>)}</select></Field><Field label="Direção"><select value={String(options.sortDirection)} onChange={event => set("sortDirection", event.target.value)}><option value="asc">Crescente</option><option value="desc">Decrescente</option></select></Field><Field label="Linhas visíveis" hint="As demais aplicações continuam acessíveis por rolagem."><select value={Number(options.visibleRows)} onChange={event => set("visibleRows", Number(event.target.value))}>{Array.from({ length: 8 }, (_, i) => i + 3).map(value => <option key={value}>{value}</option>)}</select></Field></div>{options.sortBy === "uptime" && <p className="admin-muted">A disponibilidade de 24 h conta somente consultas disponíveis ou lentas. Sem amostras fica no fim.</p>}{options.sortBy === "state" && <p className="admin-muted">Crescente: disponível, lento, falha na consulta e indisponível. Sem dados fica no fim.</p>}</div>;
   if (block.type === "signal_flow") return <div className="admin-options"><div className="admin-fields"><Field label="Linhas do pipeline" hint="Filas outbox/inbox e dead letter do ready atual. Jobs em fila/rodando/pendentes vêm do knowledge index."><select value={Number(options.visibleRows)} onChange={event => set("visibleRows", Number(event.target.value))}>{Array.from({ length: 8 }, (_, i) => i + 3).map(value => <option key={value}>{value}</option>)}</select></Field></div><p className="admin-muted">Sem inventar volume de jobs / 30 min — o bloco usa só métricas do ready.</p></div>;
   if (block.type === "highlighted_resources") {

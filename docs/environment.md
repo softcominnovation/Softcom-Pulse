@@ -179,4 +179,6 @@ Interface validada em Chromium: 320/360/390px, tablet retrato/paisagem, desktop 
 
 Autenticação, shell protegido, configuração PostgreSQL, BFF e Collector Zabbix estão implementados. A fase 04 também testa PostgreSQL temporário `pulse_phase04_test_`/`pulse_runtime04_test_` e Redis DB 13/12 vazio com trava; remove somente suas próprias chaves. O runtime exercita o processo empacotado, coleta, histórico autenticado, falha, exclusão entre workers e encerramento. Fixtures não usam o Redis DB 0 nem persistem telemetria no banco pulse.
 
+Storage 01 acrescenta a migration `20261027160000_storage_configuration`. Aplicá-la antes de disponibilizar a nova configuração e atualizar Web e Collector no procedimento de publicação autorizado. Não há env ou worker novo. Após os testes em bancos temporários, a migration também foi aplicada no PostgreSQL local `pulse` em 27/10/2026, corrigindo o erro de carregamento do editor causado pela tabela ausente. Não houve deploy remoto. Consulte [Storage](storage.md).
+
 Dashboard, editores de recursos/apresentação e templates estão implementados. Aplicar a migration 20261003180000_presentation_options com `npx prisma migrate deploy` antes de disponibilizar o editor v2. Não há env nova nem reinício do Collector necessário. Ver [Administração](administration.md), [Interface](ui.md), [BFF](bff.md) e [Zabbix](zabbix.md).

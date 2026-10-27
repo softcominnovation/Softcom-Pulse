@@ -7,6 +7,7 @@ import type { AsgardSummary, VirtualMachine } from "@/lib/monitoring/contracts";
 import { number, timestamp } from "@/lib/dashboard/format";
 import { VmTable } from "@/components/infrastructure/host-panels";
 import { EvidenceTimeContext, MetricValue, Status } from "./metrics";
+import { ServiceTitle } from "./service-title";
 
 function evidenceOld(vm: { evidence: VirtualMachine["evidence"] }, stale: boolean, now: number) {
   return stale || !vm.evidence.observedAt || !!vm.evidence.validUntil && Date.parse(vm.evidence.validUntil) < now;
@@ -18,12 +19,12 @@ export function AsgardPanel({ data, stale, detailed = false, options }: { data: 
   const running = vms.filter(vm => vm.state === "running" && !evidenceOld(vm, stale, now)).length;
   const unknown = vms.filter(vm => vm.state === "unknown" || evidenceOld(vm, stale, now)).length;
   return <section className={`dashboard-panel asgard-panel ${detailed ? "asgard-detailed" : "asgard-compact"}`} style={options ? { "--visible-rows": options.visibleRows } as CSSProperties : undefined}>
-    <div className="panel-heading"><Server aria-hidden="true" /><h2>{host?.displayName ?? host?.name ?? "Asgard"} · armazenamento & VMs</h2>{!detailed && host && <PlaceLink className="panel-link" href={`/asgard?hostKey=${encodeURIComponent(host.hostKey)}`} hideWhenClosed>Ver ASGARD<ArrowRight aria-hidden="true" /></PlaceLink>}</div>
+    <div className="panel-heading"><Server aria-hidden="true" /><ServiceTitle status={host && <Status value={host.availability} stale={evidenceOld(host, stale, now)} />}><h2>{host?.displayName ?? host?.name ?? "Asgard"} · armazenamento & VMs</h2></ServiceTitle>{!detailed && host && <PlaceLink className="panel-link" href={`/asgard?hostKey=${encodeURIComponent(host.hostKey)}`} hideWhenClosed>Ver ASGARD<ArrowRight aria-hidden="true" /></PlaceLink>}</div>
     {!host ? <p className="panel-empty">Sem dados do hipervisor na coleta atual.</p> : <>
       <div className="asgard-content">
         <div className="asgard-context">
           <div className="asgard-overview">
-            <div className="asgard-identity">{detailed && host.hostKey !== host.name && <strong>{host.hostKey}</strong>}<Status value={host.availability} stale={evidenceOld(host, stale, now)} />{detailed && <p>Evidência: {timestamp(host.evidence.observedAt)}</p>}</div>
+            {detailed && <div className="asgard-identity">{host.hostKey !== host.name && <strong>{host.hostKey}</strong>}<p>Evidência: {timestamp(host.evidence.observedAt)}</p></div>}
             <dl className="asgard-metrics"><div><dt>CPU</dt><dd><MetricValue metric={host.metrics.cpuUsagePercent} stale={stale} compact={!detailed} /></dd></div><div><dt>RAM</dt><dd><MetricValue metric={host.metrics.memoryUsagePercent ?? host.metrics.memoryUsedBytes} stale={stale} series="memory" compact={!detailed} /></dd></div></dl>
           </div>
           <div className="storage-summary">

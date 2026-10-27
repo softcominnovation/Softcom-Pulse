@@ -2,7 +2,10 @@ import "server-only";
 import { z } from "zod";
 import { hostKeySchema, uuidSchema, historyRangeSchema } from "../../config/resources.ts";
 import { createResource, updateResource, deleteResource, getPresentation, savePresentation, getResource, listResources } from "../config/repository.ts";
-import { jsonBody, protectedResponse, queryParams } from "../bff.ts";
+import { BffError, jsonBody, protectedResponse, queryParams } from "../bff.ts";
+import { storageKeySchema } from "../../config/storages.ts";
+import { listStorageConfigs, saveStorageConfig } from "../config/storages.ts";
+import { readStorage, readStorages } from "./storages.ts";
 import { readHosts, readHost, readContainers, readProblems, readServices, readOverview, readHistory } from "./read.ts";
 import { templateKeySchema } from "../../config/templates.ts";
 import { listTemplateConfigs, saveTemplateConfig } from "../config/templates.ts";
@@ -45,6 +48,24 @@ import {
 
 type Params<K extends string> = { params: Promise<Record<K, string>> };
 const emptyQuery = z.strictObject({});
+export function storagesGet(request: Request) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readStorages(); });
+}
+export function storageGet(request: Request, context: Params<"storageKey">) {
+  return protectedResponse(request, async () => { queryParams(request, emptyQuery); return readStorage(storageKeySchema.parse((await context.params).storageKey)); });
+}
+export function storageSettingsGet(request: Request) {
+  return protectedResponse(request, async editor => {
+    if (!editor) throw new BffError(403, "forbidden");
+    queryParams(request, emptyQuery); return { data: await listStorageConfigs() };
+  });
+}
+export function storageSettingsPut(request: Request, context: Params<"storageKey">) {
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    return { data: await saveStorageConfig(storageKeySchema.parse((await context.params).storageKey), await jsonBody(request)) };
+  });
+}
 const historyQuery = z.strictObject({ range: historyRangeSchema.default("1h") });
 
 const demoEnv = <T>(data: T) => ({

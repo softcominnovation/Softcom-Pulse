@@ -9,6 +9,7 @@ import { isPublicPath } from "@/lib/public/paths";
 import { useContainers, useServices } from "./data";
 import { ContainerInventory } from "./container-inventory";
 import { SignalServicesPanel } from "./signal-services";
+import { StorageServices } from "@/components/storage/storage-services";
 
 export function Services() {
   return <EvidenceClock><ServicesContent /></EvidenceClock>;
@@ -18,6 +19,7 @@ function ServicesContent() {
   const inventory = useContainers(undefined, !publicSurface), services = useServices(), problems = useProblems();
   return <div className="infrastructure-details services-page"><div className="dashboard-heading"><div><h1>Cada serviço, acompanhado de perto.</h1><p className="dashboard-subtitle">{publicSurface ? "Signal, recursos configurados e problemas atuais." : "Signal, containers, recursos configurados e problemas atuais."}</p></div></div>
     <SignalServicesPanel />
+    <StorageServices />
     {!publicSurface && <>
       <ReadNotice result={inventory.data} failed={inventory.failed} refresh={inventory.refresh} label="inventário de containers" />
       <section className="dashboard-panel"><div className="panel-heading"><Box aria-hidden="true" /><h2>Inventário de containers</h2></div>{inventory.data ? <ContainerInventory containers={inventory.data.data} stale={inventory.failed || inventory.data.stale} availability={inventory.data.availability} /> : <p className="panel-empty">{inventory.failed ? "Inventário indisponível. Tente atualizar." : "Carregando containers…"}</p>}</section>

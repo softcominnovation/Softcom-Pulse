@@ -7,6 +7,7 @@ import type { OptionsByType } from "@/lib/config/presentation";
 import { number } from "@/lib/dashboard/format";
 import { signalStateColor, signalStateLabel, signalStateTone, signalWorkersLabel } from "@/lib/signal/labels";
 import { ProbeStrip } from "./probe-strip";
+import { ServiceTitle } from "./service-title";
 import "./signal-flow.css";
 
 export type SignalFlowPayload = {
@@ -101,12 +102,11 @@ export function SignalFlowPanel({ data, options }: { data: SignalFlowPayload; op
   return <section className="dashboard-panel signal-flow-panel traffic-panel" id="signal-flow" style={{ "--visible-rows": options.visibleRows } as CSSProperties}>
     <div className="panel-heading">
       <Activity aria-hidden="true" />
-      <h2>Signal · fluxo de processamento</h2>
+      <ServiceTitle status={<span className={`status-pill tone-${tone}`}><i className="status-dot" />{signalStateLabel(target.state)}</span>}><h2>Signal · fluxo de processamento</h2></ServiceTitle>
       <PlaceLink className="panel-link" href="/servicos#signal">Ver métricas<ArrowRight aria-hidden="true" /></PlaceLink>
     </div>
     <div className="signal-flow-body">
       <div className="signal-flow-top">
-        <span className={`availability-state tone-${tone}`}><i className="status-dot" />{signalStateLabel(target.state)}</span>
         <div className="signal-flow-jobs" aria-label="Jobs do índice de conhecimento">
           <JobStat label="Em fila" value={jobs.queued} />
           <JobStat label="Rodando" value={jobs.running} />

@@ -1,5 +1,7 @@
 # Minicards de Disponibilidade de Serviços
 
+Storage usa `kind:storage` e UUID da preferência, disponível após configurar a máquina em Serviços. Default inclui os destacados após as famílias anteriores, com ordem interna e criticidade; custom aceita configuração sem destaque. Preserva 120px com CPU e disco ocupado (%), usando a capacidade selecionada e a cor âmbar de disco. No rodapé, RX e TX vêm da interface já escolhida em Serviços, separados e com suas unidades; uptime/leitura ficam na dica e no detalhe. Ausência é “—”, zero é zero e dado antigo mantém identificação. Não acrescenta terceira barra ou faixa de uptime. Abre o painel compartilhado sob demanda, com link por storageKey para Serviços e equivalente público. Disponibilidade usa o mesmo helper do painel. Referência órfã conserva estado neutro; sem preferência recuperável, aplica a política de omissão do custom. Detalhes em [Storage](storage.md).
+
 Construção visual pelo [Design system Kobra](design-system.md). Os tokens Pulse abaixo acompanham o tema; cores fixas remanescentes das faixas são paletas de telemetria, não a paleta global.
 
 A grade **Disponibilidade de Serviços** é um único grid. No modo **default** do bloco entram as origens globais nesta ordem: recurso Zabbix destacado, aplicação da sonda, VPS destacada e Signal destacado. No modo **custom**, a ordem é a lista `cards` daquele bloco (`kind:uuid`). Um serviço novo que também apareça aqui entra nessa mesma grade, com o mesmo retângulo. O miolo muda conforme a leitura que o serviço tem. A caixa não muda.

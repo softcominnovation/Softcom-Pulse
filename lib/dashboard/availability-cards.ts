@@ -5,6 +5,7 @@ import {
 import type { StandaloneVpsHighlight } from "../config/standalone-vps.ts";
 import type { AvailabilityPanelData, ConfiguredResource, ProbeCard, SignalOverviewCard } from "../monitoring/contracts.ts";
 import { selectHighlights } from "./block-options.ts";
+import type { StorageView } from "../storage/contracts.ts";
 
 export type { AvailabilityCardKind, AvailabilityCardRef } from "../config/availability-card-refs.ts";
 export {
@@ -40,12 +41,14 @@ export function buildDefaultAvailabilityCards(
   vps: StandaloneVpsHighlight[],
   signalCards: SignalAvailabilityCard[],
   options: OptionsByType["highlighted_resources"],
+  storages: StorageView[] = [],
 ): AvailabilityPanelCard[] {
   return [
     ...selectHighlights(resources, options).map(item => ({ kind: "resource" as const, item })),
     ...probes.map(item => ({ kind: "external_service" as const, item })),
     ...vps.map(item => ({ kind: "standalone_vps" as const, item })),
     ...signalCards.map(item => ({ kind: "signal_target" as const, item })),
+    ...storages.filter(item => item.configId && item.dashboardEnabled && (!options.criticalOnly || item.critical)).map(item => ({ kind: "storage" as const, item })),
   ];
 }
 
@@ -56,6 +59,7 @@ export function buildCustomAvailabilityCards(
     probes: Map<string, ProbeCard>;
     vps: Map<string, StandaloneVpsHighlight>;
     signalCards: Map<string, SignalAvailabilityCard>;
+    storages?: Map<string, StorageView>;
   },
 ): AvailabilityPanelCard[] {
   const cards: AvailabilityPanelCard[] = [];
@@ -75,6 +79,11 @@ export function buildCustomAvailabilityCards(
     if (ref.kind === "standalone_vps") {
       const item = pools.vps.get(ref.id);
       if (item) cards.push({ kind: "standalone_vps", item });
+      continue;
+    }
+    if (ref.kind === "storage") {
+      const item = pools.storages?.get(ref.id);
+      if (item) cards.push({ kind: "storage", item });
       continue;
     }
     const item = pools.signalCards.get(ref.id);

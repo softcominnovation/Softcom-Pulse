@@ -11,7 +11,7 @@ test("version 2 has type-specific defaults, strict options and six enabled block
   const document = initialPresentation(randomUUID), screen = document.screens[0];
   assert.equal(document.schemaVersion, 2); assert.ok(presentationDocumentSchema.safeParse(document).success);
   for (const type of blockTypes) {
-    screen.blocks = [{ id: randomUUID(), type, enabled: true, width: "full", options: effectiveOptions({ type }), ...(type === "resource_card" ? { resourceConfigId: randomUUID() } : {}) }];
+    screen.blocks = [{ id: randomUUID(), type, enabled: true, width: "full", options: effectiveOptions({ type, ...(type === "storage_summary" ? { options: { storageConfigId: randomUUID() } } : {}) }), ...(type === "resource_card" ? { resourceConfigId: randomUUID() } : {}) }];
     assert.ok(presentationDocumentSchema.safeParse(document).success, type);
     screen.blocks[0].options.unknownField = true;
     assert.equal(presentationDocumentSchema.safeParse(document).success, false, type);

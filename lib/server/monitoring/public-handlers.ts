@@ -11,6 +11,10 @@ import { externalServiceHistory } from "../probe/repository.ts";
 import { vpsDetailQuerySchema } from "../../config/standalone-vps.ts";
 import { listStandaloneVps, readStandaloneVps } from "../vps/repository.ts";
 import { signalHistoryRangeSchema } from "../../config/signal-targets.ts";
+import { storageKeySchema } from "../../config/storages.ts";
+import { storageViewSchema } from "../../storage/contracts.ts";
+import { publicStorage } from "../../storage/presentation.ts";
+import { readStorage, readStorages } from "./storages.ts";
 import { getSignalTarget, listSignalTargets, signalTargetHistory } from "../signal/repository.ts";
 import {
   buildDemoConfiguredResources,
@@ -71,11 +75,15 @@ function redactPublicOverviewIps<T extends {
     ...overview,
     standaloneVps: overview.standaloneVps?.map(withoutVpsAddress),
     blocks: overview.blocks.map(block => {
+      if (block.type === "storage_summary" && block.data && typeof block.data === "object" && "target" in block.data) {
+        const target = storageViewSchema.safeParse(block.data.target);
+        return { ...block, data: { target: target.success ? publicStorage(target.data) : null } };
+      }
       if (block.type !== "highlighted_resources" || !block.data || typeof block.data !== "object" || !("cards" in block.data) || !Array.isArray((block.data as { cards: unknown }).cards)) return block;
       const cards = (block.data as { cards: { kind: string; item: { ip?: string } }[] }).cards.map(card =>
         card.kind === "standalone_vps" && card.item && typeof card.item.ip === "string"
           ? { ...card, item: withoutVpsAddress(card.item as { ip: string }) }
-          : card,
+          : card.kind === "storage" ? { ...card, item: publicStorage(storageViewSchema.parse(card.item)) } : card,
       );
       return { ...block, data: { ...(block.data as object), cards } };
     }),
@@ -85,6 +93,8 @@ function redactPublicOverviewIps<T extends {
 async function readPublic(request: Request, segments: string[]) {
   const [root, second, third, fourth, fifth, sixth] = segments;
   const authed = hasAccessSession(request);
+  if (root === "monitoring" && second === "storages" && segments.length === 2) { queryParams(request, emptyQuery); return readStorages({ publicRead: true }); }
+  if (root === "monitoring" && second === "storages" && third && segments.length === 3) { queryParams(request, emptyQuery); return readStorage(storageKeySchema.parse(third), true); }
   if (isDemoMode()) {
     const now = new Date().toISOString();
     const env = <T>(data: T) => ({ presentationStatus: "ready" as const, data, availability: "ready" as const, stale: false, lastUpdated: now, refreshAfterMs: 20000 });

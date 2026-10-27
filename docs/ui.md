@@ -1,5 +1,7 @@
 # Interface do dashboard
 
+Storage acrescenta um contêiner em **Serviços → Storages**, com título e um painel por máquina, minicard com CPU/disco ocupado (%) e rodapé RX/TX da interface configurada na Disponibilidade, além do bloco `storage_summary` configurável por máquina. Serviços, painel grande, modal e prévia reutilizam `StoragePanel`; o minicard usa a mesma regra de disponibilidade. Os cabeçalhos dos painéis seguem nome **•** disponibilidade com `ServiceTitle`, conforme o guia Kobra. Não injeta blocos em telas existentes. Com Storage, layouts usam empacotamento por UUID e fallback explícito de rolagem; sem Storage, o layout anterior permanece. Novos fluxos seguem Kobra e sons centralizados. Uso e limites em [Storage](storage.md) e [Encaixe](overview-fit.md).
+
 `/` é o dashboard autenticado. O shell mantém marca Pulse, relógio de Fortaleza, modo TV, tela cheia e saída da sessão. A navegação contém apenas rotas implementadas, com busca global, controles de tema e som. Não há sidebar no shell atual. O padrão visual e de construção é o [Design system Kobra](design-system.md), com contrato de [Sons da interface](interface-sounds.md). Dados operacionais vêm dos contratos do BFF; a vitrine do login, o inventário local de WhatsApp e o modo de demonstração têm limites próprios descritos no guia de design.
 
 ## Composição e dados

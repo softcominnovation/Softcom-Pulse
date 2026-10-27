@@ -11,6 +11,7 @@ import { metricLabels } from "@/lib/infrastructure/history";
 import { asgardUrl, evidenceExpired, hostUrl, type WindowRange } from "@/lib/infrastructure/navigation";
 import { number, timestamp } from "@/lib/dashboard/format";
 import { EvidenceTimeContext, MetricValue, Status } from "@/components/dashboard/metrics";
+import { ServiceTitle } from "@/components/dashboard/service-title";
 import { VmAgentSummary, VmCpuCount } from "./vm-summary";
 import { Button } from "@/components/ui/button";
 import { VmWorkloadsDialog } from "@/components/services/vm-workloads-dialog";
@@ -76,7 +77,7 @@ export function HostInventory({ hosts, stale, compact = false, visibleRows, metr
       const card = resolveCardCpuRam(host, linkHosts, preference);
       const metrics = mergeCardCpuRam(host.metrics, card.metrics);
       const perspective = host.role === "hypervisor" ? "Hipervisor · Zabbix" : host.role === "linux" ? (card.source === "hypervisor" ? "Linux · igual à listagem" : "Linux · Agent") : "Origem não identificada";
-      return <article className="host-card" key={host.hostKey}><h3><PlaceLink href={host.role === "hypervisor" ? asgardUrl(host.hostKey) : hostUrl(host.hostKey)}>{displayName(host)}</PlaceLink></h3><p>{perspective}</p><Status value={host.availability} stale={evidenceExpired(host, stale, now)} /><dl className="detail-metrics"><div><dt>CPU</dt><dd><MetricValue metric={metrics.cpuUsagePercent} stale={stale} compact /></dd></div><div><dt>RAM</dt><dd><MetricValue metric={metrics.memoryUsagePercent ?? metrics.memoryUsedBytes} stale={stale} series="memory" compact /></dd></div><div><dt>Tempo ativo</dt><dd><MetricValue metric={host.metrics.uptimeSeconds} stale={stale} compact /></dd></div><div><dt>{host.role === "hypervisor" ? "VMs operacionais" : "Filesystems"}</dt><dd>{number(host.role === "hypervisor" ? host.vms.length : host.filesystems.length)}</dd></div></dl></article>;
+      return <article className="host-card" key={host.hostKey}><ServiceTitle status={<Status value={host.availability} stale={evidenceExpired(host, stale, now)} />}><h3><PlaceLink href={host.role === "hypervisor" ? asgardUrl(host.hostKey) : hostUrl(host.hostKey)}>{displayName(host)}</PlaceLink></h3></ServiceTitle><p>{perspective}</p><dl className="detail-metrics"><div><dt>CPU</dt><dd><MetricValue metric={metrics.cpuUsagePercent} stale={stale} compact /></dd></div><div><dt>RAM</dt><dd><MetricValue metric={metrics.memoryUsagePercent ?? metrics.memoryUsedBytes} stale={stale} series="memory" compact /></dd></div><div><dt>Tempo ativo</dt><dd><MetricValue metric={host.metrics.uptimeSeconds} stale={stale} compact /></dd></div><div><dt>{host.role === "hypervisor" ? "VMs operacionais" : "Filesystems"}</dt><dd>{number(host.role === "hypervisor" ? host.vms.length : host.filesystems.length)}</dd></div></dl></article>;
     })}</div> : <p className="panel-empty">Nenhum host disponível no escopo atual.</p>}
     <p className="panel-foot">CPU/RAM do card: padrão = listagem de VMs · Agent opcional em Recursos.</p>
   </section>;

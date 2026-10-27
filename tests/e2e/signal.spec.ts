@@ -76,6 +76,9 @@ test("dashboard signal card and flow stay honest about jobs", async ({ page }) =
   await signIn(page);
   await page.goto("/");
   await expect(page.locator(".signal-card-highlight")).toBeVisible();
+  await expect(page.locator("#signal-flow > .panel-heading .service-title .status-pill")).toHaveText("Disponível");
+  await expect(page.locator("#signal-flow .signal-flow-body .availability-state")).toHaveCount(0);
+  await expect(page.locator(".asgard-panel > .panel-heading .service-title .status-pill")).toHaveText("Disponível");
   await expect(page.getByRole("link", { name: /Ver métricas/i })).toBeVisible();
   await expect(page.getByLabel("Jobs do índice de conhecimento")).toBeVisible();
   await expect(page.locator("#signal-flow").getByText("Em fila")).toBeVisible();

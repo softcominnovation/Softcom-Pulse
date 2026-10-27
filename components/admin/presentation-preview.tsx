@@ -16,6 +16,8 @@ import { DashboardBlock } from "@/components/dashboard/blocks";
 import { displayBlockWidth } from "@/lib/dashboard/layout";
 import { Button } from "@/components/ui/button";
 import { Field } from "./shared";
+import { storageInventorySchema } from "@/lib/storage/contracts";
+import { StorageComposition } from "@/components/dashboard/storage-composition";
 
 type Screen = PresentationSettings["screens"][number];
 
@@ -40,6 +42,7 @@ function asVpsHighlight(item: z.infer<typeof standaloneVpsCardSchema>): Standalo
 
 export function PresentationPreview({ screen, displayScalePercent }: { screen: Screen; displayScalePercent: DisplayScalePercent }) {
   const [tvPreview, setTvPreview] = useState(true);
+  const [compositionScroll, setCompositionScroll] = useState(false);
   const scale = tvPreview ? displayScalePercent : 100;
   const [blocks, setBlocks] = useState<OverviewBlock[] | null>(null), [failed, setFailed] = useState(false), [scroll, setScroll] = useState(false), [loading, setLoading] = useState(false);
   const content = useRef<HTMLDivElement>(null), [reload, setReload] = useState(0);
@@ -60,6 +63,7 @@ export function PresentationPreview({ screen, displayScalePercent }: { screen: S
         strip: z.array(z.number()).optional(), uptime24h: z.object({ available: z.number(), total: z.number() }).nullable().optional(),
         checkedAt: z.string().nullable().optional(),
       })) }).parse(response.data).data),
+      api.get("/monitoring/storages", { signal }).then(response => readSchema(storageInventorySchema).parse(response.data)),
     ]);
     if (signal.aborted) return;
     const base = results[0].status === "fulfilled" ? results[0].value : null;
@@ -69,6 +73,9 @@ export function PresentationPreview({ screen, displayScalePercent }: { screen: S
     const apps = results[4].status === "fulfilled" ? results[4].value : [];
     const vpsRows = results[5].status === "fulfilled" ? results[5].value : [];
     const signalRows = results[6].status === "fulfilled" ? results[6].value : [];
+    const storageResult = results[7].status === "fulfilled" ? results[7].value : null;
+    const storageItems = storageResult ? [...storageResult.data.items, ...storageResult.data.orphans] : [];
+    const storages = new Map(storageItems.flatMap(item => item.configId ? [[item.configId, item] as const] : []));
     const selected = JSON.parse(signature) as Screen;
     const allResources = services?.data.filter(item => item.config.enabled) ?? [];
     const highlightedResources = allResources.filter(item => item.config.dashboardEnabled);
@@ -103,13 +110,17 @@ export function PresentationPreview({ screen, displayScalePercent }: { screen: S
       else if (block.type === "container_inventory") data = containers?.data ?? null;
       else if (block.type === "uptime_list") data = base?.data.uptimeBoard ?? [];
       else if (block.type === "signal_flow") data = signalFlow?.data ?? { target: null };
+      else if (block.type === "storage_summary") {
+        const target = storages.get(effectiveOptions({ ...block, type: "storage_summary" }).storageConfigId) ?? null;
+        return { blockId: block.id, type: block.type, options: block.options, data: { target }, availability: target ? "ready" : "no_data", stale: target?.stale ?? true, lastUpdated: storageResult?.lastUpdated ?? null };
+      }
       else if (block.type === "resource_card") data = highlightedResources.find(item => item.id === block.resourceConfigId) ?? null;
       else if (block.type === "highlighted_resources") {
         const options = effectiveOptions({ ...block, type: "highlighted_resources" });
         const panel: AvailabilityPanelData = {
           cards: options.selection === "custom"
-            ? buildCustomAvailabilityCards(options.cards, { resources: resourcePool, probes: probePool, vps: vpsPool, signalCards: signalPool })
-            : buildDefaultAvailabilityCards(highlightedResources, highlightedProbes, highlightedVps, highlightedSignal, options),
+            ? buildCustomAvailabilityCards(options.cards, { resources: resourcePool, probes: probePool, vps: vpsPool, signalCards: signalPool, storages })
+            : buildDefaultAvailabilityCards(highlightedResources, highlightedProbes, highlightedVps, highlightedSignal, options, storageItems),
         };
         data = panel;
       }
@@ -122,6 +133,7 @@ export function PresentationPreview({ screen, displayScalePercent }: { screen: S
   const enabled = screen.blocks.filter(block => block.enabled);
   const split = screen.layout === "overview" && screen.overviewGrid === "split";
   const wall = screen.layout === "wall";
+  const hasStorage = enabled.some(block => block.type === "storage_summary");
   const gridTypes = new Set(["highlighted_resources", "problems", "asgard_summary", "signal_flow"]);
   const hasProblems = enabled.some(block => block.type === "problems");
   const renderPreviewBlock = (block: Screen["blocks"][number]) => {
@@ -129,5 +141,5 @@ export function PresentationPreview({ screen, displayScalePercent }: { screen: S
     const width = displayBlockWidth(block, enabled, { split, wall });
     return <div key={block.id} className={`dashboard-block width-${width} block-${block.type}`}>{data ? <DashboardBlock block={data} failed={false} /> : <p className="panel-empty">Carregando prévia…</p>}</div>;
   };
-  return <section className="admin-preview" aria-label="Prévia da composição"><div className="admin-actions"><h3>Prévia local · não salva · {screen.name}</h3><Button type="button" onClick={() => setReload(value => value + 1)}>Atualizar prévia</Button></div><Field label="Visualização da prévia"><select value={tvPreview ? "tv" : "normal"} onChange={event => setTvPreview(event.target.value === "tv")}><option value="normal">Normal · 100%</option><option value="tv">Telão · {displayScalePercent}%</option></select></Field><p className="admin-muted">Dados reais disponíveis, na largura atual do navegador. As alterações só serão compartilhadas ao salvar.</p>{scroll && <p className="admin-notice">Esta composição precisa de rolagem nesta altura de tela. Reduza linhas/blocos ou distribua o conteúdo entre telas.</p>}{failed && <p role="alert" className="admin-notice">Parte dos dados não pôde ser lida. Os blocos afetados indicam indisponibilidade.</p>}<EvidenceClock><div ref={content} className={`dashboard dashboard-preview ${screen.layout} ${screen.layout === "overview" ? "balanced" : ""} ${tvPreview ? "tv-mode" : ""}`} data-display-scale={scale} style={{ "--dashboard-scale": scale / 100 } as CSSProperties} aria-busy={loading}><div className={`dashboard-blocks${split ? " overview-split" : ""}`}>{!split && enabled.map(renderPreviewBlock)}{split && <>{enabled.filter(block => block.type === "summary").map(renderPreviewBlock)}<div className={`overview-split-grid${hasProblems ? "" : " no-problems"}`}>{enabled.filter(block => block.type === "highlighted_resources").map(renderPreviewBlock)}{enabled.filter(block => block.type === "problems").map(renderPreviewBlock)}{enabled.filter(block => block.type === "asgard_summary").map(renderPreviewBlock)}{enabled.filter(block => block.type === "signal_flow").map(renderPreviewBlock)}</div>{enabled.filter(block => block.type !== "summary" && !gridTypes.has(block.type)).map(renderPreviewBlock)}</>}</div></div></EvidenceClock></section>;
+  return <section className="admin-preview" aria-label="Prévia da composição"><div className="admin-actions"><h3>Prévia local · não salva · {screen.name}</h3><Button type="button" onClick={() => setReload(value => value + 1)}>Atualizar prévia</Button></div><Field label="Visualização da prévia"><select value={tvPreview ? "tv" : "normal"} onChange={event => setTvPreview(event.target.value === "tv")}><option value="normal">Normal · 100%</option><option value="tv">Telão · {displayScalePercent}%</option></select></Field><p className="admin-muted">Dados reais disponíveis, na largura atual do navegador. As alterações só serão compartilhadas ao salvar.</p>{(scroll || hasStorage && compositionScroll) && <p className="admin-notice">Esta composição precisa de rolagem nesta altura de tela. Reduza linhas/blocos ou distribua o conteúdo entre telas.</p>}{failed && <p role="alert" className="admin-notice">Parte dos dados não pôde ser lida. Os blocos afetados indicam indisponibilidade.</p>}<EvidenceClock><div ref={content} className={`dashboard dashboard-preview ${screen.layout} ${screen.layout === "overview" ? "balanced" : ""} ${tvPreview ? "tv-mode" : ""}`} data-display-scale={scale} style={{ "--dashboard-scale": scale / 100 } as CSSProperties} aria-busy={loading}><div className={`dashboard-blocks${split ? " overview-split" : ""}${hasStorage ? " has-storage" : ""}`}>{hasStorage && <StorageComposition blocks={enabled} split={split} wall={wall} render={renderPreviewBlock} onOverflow={setCompositionScroll} />}{!hasStorage && !split && enabled.map(renderPreviewBlock)}{!hasStorage && split && <>{enabled.filter(block => block.type === "summary").map(renderPreviewBlock)}<div className={`overview-split-grid${hasProblems ? "" : " no-problems"}`}>{enabled.filter(block => block.type === "highlighted_resources").map(renderPreviewBlock)}{enabled.filter(block => block.type === "problems").map(renderPreviewBlock)}{enabled.filter(block => block.type === "asgard_summary").map(renderPreviewBlock)}{enabled.filter(block => block.type === "signal_flow").map(renderPreviewBlock)}</div>{enabled.filter(block => block.type !== "summary" && !gridTypes.has(block.type)).map(renderPreviewBlock)}</>}</div></div></EvidenceClock></section>;
 }

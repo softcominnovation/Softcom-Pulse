@@ -18,6 +18,8 @@ import { parseResources } from "./resources";
 import { BlockOptionsEditor, type AvailabilityCatalogItem } from "./block-options";
 import { PresentationPreview } from "./presentation-preview";
 import { FullscreenHelp } from "./fullscreen-help";
+import { storageInventorySchema } from "@/lib/storage/contracts";
+import { readSchema } from "@/components/infrastructure/data";
 
 const parseApps = (data: unknown) => z.object({ data: z.array(externalServicePublicSchema.pick({ id: true, displayName: true, enabled: true, dashboardEnabled: true })) }).parse(data).data;
 const parseVps = (data: unknown) => z.object({ data: z.array(standaloneVpsCardSchema.pick({ id: true, name: true, enabled: true, dashboardEnabled: true })) }).parse(data).data;
@@ -50,6 +52,7 @@ function PresentationForm({ saved, resources, hosts, reload, availabilityCatalog
   const [newTypes, setNewTypes] = useState<Record<string, BlockType>>({});
   const validation = presentationSettingsSchema.safeParse(settings);
   const eligibleResources = resources.filter(resource => resource.enabled && resource.dashboardEnabled);
+  const eligibleStorages = availabilityCatalog.filter(item => item.kind === "storage");
   const changeScreens = (screens: PresentationSettings["screens"]) => form.setValue("screens", screens, { shouldDirty: true });
   const changeBlocks = (screenIndex: number, blocks: PresentationBlock[]) => changeScreens(settings.screens.map((screen, index) => index === screenIndex ? { ...screen, blocks } : screen));
   const changeBlock = (screenIndex: number, blockIndex: number, block: PresentationBlock) => changeBlocks(screenIndex, settings.screens[screenIndex].blocks.map((current, index) => index === blockIndex ? block : current));
@@ -117,7 +120,7 @@ function PresentationForm({ saved, resources, hosts, reload, availabilityCatalog
           {block.type === "resource_card" && <Field label="Recurso individual"><select value={block.resourceConfigId ?? ""} onChange={event => changeBlock(screenIndex, blockIndex, { ...block, resourceConfigId: event.target.value })}>{!eligibleResources.some(item => item.id === block.resourceConfigId) && <option value={block.resourceConfigId ?? ""}>Referência indisponível · escolha um recurso</option>}{eligibleResources.map(item => <option key={item.id} value={item.id}>{item.displayName ?? item.selectorValue ?? item.zabbixHostKey} · {item.zabbixHostKey}</option>)}</select></Field>}
           <BlockOptionsEditor block={block} hosts={hosts} availabilityCatalog={availabilityCatalog} onChange={options => changeBlock(screenIndex, blockIndex, { ...block, options })} />
         </article>)}
-        <div className="admin-add"><Field label="Novo bloco"><select value={newTypes[screen.id] ?? "summary"} onChange={event => setNewTypes({ ...newTypes, [screen.id]: event.target.value as BlockType })}>{blockTypes.map(type => <option key={type} value={type} disabled={!blockCatalog[type].available || (type === "resource_card" && !eligibleResources.length)}>{blockCatalog[type].label}</option>)}</select></Field><Button type="button" disabled={screen.blocks.length >= 24} onClick={() => { const type = newTypes[screen.id] ?? "summary"; if (!blockCatalog[type].available || (type === "resource_card" && !eligibleResources.length)) return; const width = type === "summary" || type === "highlighted_resources" ? "full" : type === "asgard_summary" || type === "problems" || type === "signal_flow" ? "wide" : "standard"; changeBlocks(screenIndex, [...screen.blocks, { id: crypto.randomUUID(), type, enabled: count < 6, width, options: effectiveOptions({ type }), ...(type === "resource_card" ? { resourceConfigId: eligibleResources[0].id } : {}) }]); }}><Plus aria-hidden="true" />Adicionar bloco</Button><Button type="button" onClick={() => setPreviewId(previewId === screen.id ? null : screen.id)}>{previewId === screen.id ? "Fechar prévia" : "Ver prévia"}</Button></div>{count >= 6 && <p className="admin-muted">Limite de seis habilitados. Novos blocos entram desabilitados; mova-os para outra tela ou desative um existente.</p>}
+        <div className="admin-add"><Field label="Novo bloco"><select value={newTypes[screen.id] ?? "summary"} onChange={event => setNewTypes({ ...newTypes, [screen.id]: event.target.value as BlockType })}>{blockTypes.map(type => <option key={type} value={type} disabled={!blockCatalog[type].available || ((type === "resource_card" && !eligibleResources.length) || (type === "storage_summary" && !eligibleStorages.length))}>{blockCatalog[type].label}</option>)}</select></Field><Button type="button" disabled={screen.blocks.length >= 24} onClick={() => { const type = newTypes[screen.id] ?? "summary"; if (!blockCatalog[type].available || ((type === "resource_card" && !eligibleResources.length) || (type === "storage_summary" && !eligibleStorages.length))) return; const width = type === "summary" || type === "highlighted_resources" ? "full" : type === "asgard_summary" || type === "problems" || type === "signal_flow" || type === "storage_summary" ? "wide" : "standard"; changeBlocks(screenIndex, [...screen.blocks, { id: crypto.randomUUID(), type, enabled: count < 6, width, options: type === "storage_summary" ? { storageConfigId: eligibleStorages[0].id, visibleRows: 3 } : effectiveOptions({ type }), ...(type === "resource_card" ? { resourceConfigId: eligibleResources[0].id } : {}) }]); }}><Plus aria-hidden="true" />Adicionar bloco</Button><Button type="button" onClick={() => setPreviewId(previewId === screen.id ? null : screen.id)}>{previewId === screen.id ? "Fechar prévia" : "Ver prévia"}</Button></div>{count >= 6 && <p className="admin-muted">Limite de seis habilitados. Novos blocos entram desabilitados; mova-os para outra tela ou desative um existente.</p>}
         </div>
       </section>;
     })}</fieldset>
@@ -132,8 +135,9 @@ export function PresentationAdmin() {
   const apps = useAdminRead("/monitoring/external-services", parseApps);
   const vps = useAdminRead("/monitoring/standalone-vps", parseVps);
   const signals = useAdminRead("/monitoring/signal-targets", parseSignal);
+  const storages = useAdminRead("/monitoring/storages", data => readSchema(storageInventorySchema).parse(data).data);
   const [reloadKey, setReloadKey] = useState(0);
-  const reload = () => { document.refresh(); resources.refresh(); apps.refresh(); vps.refresh(); signals.refresh(); setReloadKey(value => value + 1); };
+  const reload = () => { document.refresh(); resources.refresh(); apps.refresh(); vps.refresh(); signals.refresh(); storages.refresh(); setReloadKey(value => value + 1); };
   const availabilityCatalog = useMemo<AvailabilityCatalogItem[]>(() => [
     ...(resources.data ?? []).filter(item => item.enabled).map(item => ({
       kind: "resource" as const, id: item.id,
@@ -155,7 +159,8 @@ export function PresentationAdmin() {
       kind: "signal_target" as const, id: item.id, label: item.displayName,
       detail: item.dashboardEnabled ? "Signal · destaque no dashboard" : "Signal",
     })),
-  ], [resources.data, apps.data, vps.data, signals.data]);
+    ...[...(storages.data?.items ?? []), ...(storages.data?.orphans ?? [])].flatMap(item => item.configId ? [{ kind: "storage" as const, id: item.configId, label: item.displayName, detail: item.resolution === "resolved" ? "Storage · Zabbix Agent" : "Storage · sem descoberta atual" }] : []),
+  ], [resources.data, apps.data, vps.data, signals.data, storages.data]);
   if (document.loading) return <p className="panel-empty" role="status">Carregando apresentação salva…</p>;
   if (document.failed || !document.data) return <ReadError refresh={document.refresh}>Não foi possível carregar a apresentação. Nenhum padrão será salvo sobre ela.</ReadError>;
   return <>{resources.failed && <ReadError refresh={resources.refresh}>Não foi possível ler os recursos para os blocos individuais. As referências existentes foram preservadas.</ReadError>}<PresentationForm key={`${document.data.revision}:${reloadKey}`} saved={document.data} resources={resources.data ?? []} hosts={hosts.data?.data ?? []} availabilityCatalog={availabilityCatalog} reload={reload} /></>;

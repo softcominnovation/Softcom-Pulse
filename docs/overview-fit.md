@@ -1,5 +1,13 @@
 # Encaixe da rota principal
 
+## Composições com Storage
+
+`storage_summary` usa `storageLayout` e `StorageComposition`, compartilhados pela raiz e pela prévia. O caminho anterior permanece sem Storage habilitado. Indicadores têm faixa própria; demais blocos entram em fileiras de 12 colunas, por UUID, ordem e larguras. Repetições não disputam áreas CSS por tipo.
+
+Em split, uma única Disponibilidade e um único Problemas conservam o par superior 1,25:1. Os demais painéis entram na grade. Sem dupla única, todos entram por UUID. Overview padrão e wall usam o mesmo empacotamento e as larguras efetivas existentes.
+
+Em >=1201×740, as fileiras dividem a altura restante. Se o mínimo de leitura não couber, só a composição rola; todos os painéis continuam alcançáveis e a legenda da raiz fica visível. A prévia anuncia esse fallback. Abaixo do recorte, a página rola normalmente. Nenhuma composição salva, escala ou fonte é alterada para produzir encaixe. O painel Storage conserva cabeçalho/rodapé e rola corpo/volumes. Consulte [Storage](storage.md). As seções seguintes descrevem também o caminho legado, preservado sem Storage.
+
 Os componentes novos seguem o [Design system Kobra](design-system.md) e os [Sons da interface](interface-sounds.md). Este documento governa distribuição e rolagem; a paleta e as primitivas atuais vêm do guia de design.
 
 A rota `/` é a tela de monitoramento. Em resolução grande ela cabe na área visível: cabeçalho, navegação, blocos e legenda aparecem juntos, sem rolagem da página. O que passar da altura do painel rola dentro dele. Em tela estreita ou baixa, a página pode rolar. Detalhe, infraestrutura, ASGARD, serviços e administração não herdam esta trava.

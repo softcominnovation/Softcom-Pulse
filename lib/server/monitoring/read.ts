@@ -22,6 +22,7 @@ import { hostMetricsPreference, mergeCardCpuRam, resolveCardCpuRam } from "../..
 import { listProbeCardsByIds, readProbeOverview } from "../probe/overview.ts";
 import { listHighlightedStandaloneVps, listStandaloneVpsByIds } from "../vps/repository.ts";
 import { listHighlightedSignalTargets, listSignalFlowTarget, listSignalTargetsByIds } from "../signal/repository.ts";
+import { readStorages } from "./storages.ts";
 
 export function linkedMachineName(hostKey: string, hosts: Host[]) {
   const vm = hosts.flatMap(host => host.vms).find(item => item.linuxHostKey === hostKey);
@@ -108,6 +109,7 @@ export async function readOverview(screenId?: string) {
   const visibleBlocks = screen.blocks.filter(block => block.enabled);
   const includeHighlights = visibleBlocks.some(block => block.type === "highlighted_resources");
   const customRefs = collectCustomAvailabilityRefs(visibleBlocks);
+  const needsStorage = visibleBlocks.some(block => block.type === "storage_summary" || (block.type === "highlighted_resources" && effectiveOptions({ ...block, type: "highlighted_resources" }).selection === "default")) || customRefs.some(ref => ref.kind === "storage");
   const customResourceIds = new Set(customRefs.filter(ref => ref.kind === "resource").map(ref => ref.id));
   const customProbeIds = customRefs.filter(ref => ref.kind === "external_service").map(ref => ref.id);
   const customVpsIds = customRefs.filter(ref => ref.kind === "standalone_vps").map(ref => ref.id);
@@ -120,7 +122,10 @@ export async function readOverview(screenId?: string) {
     return config.dashboardEnabled && (includeHighlights || references.has(config.id));
   });
   const containerHosts = [...new Set(configs.filter(config => config.resourceType === "docker_container").map(config => config.zabbixHostKey))];
-  const current = await readInventory(visibleBlocks.some(block => block.type === "container_inventory" || block.type === "problems") ? "all" : containerHosts, [snapshotKeys.overview, snapshotKeys.problems]);
+  const current = await readInventory(visibleBlocks.some(block => block.type === "container_inventory" || block.type === "problems") ? "all" : containerHosts, [snapshotKeys.overview, snapshotKeys.problems, ...(needsStorage ? [snapshotKeys.storages] : [])]);
+  const storage = needsStorage ? await readStorages({ batch: current.batch }).catch(() => null) : null;
+  const storageItems = storage ? [...storage.data.items, ...storage.data.orphans] : [];
+  const storages = new Map(storageItems.flatMap(item => item.configId ? [[item.configId, item] as const] : []));
   const base = freshness(snapshotData(current.batch, snapshotKeys.overview, overviewSnapshotSchema, {
     summary: emptySummary(), asgardSummary: { host: null, vms: [] },
   }), readResult(null, current.batch, current.keys).stale);
@@ -174,8 +179,8 @@ export async function readOverview(screenId?: string) {
       const options = effectiveOptions({ ...block, type: "highlighted_resources" });
       const panel: AvailabilityPanelData = {
         cards: options.selection === "custom"
-          ? buildCustomAvailabilityCards(options.cards, { resources: resourcePool, probes: probePool, vps: vpsPool, signalCards: signalPool })
-          : buildDefaultAvailabilityCards(highlightedResources, probe.externalServices, standaloneVps, signalCards, options),
+          ? buildCustomAvailabilityCards(options.cards, { resources: resourcePool, probes: probePool, vps: vpsPool, signalCards: signalPool, storages })
+          : buildDefaultAvailabilityCards(highlightedResources, probe.externalServices, standaloneVps, signalCards, options, storageItems),
       };
       data = panel;
       keys = configs.flatMap(resourceKeys);
@@ -188,6 +193,10 @@ export async function readOverview(screenId?: string) {
     if (probeBlock) data = probe.uptimeBoard;
     const signalBlock = block.type === "signal_flow";
     if (signalBlock) data = { target: signalFlow };
+    if (block.type === "storage_summary") {
+      const target = storages.get(effectiveOptions({ ...block, type: "storage_summary" }).storageConfigId) ?? null;
+      return { blockId: block.id, type: block.type, options: effectiveOptions(block), data: { target }, availability: target ? "ready" : "no_data", stale: target?.stale ?? true, lastUpdated: storage?.lastUpdated ?? null };
+    }
     const result = readResult(data, current.batch, keys);
     const checkedAt = probe.uptimeBoard.reduce<string | null>((latest, item) => item.checkedAt && (!latest || item.checkedAt > latest) ? item.checkedAt : latest, null);
     const signalCheckedAt = signalFlow?.checkedAt ?? null;

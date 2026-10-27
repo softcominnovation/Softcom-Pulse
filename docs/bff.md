@@ -1,5 +1,11 @@
 # Contratos do BFF e configuração
 
+## Extensão Storage
+
+`GET /api/monitoring/storages` devolve `ReadResult<StorageInventory>` com items/órfãos e estado do ramo. `GET .../:storageKey` devolve o painel da máquina. Ambos leem Redis/preferências em lote, sem Zabbix. `GET /api/settings/storages` e `PUT .../:storageKey` são exclusivos de editor; PUT usa expectedRevision (0 na criação), deriva identidade no servidor e valida novas seleções pela descoberta atual. Defaults/reset conservam UUID. Contratos e falhas em [Storage](storage.md).
+
+O overview resolve `storage_summary` com `{target:StorageView|null}` e opções `{storageConfigId:UUID, visibleRows:1..10}`. Minicards usam `kind:storage` e UUID da preferência. Settings de apresentação validam referências Storage e mantêm versão 2 e os limites existentes. `/monitoring/services` não muda seu contrato. GETs públicos Storage e overview sanitizam mounts, interfaces, notas e identificadores da origem, sob o gate de Host existente; settings/escrita permanecem fechados.
+
 O browser chama somente `/api` no Pulse, usando o cliente axios autenticado. As rotas abaixo exigem `Authorization: Bearer <access cifrado>` e validam a sessão no servidor antes de acessar as dependências. Qualquer colaborador autenticado pode utilizá-las. Não há permissão adicional nem tabela de usuários. [Contrato de autenticação](authentication.md).
 
 Todas as respostas usam `Cache-Control: no-store`. `/api/health` permanece público. O Collector publica gerações completas no Redis; as leituras correntes usam esse cache. Somente históricos solicitados ao BFF consultam o Zabbix. Mapeamento e operação: [integração Zabbix](zabbix.md). Não há cliente Proxmox direto.

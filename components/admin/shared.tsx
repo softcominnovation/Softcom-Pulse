@@ -9,6 +9,11 @@ import { Button } from "@/components/ui/button";
 export function errorText(error: unknown) {
   const code = isAxiosError(error) ? error.response?.data?.error?.code : "";
   const messages: Record<string, string> = {
+    storage_inventory_unavailable: "Aguarde uma descoberta atual de Storage para criar a configuração ou alterar os volumes e a interface.",
+    storage_identity_unverified: "A identidade do Storage não pôde ser comprovada. Atualize a descoberta.",
+    storage_selection_unverified: "Um volume ou interface não pertence à descoberta atual deste Storage. Seu rascunho foi preservado.",
+    storage_not_found: "Este Storage não está na descoberta atual. Configurações existentes foram preservadas.",
+    invalid_storage_reference: "Uma referência de Storage não está cadastrada. Configure a máquina em Serviços e revise o bloco.",
     vm_inventory_unavailable: "Aguarde uma descoberta atual para cadastrar o nome desta VM.",
     vm_identity_unverified: "Não foi possível comprovar a identidade da VM.",
     vm_not_found: "A VM não está na descoberta operacional atual.",

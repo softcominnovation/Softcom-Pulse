@@ -1,0 +1,8 @@
+.service-title { display:flex; align-items:center; flex-wrap:wrap; gap:calc(8px * var(--dashboard-scale,1)); min-width:0; }
+.service-title > :is(h2,h3) { min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.service-title-status { display:inline-flex; align-items:center; flex:none; max-width:100%; gap:calc(8px * var(--dashboard-scale,1)); }
+.service-title-separator { display:inline-block; flex:none; width:3px; height:3px; border-radius:50%; background:var(--pulse-text); }
+.service-title-status > span:not(.service-title-separator) { min-width:0; }
+.service-title-status small { display:block; font-size:calc(10px * var(--dashboard-scale,1)); color:var(--pulse-muted); max-width:min(260px,100%); overflow-wrap:anywhere; }
+.resource-card .service-title { margin:calc(8px * var(--dashboard-scale,1)) 0 calc(3px * var(--dashboard-scale,1)); }
+.resource-card .service-title h3 { margin:0; }

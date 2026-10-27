@@ -1,6 +1,6 @@
 import { defaultDashboardBlocks, effectiveOptions, type PresentationBlock } from "../config/presentation.ts";
 
-const overviewPairTypes = new Set(["asgard_summary", "problems", "signal_flow"]);
+const overviewPairTypes = new Set(["asgard_summary", "problems", "signal_flow", "storage_summary"]);
 
 export function isBalancedComposition(blocks: PresentationBlock[]) {
   const visible = blocks.filter(block => block.enabled);
@@ -39,4 +39,29 @@ export function displayBlockWidth(block: PresentationBlock, enabled: Presentatio
     return block.width;
   }
   return pair.length === 2 ? "wide" : block.width;
+}
+
+/** Storage compositions are packed by block identity; duplicate types never share an area. */
+export function storageLayout(blocks: PresentationBlock[], split: boolean, wall = false) {
+  const enabled = blocks.filter(block => block.enabled);
+  const summaries = enabled.filter(block => block.type === "summary");
+  let panels = enabled.filter(block => block.type !== "summary");
+  const availability = panels.filter(block => block.type === "highlighted_resources"), problems = panels.filter(block => block.type === "problems");
+  type Row = { paired: boolean; minimum: number; blocks: { block: PresentationBlock; span: number }[] };
+  const minimum = (block: PresentationBlock) => block.type === "highlighted_resources" ? 90 + 120 * effectiveOptions({ ...block, type: "highlighted_resources" }).visibleRows : 210;
+  const rows: Row[] = [];
+  if (split && availability.length === 1 && problems.length === 1) {
+    const top = [availability[0], problems[0]];
+    rows.push({ paired: true, minimum: Math.max(...top.map(minimum)), blocks: top.map(block => ({ block, span: 6 })) });
+    panels = panels.filter(block => !top.some(item => item.id === block.id));
+  }
+  let occupied = 12;
+  for (const block of panels) {
+    const width = displayBlockWidth(block, panels, { split: false, wall });
+    const span = width === "full" ? 12 : width === "wide" ? 6 : 4;
+    if (occupied + span > 12) { rows.push({ paired: false, minimum: 0, blocks: [] }); occupied = 0; }
+    const row = rows.at(-1)!;
+    row.blocks.push({ block, span }); row.minimum = Math.max(row.minimum, minimum(block)); occupied += span;
+  }
+  return { summaries, rows };
 }

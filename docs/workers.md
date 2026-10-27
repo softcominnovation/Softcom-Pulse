@@ -1,5 +1,7 @@
 # Arquitetura da aplicação e dos workers
 
+Storage é um ramo do **Collector Zabbix existente**, com descoberta por tag de host, coleta em lote, prazo próprio dentro do ciclo e publicação na geração Redis principal. Falha isolada mantém a última evidência como antiga sem invalidar ASGARD. Não há worker/processo adicional para Storage. Consulte [Monitoramento de Storage](storage.md).
+
 ## Visão geral
 
 O **Pulse** é uma aplicação **Next.js** composta por:

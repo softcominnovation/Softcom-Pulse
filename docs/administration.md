@@ -1,5 +1,11 @@
 # Administração da visualização
 
+## Preferências de Storage
+
+Editar em **Serviços → Storages**, a partir da descoberta exata role=storage. Configure nome, descrição, destaque/criticidade/ordem, volumes e interface opcional. Múltiplos volumes exigem confirmação de independência. Não há cadastro livre ou escrita de tag/hostid. Órfãos permanecem editáveis em área separada. Criação/novas seleções exigem descoberta atual; texto/apresentação/reset existentes não dependem de Redis. Revisão/409 preserva rascunho; reset/recarregar exigem confirmação.
+
+Em Configurações, adicione **Storage · capacidade e recursos**, escolha UUID da preferência e janela de volumes (1–10, padrão 3). Catálogo custom de Disponibilidade também inclui Storage sem destaque. Duplicar cria novo UUID de bloco; mover/remover não apaga preferência. Prévia usa o painel real sem salvar e avisa quando a composição precisa de rolagem. Detalhes em [Storage](storage.md).
+
 Novas telas e extensões dos editores seguem o [Design system Kobra](design-system.md) e o contrato de [Sons da interface](interface-sounds.md). Reutilizar componentes locais, tokens de tema e os estilos administrativos existentes; os controles de tema/mute/volume são preferências do browser e não integram a apresentação compartilhada no PostgreSQL.
 
 As rotas `/admin/recursos`, `/admin/aplicacoes`, `/admin/vps` e `/admin/configuracoes` usam a sessão corporativa existente. Em Recursos, o bloco **Escopo Zabbix** (associar Agents) aparece só para editor (`PULSE_EDITOR_EMAILS`). Configurações e escritas de Aplicações/VPS/Signal exigem editor. Os links ficam na navegação normal e são ocultos no modo TV. Recursos não tem espelho em `/monitor`: some do menu público e `/monitor/recursos` redireciona para login. Não há cadastro de usuários, permissão nova nem ação operacional no Zabbix/Proxmox.

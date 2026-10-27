@@ -6,15 +6,15 @@ import { BffError } from "../bff.ts";
 import { cacheOperation } from "../cache.ts";
 
 export const snapshotKeys = {
-  overview: "pulse:snapshot:overview", hosts: "pulse:inventory:hosts", problems: "pulse:problems:current", sync: "pulse:sync:last",
+  overview: "pulse:snapshot:overview", hosts: "pulse:inventory:hosts", storages: "pulse:inventory:storages", problems: "pulse:problems:current", sync: "pulse:sync:last",
   bindings: "pulse:source:bindings",
   containers: (hostKey: string) => "pulse:inventory:containers:" + encodeURIComponent(hostKey),
   host: (hostKey: string) => "pulse:snapshot:host:" + encodeURIComponent(hostKey),
   service: (id: string) => "pulse:snapshot:service:" + id,
 };
-const keySchema = z.string().max(2048).refine(key => /^pulse:(?:snapshot:(?:overview|host:.+|service:.+)|inventory:(?:hosts|containers:.+)|problems:current|source:bindings)$/.test(key));
+const keySchema = z.string().max(2048).refine(key => /^pulse:(?:snapshot:(?:overview|host:.+|service:.+)|inventory:(?:hosts|storages|containers:.+)|problems:current|source:bindings)$/.test(key));
 const envelopeSchema = z.object({ data: z.unknown(), updatedAt: isoSchema, source: z.literal("zabbix"), generation: z.uuid() });
-const syncSchema = z.object({ status: z.enum(["ok", "failed"]), lastSuccessfulAt: isoSchema.nullable(), lastAttemptAt: isoSchema.optional(), error: z.string().max(80).nullable().optional(), keys: z.array(keySchema).max(50000) });
+const syncSchema = z.object({ status: z.enum(["ok", "failed"]), lastSuccessfulAt: isoSchema.nullable(), lastAttemptAt: isoSchema.optional(), error: z.string().max(80).nullable().optional(), keys: z.array(keySchema).max(50000), extensionKeys: z.array(z.string().max(2048)).max(50000).optional() }).transform(sync => ({ ...sync, keys: [...new Set([...sync.keys, ...(sync.extensionKeys ?? []).filter(key => keySchema.safeParse(key).success)])] }));
 export type SnapshotEnvelope = z.infer<typeof envelopeSchema>;
 export type SnapshotBatch = { snapshots: Map<string, SnapshotEnvelope | null>; sync: z.infer<typeof syncSchema> | null; generation: string | null };
 
@@ -62,7 +62,10 @@ export async function publishSnapshots(entries: Record<string, unknown>, updated
     await cacheOperation(client => {
       const tx = client.multi();
       for (const [key, value] of Object.entries(entries)) tx.set(key, wrap(value), { EX: ttl });
-      tx.set(snapshotKeys.sync, wrap({ status: "ok", lastSuccessfulAt: updatedAt, lastAttemptAt: isoSchema.parse(lastAttemptAt), error: null, keys }), { EX: ttl });
+      // Older Web versions validate every sync.keys entry against their original
+      // allowlist. Publish extensions atomically but advertise them separately so
+      // those readers keep consuming the unchanged primary generation.
+      tx.set(snapshotKeys.sync, wrap({ status: "ok", lastSuccessfulAt: updatedAt, lastAttemptAt: isoSchema.parse(lastAttemptAt), error: null, keys: keys.filter(key => key !== snapshotKeys.storages), extensionKeys: keys.filter(key => key === snapshotKeys.storages) }), { EX: ttl });
       return tx.exec();
     });
   } catch { throw new BffError(503, "cache_unavailable"); }

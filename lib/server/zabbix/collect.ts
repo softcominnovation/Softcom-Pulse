@@ -12,6 +12,10 @@ import { overviewSnapshotSchema } from "../../monitoring/contracts.ts";
 import { snapshotKeys } from "../cache/snapshots.ts";
 import { discoverAgentCandidates, type AgentDiscovery } from "./discovery.ts";
 import { BffError } from "../bff.ts";
+import { collectStorage, needsStorageValue, isStorageHost } from "./storage.ts";
+import { readSnapshotBatch, snapshotData } from "../cache/snapshots.ts";
+import { storageSnapshotSchema, type StorageSnapshot } from "../../storage/contracts.ts";
+import { getPrisma } from "../prisma.ts";
 
 const hostOutput = ["hostid", "host", "name", "status"];
 const itemOutput = ["itemid", "hostid", "name", "key_", "type", "value_type", "units", "delay", "status", "state", "lastclock", "master_itemid"];
@@ -39,7 +43,10 @@ export async function collectSnapshots(options: {
   now?: number;
   /** When false, skips the light discovery host.get (Collector throttles via PULSE_DISCOVERY_EVERY_N_CYCLES). Default true. */
   discover?: boolean;
+  storageHostIds?: string[];
+  previousStorage?: StorageSnapshot | null;
 } = {}) {
+  const startedAt = Date.now();
   const rpc = options.rpc ?? zabbixCall, signal = options.signal;
   const runDiscovery = options.discover !== false;
   let settings = options.scope ?? await readScopeSettings();
@@ -57,7 +64,8 @@ export async function collectSnapshots(options: {
   const metadata = z.array(itemSchema).parse(await rpc("item.get", { hostids, output: itemOutput, selectTags: ["tag", "value"], selectPreprocessing: ["type", "params"], selectValueMap: "extend", selectItemDiscovery: ["status"], limit: 20001 }, signal));
   if (metadata.length > 20000) throw new BffError(503, "monitoring_inventory_too_large");
   assertHypervisor(metadata, scope.hosts.find(h => h.host === scope.asgardHostKey)!.hostid);
-  const selected = metadata.filter(needsValue);
+  const storageHostIds = new Set(rawHosts.filter(isStorageHost).map(host => host.hostid));
+  const selected = metadata.filter(item => needsValue(item) || storageHostIds.has(item.hostid) && needsStorageValue(item));
   const values = z.array(z.object({ itemid: z.string(), lastvalue: z.string(), lastclock: z.string(), state: z.string() })).parse(await rpc("item.get", { itemids: selected.map(i => i.itemid), output: ["itemid", "lastvalue", "lastclock", "state"], limit: 20001 }, signal));
   if (values.length !== selected.length) throw new BffError(503, "zabbix_cycle_incomplete");
   const byId = new Map(values.map(i => [i.itemid, i]));
@@ -88,6 +96,12 @@ export async function collectSnapshots(options: {
   };
   for (const host of inventory.hosts) { entries[snapshotKeys.host(host.hostKey)] = host; entries[snapshotKeys.containers(host.hostKey)] = inventory.containers.filter(c => c.hostKey === host.hostKey); }
   for (const service of highlighted) entries[snapshotKeys.service(service.id)] = { ...service, status: service.resolution };
+  const previousStorage = options.previousStorage !== undefined ? options.previousStorage : options.scope ? null : await readSnapshotBatch([snapshotKeys.storages]).then(batch => snapshotData(batch, snapshotKeys.storages, storageSnapshotSchema.nullable(), null)).catch(() => null);
+  const knownStorageHostIds = options.storageHostIds ?? (options.scope ? [] : await getPrisma().storageConfig.findMany({ select: { zabbixHostId: true }, take: 100 }).then(rows => rows.map(row => row.zabbixHostId)).catch(() => []));
+  // Storage gets a bounded share of the existing 25s cycle. Its own timeout must
+  // leave time to publish successful primary data instead of expiring that cycle.
+  const storageSignal = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(Math.max(1, Math.min(8000, 23000 - (Date.now() - startedAt))))]);
+  entries[snapshotKeys.storages] = await collectStorage({ rpc, hosts: scope.hosts, items, knownHostIds: knownStorageHostIds, previous: previousStorage, now: options.now ?? Date.now(), signal: storageSignal });
   let discovery: AgentDiscovery | null = null;
   if (runDiscovery && settings.scope) {
     try {

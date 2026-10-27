@@ -2,7 +2,7 @@ import { z } from "zod";
 import { availabilityCardRefSchema } from "./availability-card-refs.ts";
 import { hostKeySchema, uuidSchema } from "./resources.ts";
 
-export const blockTypes = ["summary", "highlighted_resources", "problems", "asgard_summary", "resource_card", "host_inventory", "container_inventory", "uptime_list", "signal_flow"] as const;
+export const blockTypes = ["summary", "highlighted_resources", "problems", "asgard_summary", "resource_card", "host_inventory", "container_inventory", "uptime_list", "signal_flow", "storage_summary"] as const;
 export type BlockType = typeof blockTypes[number];
 export const displayScaleOptions = [100, 110, 120, 125] as const;
 export const defaultDisplayScalePercent = 110;
@@ -39,6 +39,7 @@ export const blockOptionsSchemas = {
   container_inventory: z.strictObject({ sortBy: z.enum(["name", "status", "health", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows, hostKeys: z.array(hostKeySchema).max(32).refine(unique).optional() }),
   uptime_list: z.strictObject({ sortBy: z.enum(["name", "uptime", "state"]).default("name"), sortDirection: direction, visibleRows: rows }),
   signal_flow: z.strictObject({ visibleRows: z.number().int().min(3).max(10).default(4) }),
+  storage_summary: z.strictObject({ storageConfigId: uuidSchema, visibleRows: z.number().int().min(1).max(10).default(3) }),
 };
 export type OptionsByType = { [K in BlockType]: z.infer<typeof blockOptionsSchemas[K]> };
 export type BlockOptions = OptionsByType[BlockType];
@@ -55,6 +56,7 @@ export const blockCatalog = {
   container_inventory: { available: true, uiPhase: 7, label: "Containers", options: blockOptionsSchemas.container_inventory },
   uptime_list: { available: true, uiPhase: 2, label: "Uptime das aplicações", options: blockOptionsSchemas.uptime_list },
   signal_flow: { available: true, uiPhase: 2, label: "Signal · fluxo de processamento", options: blockOptionsSchemas.signal_flow },
+  storage_summary: { available: true, uiPhase: 1, label: "Storage · capacidade e recursos", options: blockOptionsSchemas.storage_summary },
 };
 const blockSchema = z.strictObject({
   id: uuidSchema, type: z.enum(blockTypes), enabled: z.boolean(), width: z.enum(["standard", "wide", "full"]),

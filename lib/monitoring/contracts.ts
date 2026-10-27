@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { hostKeySchema, historyRangeSchema, resourceConfigSchema, type ResourceConfig } from "../config/resources.ts";
 import type { BlockType } from "../config/presentation.ts";
+import type { StorageView } from "../storage/contracts.ts";
 
 export const isoSchema = z.iso.datetime({ offset: true });
 const name = z.string().min(1).max(512);
@@ -120,9 +121,11 @@ export type AvailabilityPanelData = {
     | { kind: "external_service"; item: ProbeCard }
     | { kind: "standalone_vps"; item: import("../config/standalone-vps.ts").StandaloneVpsHighlight }
     | { kind: "signal_target"; item: SignalOverviewCard }
+    | { kind: "storage"; item: StorageView }
   >;
 };
-export type OverviewBlock = Omit<ReadResult<Summary | AsgardSummary | ConfiguredResource | ConfiguredResource[] | Problem[] | Host[] | Container[] | ProbeCard[] | SignalFlowBlockData | AvailabilityPanelData | null>, "refreshAfterMs"> & { blockId: string; type: BlockType; options?: Record<string, unknown> };
+export type StorageBlockData = { target: StorageView | null };
+export type OverviewBlock = Omit<ReadResult<Summary | AsgardSummary | ConfiguredResource | ConfiguredResource[] | Problem[] | Host[] | Container[] | ProbeCard[] | SignalFlowBlockData | StorageBlockData | AvailabilityPanelData | null>, "refreshAfterMs"> & { blockId: string; type: BlockType; options?: Record<string, unknown> };
 export type Overview = {
   summary: Summary; highlightedResources: ConfiguredResource[]; problems: Problem[]; asgardSummary: AsgardSummary;
   screenId: string; presentationRevision: number; blocks: OverviewBlock[];

@@ -18,6 +18,7 @@ import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, Dia
 import { Check, Field, errorText, useMutation } from "@/components/admin/shared";
 import { signalStateColor, signalStateLabel, signalStateTone, signalWorkersLabel } from "@/lib/signal/labels";
 import { useCanEdit } from "@/store/auth.store";
+import { ServiceTitle } from "@/components/dashboard/service-title";
 import "./signal-services.css";
 
 const linkSchema = z.object({
@@ -175,10 +176,9 @@ export function SignalServicesPanel() {
     <section className="dashboard-panel signal-service-panel" aria-label="Softcom Signal">
       <div className="panel-heading signal-service-heading">
         <div className="signal-service-title">
-          {target
+          <ServiceTitle status={target
             ? <span className={`app-presence tone-${target.enabled ? signalStateTone(target.state) : "unknown"}`}>{target.enabled ? signalStateLabel(target.state) : "Pausado"}</span>
-            : null}
-          <h2>{target?.displayName ?? "Softcom Signal"}</h2>
+            : null}><h2>{target?.displayName ?? "Softcom Signal"}</h2></ServiceTitle>
           <p className="app-monitor-meta">{target?.baseUrl ?? (editor ? "Nenhum alvo cadastrado. Defina SIGNAL_API_BASE_URL ou cadastre pelo formulário." : "Nenhum alvo Softcom Signal cadastrado.")}</p>
           {target && <p className="app-monitor-meta">
             {signalWorkersLabel(target.activeInstances, target.checkedAt)}

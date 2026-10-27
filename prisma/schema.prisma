@@ -165,6 +165,27 @@ model VmTemplateConfig {
   @@map("vm_template_config")
 }
 
+model StorageConfig {
+  id                          String   @id @default(uuid()) @db.Uuid
+  storageKey                  String   @unique @map("storage_key") @db.VarChar(40)
+  zabbixHostId                 String   @unique @map("zabbix_host_id") @db.VarChar(64)
+  originalName                String   @map("original_name") @db.VarChar(512)
+  displayName                 String?  @map("display_name") @db.VarChar(120)
+  description                 String?  @db.VarChar(240)
+  dashboardEnabled            Boolean  @default(false) @map("dashboard_enabled")
+  critical                    Boolean  @default(false)
+  displayOrder                Int      @default(0) @map("display_order")
+  filesystemKeys              Json?    @map("filesystem_keys")
+  independentVolumesConfirmed Boolean  @default(false) @map("independent_volumes_confirmed")
+  networkInterfaceKey         String?  @map("network_interface_key") @db.VarChar(40)
+  revision                    Int      @default(1)
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([displayOrder, id])
+  @@map("storage_config")
+}
+
 model SignalTarget {
   id               String               @id @default(uuid()) @db.Uuid
   displayName      String               @map("display_name") @db.VarChar(120)

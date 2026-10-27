@@ -204,7 +204,7 @@ test("collection uses a fixed number of batches, never fetches raw master values
   const f = zabbixFixture();
   const result = await collectSnapshots({ rpc: f.rpc, scope: f.scope, configs: [], now: f.now });
   assert.deepEqual(result.counts, { hosts: 2, vms: 2, containers: 1, problems: 1 });
-  assert.deepEqual(f.calls.map(c => c.method), ["host.get", "item.get", "item.get", "problem.get", "trigger.get", "host.get"]);
+  assert.deepEqual(f.calls.map(c => c.method), ["host.get", "item.get", "item.get", "problem.get", "trigger.get", "host.get", "host.get"]);
   assert.equal(result.discovery?.candidates.length, 0);
   const values = f.calls[2].params.itemids;
   assert.ok(!f.items.filter(i => i.lastvalue.startsWith("DO_NOT_")).some(i => values.includes(i.itemid)));
@@ -244,7 +244,7 @@ test("collectSnapshots skips discovery host.get when discover is false", async (
   const f = zabbixFixture();
   const skipped = await collectSnapshots({ rpc: f.rpc, scope: f.scope, configs: [], now: f.now, discover: false });
   assert.equal(skipped.discovery, null);
-  assert.deepEqual(f.calls.map(c => c.method), ["host.get", "item.get", "item.get", "problem.get", "trigger.get"]);
+  assert.deepEqual(f.calls.map(c => c.method), ["host.get", "item.get", "item.get", "problem.get", "trigger.get", "host.get"]);
 });
 test("long numeric history uses trends while health and state use typed history batches", async () => {
   const f = zabbixFixture(), n = normalize(f), c = n.containers[0];

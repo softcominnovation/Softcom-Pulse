@@ -1,5 +1,9 @@
 # Coleta e integração Zabbix
 
+## Storage por tag de host
+
+O Collector existente descobre `host.tags.some(tag => tag.tag === "role" && tag.value === "storage")` com host.get/selectTags e filtro exato, inclusive fora do escopo manual. Reaproveita itens já coletados; busca os restantes em lote e publica `pulse:inventory:storages` na mesma geração. Falha isolada conserva evidências antigas com status failed. Identidade vem de hostid, sem regras por nome/IP/VMID. Não muda papel linux/hypervisor, escopo, KPIs ou o worker. Capacidade/freshness/limites e instruções de configuração em [Storage](storage.md).
+
 O Collector lê o Zabbix Server e publica snapshots descartáveis no Redis. O BFF consulta esses snapshots para os dados atuais e consulta history/trends somente quando recebe um pedido de histórico. PostgreSQL contém escolhas humanas; não contém inventário, métricas ou histórico. O browser não recebe credencial, endereço da API, hostid ou itemid. Contratos públicos: [BFF](bff.md). Variáveis e stacks: [ambiente](environment.md).
 
 ## Iniciar e configurar

@@ -14,6 +14,7 @@ Antes de criar ou alterar telas, ler o [Design system Kobra do Pulse](design-sys
 | [Administração](administration.md) | Configuração, edição, revisão e prévias |
 | [Infraestrutura](infrastructure.md) | Navegação e dados de host, VM e histórico |
 | [Templates](templates.md) | Identidade, capacidades e preferências de templates |
+| [Storages](storage.md) | Classificação por tag, capacidade, configuração, cards e leitura pública |
 
 ## Dados e operação
 

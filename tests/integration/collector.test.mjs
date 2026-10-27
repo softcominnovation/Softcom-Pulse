@@ -16,6 +16,13 @@ import { createResource, updateResource, deleteResource, listResources } from ".
 import { readContainers, readOverview, readHost } from "../../lib/server/monitoring/read.ts";
 import { overviewGet, hostHistoryGet } from "../../lib/server/monitoring/handlers.ts";
 import { zabbixFixture, addProvisionedCpuItems, addClusterStatusHeartbeat } from "../fixtures/zabbix.mjs";
+import { storageFixture } from "../fixtures/storage.mjs";
+import { storageKey } from "../../lib/server/zabbix/storage.ts";
+import { saveStorageConfig } from "../../lib/server/config/storages.ts";
+import { readStorages } from "../../lib/server/monitoring/storages.ts";
+import { getPresentation, savePresentation } from "../../lib/server/config/repository.ts";
+import { storagesGet, storageGet, storageSettingsGet, storageSettingsPut } from "../../lib/server/monitoring/handlers.ts";
+import { publicGet } from "../../lib/server/monitoring/public-handlers.ts";
 
 let admin, cache, created = false, owned = false, token;
 const databaseName = "pulse_phase04_test_" + process.pid + "_" + Date.now(), leaseKey = "pulse:test:phase04:lease", lease = randomUUID();
@@ -139,5 +146,66 @@ test("disabled or deleted configuration is immediately excluded, and a disappear
   await deleteResource(config.id); assert.equal((await readOverview()).data.highlightedResources.length, 0);
   const next = (await collectSnapshots({ rpc: absent.rpc })).entries; await publish(next);
   assert.equal((await readSnapshotBatch([keys.service(config.id)])).snapshots.get(keys.service(config.id)), null);
-  const tables = await getDatabase().query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"); assert.deepEqual(tables.rows.map(r => r.table_name), ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "pulse_settings", "signal_infra_link", "signal_monitor_sample", "signal_target", "standalone_vps", "vm_display_config", "vm_template_config", "vps_monitor_sample", "vps_stack"]);
+  const tables = await getDatabase().query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"); assert.deepEqual(tables.rows.map(r => r.table_name), ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "pulse_settings", "signal_infra_link", "signal_monitor_sample", "signal_target", "standalone_vps", "storage_config", "vm_display_config", "vm_template_config", "vps_monitor_sample", "vps_stack"]);
+});
+
+test("Storage migration, revisioned preferences, isolated snapshots and authenticated/public BFF agree", async () => {
+  const f = storageFixture(), key = storageKey(f.host.hostid);
+  const previousEditors = process.env.PULSE_EDITOR_EMAILS, previousHosts = process.env.PULSE_PUBLIC_HOSTS;
+  process.env.PULSE_EDITOR_EMAILS = "storage-editor@example.test"; process.env.PULSE_PUBLIC_HOSTS = "localhost";
+  const editorToken = sealEnvelope({ type: "access", token: "fixture-only", user: { id: 77, email: "storage-editor@example.test" }, sessionId: randomUUID(), expiresAt: Date.now() + 600000 });
+  const req = (path, body, auth = editorToken) => new Request(`http://localhost/api/${path}`, { method: body ? "PUT" : "GET", headers: { Host: "localhost", ...(auth ? { Authorization: `Bearer ${auth}` } : {}), ...(body ? { "Content-Type": "application/json" } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  const context = { params: Promise.resolve({ storageKey: key }) };
+  try {
+    const result = await collectSnapshots({ rpc: f.rpc }); await publish(result.entries);
+    const advertised = JSON.parse(await cache.get(keys.sync)).data;
+    assert.equal(advertised.keys.includes(keys.storages), false);
+    assert.deepEqual(advertised.extensionKeys, [keys.storages]);
+    // The old Web allowlist sees only its original keys; new Web resolves the
+    // extension in the same generation without changing primary DTOs.
+    assert.ok(advertised.keys.every(key => /^pulse:(?:snapshot:(?:overview|host:.+|service:.+)|inventory:(?:hosts|containers:.+)|problems:current|source:bindings)$/.test(key)));
+    const generation = await readSnapshotBatch([keys.hosts, keys.storages]);
+    assert.equal(generation.snapshots.get(keys.hosts).generation, generation.snapshots.get(keys.storages).generation);
+    const scopeBefore = await getPrisma().pulseSetting.findUnique({ where: { key: "monitoringScope" } });
+    let list = await readStorages(); assert.equal(list.data.items.length, 1); assert.equal(list.data.items[0].configId, null);
+    assert.equal((await storagesGet(req("monitoring/storages", null, null))).status, 401);
+    assert.equal((await storageSettingsGet(req("settings/storages", null, token))).status, 403);
+    assert.equal((await storageSettingsPut(req(`settings/storages/${key}`, { expectedRevision: 0 }, token), context)).status, 403);
+    const concurrent = await Promise.all([saveStorageConfig(key, { expectedRevision: 0, displayName: "Archive One", dashboardEnabled: true }), saveStorageConfig(key, { expectedRevision: 0, displayName: "Concurrent" })].map(promise => promise.then(value => ({ value }), error => ({ error }))));
+    assert.equal(concurrent.filter(result => result.value).length, 1); assert.equal(concurrent.find(result => result.error).error.status, 409);
+    const config = concurrent.find(result => result.value).value;
+    assert.equal(config.zabbixHostId, "77"); assert.equal(config.revision, 1);
+    list = await readStorages(); assert.equal(list.data.items[0].configId, config.id);
+    const volumes = list.data.items[0].volumes;
+    const invalid = await storageSettingsPut(req(`settings/storages/${key}`, { expectedRevision: 1, filesystemKeys: volumes.map(item => item.key) }), context); assert.equal(invalid.status, 400);
+    const updated = await saveStorageConfig(key, { expectedRevision: 1, displayName: "Archive One", dashboardEnabled: true, filesystemKeys: volumes.map(item => item.key), independentVolumesConfirmed: true }); assert.equal(updated.revision, 2);
+    const p = (await getPresentation()).data, { revision, ...settings } = p;
+    settings.schemaVersion = 2; settings.screens[0].blocks.push({ id: randomUUID(), type: "storage_summary", enabled: true, width: "wide", options: { storageConfigId: config.id, visibleRows: 3 } });
+    await savePresentation({ expectedRevision: revision, settings });
+    const overview = await readOverview(); assert.equal(overview.data.blocks.find(block => block.type === "storage_summary").data.target.displayName, "Archive One");
+    const pubReq = path => new Request(`http://localhost/api/public/${path}`, { headers: { Host: "localhost" } });
+    for (const path of ["monitoring/storages", `monitoring/storages/${key}`, "dashboard/overview"]) {
+      const response = await publicGet(pubReq(path), path.split("/")); assert.equal(response.status, 200);
+      const body = await response.json();
+      const serialized = JSON.stringify(path === "dashboard/overview" ? body.data.blocks.filter(block => block.type === "storage_summary" || block.type === "highlighted_resources") : body);
+      assert.ok(!serialized.includes("hostid")); assert.ok(!serialized.includes("zabbixHostId")); assert.ok(!serialized.includes('"name":"/data"')); assert.ok(!serialized.includes('"name":"eth0"')); assert.ok(!serialized.includes("role"));
+    }
+    assert.equal((await publicGet(pubReq("settings/storages"), ["settings", "storages"])).status, 404);
+    assert.equal((await publicGet(new Request("http://forbidden/api/public/monitoring/storages", { headers: { Host: "forbidden" } }), ["monitoring", "storages"])).status, 403);
+    assert.equal((await storageGet(req(`monitoring/storages/${key}`), context)).status, 200);
+    const broken = await collectSnapshots({ rpc: async (method, params) => { if (method === "host.get" && params.tags) throw new Error("private origin failure"); return f.rpc(method, params); } });
+    await publish(broken.entries);
+    assert.equal((await readStorages()).data.status, "failed"); assert.equal((await readStorages()).data.items[0].stale, true);
+    const unaffected = await readOverview(); assert.equal(unaffected.stale, false); assert.equal(unaffected.data.blocks.find(block => block.type === "asgard_summary").stale, false);
+    await assert.rejects(saveStorageConfig(key, { expectedRevision: 2, networkInterfaceKey: list.data.items[0].interfaces[0].key }), error => error.code === "storage_inventory_unavailable");
+    f.host.tags = [];
+    await publish((await collectSnapshots({ rpc: f.rpc })).entries);
+    assert.equal((await readStorages()).data.orphans[0].resolution, "tag_missing");
+    const reset = await saveStorageConfig(key, { expectedRevision: 2 }); assert.equal(reset.id, config.id); assert.equal(reset.revision, 3);
+    const scopeAfter = await getPrisma().pulseSetting.findUnique({ where: { key: "monitoringScope" } }); assert.deepEqual(scopeAfter.value, scopeBefore.value);
+    const rows = await getDatabase().query("SELECT column_name FROM information_schema.columns WHERE table_name='storage_config'"); assert.ok(!rows.rows.some(row => /metric|availability|cpu|memory|tags/.test(row.column_name)));
+  } finally {
+    if (previousEditors === undefined) delete process.env.PULSE_EDITOR_EMAILS; else process.env.PULSE_EDITOR_EMAILS = previousEditors;
+    if (previousHosts === undefined) delete process.env.PULSE_PUBLIC_HOSTS; else process.env.PULSE_PUBLIC_HOSTS = previousHosts;
+  }
 });

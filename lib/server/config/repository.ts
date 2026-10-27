@@ -9,6 +9,7 @@ import { getPrisma } from "../prisma.ts";
 import { validateSelection } from "../monitoring/inventory.ts";
 import { monitoringScopeSchema } from "../zabbix/scope.ts";
 import type { ResourceContext } from "../../config/resource-context.ts";
+import { collectCustomAvailabilityRefs } from "../../dashboard/availability-cards.ts";
 
 const PRESENTATION_KEY = "dashboardPresentation";
 type Transaction = Prisma.TransactionClient;
@@ -65,6 +66,11 @@ export async function savePresentation(body: unknown) {
       if (!scope.success || hostKeys.some(key => !scope.data.hostKeys.includes(key))) throw new BffError(400, "invalid_host_reference");
     }
     if (blocks.some(block => !blockCatalog[block.type].available)) throw new BffError(400, "block_unavailable");
+    const storageIds = [...new Set([
+      ...blocks.flatMap(block => block.type === "storage_summary" ? [effectiveOptions({ ...block, type: "storage_summary" }).storageConfigId] : []),
+      ...collectCustomAvailabilityRefs(blocks).filter(ref => ref.kind === "storage").map(ref => ref.id),
+    ])];
+    if (storageIds.length && await tx.storageConfig.count({ where: { id: { in: storageIds } } }) !== storageIds.length) throw new BffError(400, "invalid_storage_reference");
     const ids = [...new Set(blocks.flatMap(block => block.resourceConfigId ? [block.resourceConfigId] : []))];
     const valid = await tx.monitoredResourceConfig.count({ where: { id: { in: ids }, enabled: true, dashboardEnabled: true } });
     if (valid !== ids.length) throw new BffError(400, "invalid_resource_reference");

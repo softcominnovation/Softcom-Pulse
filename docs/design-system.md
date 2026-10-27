@@ -179,6 +179,8 @@ O login contém números ilustrativos estáticos. Também há caminhos de demons
 
 Nos painéis de um serviço/host individual, usar `ServiceTitle` (`components/dashboard/service-title.tsx`) para compor **nome • disponibilidade**. Ele mantém o título semântico, separador neutro (branco no tema escuro) decorativo e espaço igual de 8px escaláveis dos dois lados. A pílula vem do domínio, conservando estado/freshness e preferências de exibição. ASGARD, Signal, Storage, recursos individuais e cards de hosts compartilham esse cabeçalho na raiz, prévia e páginas que os reutilizam. Em largura reduzida pode reorganizar sem cortar a informação. Painéis agregados/tabelas conservam os estados por recurso; minicards mantêm sua composição compacta própria.
 
+O ASGARD compacto reserva uma linha para nome/disponibilidade quando seu contêiner tem pelo menos 480px: o nome cede largura e trunca, preservando a pílula, o link e o espaço da tabela. Não aplicar essa restrição globalmente aos cabeçalhos menores; seguir o [contrato de encaixe](overview-fit.md).
+
 Preservar a grade de 12 colunas: standard/wide/full correspondem a 4/6/12. A composição e as opções vêm da apresentação salva. O modo split tem regra específica para Disponibilidade/Problemas/ASGARD/Signal. Não injetar blocos ou reordenar preferências ao implementar outro componente.
 
 O encaixe de `overview` em >=1201×740 usa flex/grid com `min-height: 0` e rolagem interna de listas; telas menores ou baixas usam rolagem normal. Detalhes/administração não recebem a trava da raiz. Os minicards preservam altura de 120px; largura usual até 230px, com exceção existente do split que distribui quatro colunas elásticas. Contratos completos em [Encaixe](overview-fit.md) e [Minicards](availability-cards.md).

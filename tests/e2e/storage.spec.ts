@@ -4,6 +4,7 @@ import { signIn } from "../fixtures/infrastructure";
 import { id, overview } from "../fixtures/dashboard";
 import { effectiveOptions } from "../../lib/config/presentation";
 import { publicStorage } from "../../lib/storage/presentation";
+import { enterNativeFullscreen, exitNativeFullscreen } from "../fixtures/fullscreen";
 
 test("Storage Services edits real preferences, keeps drafts on conflict/poll and confirms reset", async ({ page }) => {
   const state = await storageUiFixture(page);
@@ -74,6 +75,22 @@ test("Storage minicard preserves dimensions and loads details only when opened, 
   await page.keyboard.press("Escape"); await expect(card).toBeFocused();
 });
 
+test("Storage keeps TV and scale when native fullscreen has already closed before cleanup", async ({ page }) => {
+  const state = await storageUiFixture(page);
+  state.admin.document.displayScalePercent = 125;
+  state.admin.document.screens[0].blocks.push({ id: id(9092), type: "storage_summary", width: "wide", enabled: true, options: { storageConfigId: state.configs[0].id, visibleRows: 3 } });
+  await page.setViewportSize({ width: 3440, height: 1440 }); await signIn(page);
+  await page.getByRole("button", { name: "Modo TV", exact: true }).click();
+  await enterNativeFullscreen(page);
+  await exitNativeFullscreen(page);
+  await exitNativeFullscreen(page);
+  await expect(page.locator(".dashboard-shell")).toHaveAttribute("data-display-scale", "125");
+  await expect(page.getByRole("button", { name: "Sair do modo TV", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".storage-panel")).toContainText("Archive One");
+  await page.getByRole("button", { name: "Sair do modo TV", exact: true }).click();
+  await expect(page.locator(".dashboard-shell")).toHaveAttribute("data-display-scale", "100");
+});
+
 for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }, { width: 3440, height: 1440 }]) for (const layout of ["default", "split", "wall"] as const) {
   test(`Storage composition ${layout} ${viewport.width} preserves panels/footer across scales and modes`, async ({ page }) => {
     const state = await storageUiFixture(page), screen = state.admin.document.screens[0];
@@ -88,7 +105,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
       await page.evaluate(() => window.dispatchEvent(new Event("pulse:preferences-changed")));
       for (const mode of ["normal", "tv", "fullscreen"]) {
         if (mode === "tv") await page.getByRole("button", { name: "Modo TV", exact: true }).click();
-        if (mode === "fullscreen") await page.getByRole("button", { name: "Tela cheia", exact: true }).click();
+        if (mode === "fullscreen") await enterNativeFullscreen(page);
         await expect(page.locator(".dashboard-shell")).toHaveAttribute("data-display-scale", String(mode === "normal" ? 100 : scale));
         await expect(page.locator("[data-storage-layout]")).toBeVisible();
         const geometry = await page.locator(".storage-composition").evaluate(root => {
@@ -101,7 +118,7 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
           const pair = page.locator(".storage-composition-pair .dashboard-panel");
           expect((await pair.nth(0).boundingBox())!.height).toBeCloseTo((await pair.nth(1).boundingBox())!.height, 0);
         }
-        if (mode === "fullscreen") { await page.evaluate(() => document.exitFullscreen()); await page.getByRole("button", { name: "Sair do modo TV", exact: true }).click(); }
+        if (mode === "fullscreen") { await exitNativeFullscreen(page); await page.getByRole("button", { name: "Sair do modo TV", exact: true }).click(); }
       }
     }
     await page.screenshot({ path: `.cache/storage-validation/storage-${layout}-${viewport.width}.png`, fullPage: true });

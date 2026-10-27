@@ -1,9 +1,38 @@
 import { test, expect, type Page } from "@playwright/test";
 import { adminFixture } from "../fixtures/admin";
 import { signIn } from "../fixtures/infrastructure";
+import { overview } from "../fixtures/dashboard";
+import { exitNativeFullscreen } from "../fixtures/fullscreen";
 
 const scaleLabel = "Tamanho dos elementos no telão";
 const root = (page: Page) => page.locator(".dashboard-shell");
+
+test("compact ASGARD preserves VM rows with wider fonts and a long service title", async ({ page }) => {
+  const state = await adminFixture(page);
+  state.document.displayScalePercent = 125;
+  await page.route("**/api/dashboard/overview*", route => {
+    const result = overview(state.document);
+    result.data.asgardSummary.host!.displayName = "ASGARD · infraestrutura de armazenamento e virtualização";
+    return route.fulfill({ json: result });
+  });
+  await page.setViewportSize({ width: 1366, height: 768 }); await signIn(page);
+  await page.getByRole("button", { name: "Modo TV", exact: true }).click();
+  for (const font of ["Arial, sans-serif", "Verdana, sans-serif", "monospace"]) {
+    await page.addStyleTag({ content: `.dashboard-shell { font-family: ${font}; }` });
+    const heading = page.locator(".asgard-panel > .panel-heading");
+    const geometry = await heading.evaluate(node => {
+      const title = node.querySelector("h2")!.getBoundingClientRect(), status = node.querySelector(".status-pill")!.getBoundingClientRect();
+      return { titleCenter: title.y + title.height / 2, statusCenter: status.y + status.height / 2 };
+    });
+    expect(geometry.titleCenter, font).toBeCloseTo(geometry.statusCenter, 0);
+    expect(await page.locator(".vm-table-scroll").evaluate(node => node.clientHeight), font).toBeGreaterThan(65);
+    await expect(heading.getByRole("link", { name: "Ver ASGARD", exact: true })).toBeVisible();
+    await page.getByRole("link", { name: "vm-operacao-15", exact: true }).scrollIntoViewIfNeeded();
+    await expect(page.getByRole("link", { name: "vm-operacao-15", exact: true })).toBeInViewport();
+    await expect(page.locator(".dashboard-footer")).toBeInViewport();
+  }
+  await page.screenshot({ path: ".cache/asgard-wide-title-125.png" });
+});
 
 test("reading scale previews locally, saves with presentation, resets explicitly and preserves drafts on conflicts", async ({ page }) => {
   const state = await adminFixture(page); await signIn(page); await page.goto("/admin/configuracoes");
@@ -40,7 +69,7 @@ test("TV and native fullscreen apply one shared scale; exiting, failure and deta
   await page.getByRole("button", { name: "Modo TV", exact: true }).click();
   await expect(root(page)).toHaveAttribute("data-display-scale", "120");
   expect(await page.locator(".kpi-label").first().evaluate(node => parseFloat(getComputedStyle(node).fontSize))).toBeCloseTo(normal * 1.2);
-  await page.evaluate(() => document.exitFullscreen());
+  await exitNativeFullscreen(page);
   await expect(page.getByRole("button", { name: "Tela cheia", exact: true })).toBeVisible();
   await expect(root(page)).toHaveAttribute("data-display-scale", "120");
   await page.getByRole("button", { name: "Sair do modo TV", exact: true }).click();

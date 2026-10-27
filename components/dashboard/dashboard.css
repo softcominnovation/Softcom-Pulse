@@ -242,6 +242,9 @@
 .asgard-compact .asgard-content { display: flex; flex-direction: column; }
 .asgard-compact .asgard-context { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: calc(20px * var(--dashboard-scale, 1)); flex-shrink: 0; padding: 0 calc(18px * var(--dashboard-scale, 1)) calc(8px * var(--dashboard-scale, 1)); }
 .asgard-compact .asgard-overview { display: grid; grid-template-columns: minmax(0, 1fr); align-items: center; gap: calc(18px * var(--dashboard-scale, 1)); padding: 0; }
+@container (min-width: 480px) {
+  .asgard-compact .panel-heading > .service-title { flex: 1 1 0; flex-wrap: nowrap; }
+}
 .asgard-compact .asgard-metrics { gap: calc(18px * var(--dashboard-scale, 1)); }
 .asgard-compact .asgard-metrics .metric-value strong { font-size: calc(14px * var(--dashboard-scale, 1)); }
 .asgard-compact .storage-summary { padding: 0; min-width: 0; }

@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { effectiveOptions } from "../../lib/config/presentation";
 import { presentation, overview, id } from "../fixtures/dashboard";
+import { exitNativeFullscreen } from "../fixtures/fullscreen";
 import type { ConfiguredResource, Container } from "../../lib/monitoring/contracts";
 
 async function enter(page: Page) {
@@ -410,7 +411,7 @@ test("TV plus fullscreen keeps playback and exit controls; browser exit updates 
   await expect(page.getByLabel("Escolher tela")).toHaveValue(id(2), { timeout: 9000 });
   expect(await page.evaluate(() => !!document.fullscreenElement)).toBe(true);
   await page.getByRole("button", { name: "Parar alternância", exact: true }).click();
-  await page.evaluate(() => document.exitFullscreen());
+  await exitNativeFullscreen(page);
   await expect(page.getByRole("button", { name: "Tela cheia", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sair do modo TV" })).toBeVisible();
 });

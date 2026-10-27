@@ -35,6 +35,8 @@ A lista que pode crescer não estica o painel. Ela fica numa área com `flex: 1 
 
 Nada é apagado para caber. O que não cabe na altura do painel continua acessível na rolagem interna.
 
+No ASGARD compacto, a partir de 480px de largura do contêiner, o cabeçalho reserva espaço para a disponibilidade e o link, enquanto o nome pode truncar na mesma linha. Evitar que fontes mais largas ou a escala de 125% quebrem a disponibilidade em uma segunda linha e consumam a área útil da tabela de VMs. Abaixo desse recorte o cabeçalho continua podendo reorganizar o conteúdo. Validar o encaixe com nomes longos e diferentes métricas de fonte, preservando a tabela rolável e a legenda visível.
+
 ## O que um componente novo obedece
 
 Um bloco, card ou painel feito para a visão geral da rota `/` segue esta lista. Vale para TV e tela cheia na mesma faixa de 1201×740 ou maior.

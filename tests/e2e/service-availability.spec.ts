@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { exitNativeFullscreen } from "../fixtures/fullscreen";
 import { adminFixture } from "../fixtures/admin";
 import { overview, id } from "../fixtures/dashboard";
 import { signIn } from "../fixtures/infrastructure";
@@ -55,7 +56,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1366, height: 768 
     }
     await page.screenshot({ path: ".cache/availability-" + viewport.width + "-" + mode + ".png", fullPage: viewport.width === 390 });
   }
-  if (await page.evaluate(() => !!document.fullscreenElement)) await page.evaluate(() => document.exitFullscreen());
+  await exitNativeFullscreen(page);
   await page.getByRole("link", { name: "Todos os serviços", exact: true }).click();
   await expect(page).toHaveURL(/\/servicos$/);
 });

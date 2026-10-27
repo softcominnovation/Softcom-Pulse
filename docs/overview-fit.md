@@ -1,5 +1,7 @@
 # Encaixe da rota principal
 
+Os componentes novos seguem o [Design system Kobra](design-system.md) e os [Sons da interface](interface-sounds.md). Este documento governa distribuição e rolagem; a paleta e as primitivas atuais vêm do guia de design.
+
 A rota `/` é a tela de monitoramento. Em resolução grande ela cabe na área visível: cabeçalho, navegação, blocos e legenda aparecem juntos, sem rolagem da página. O que passar da altura do painel rola dentro dele. Em tela estreita ou baixa, a página pode rolar. Detalhe, infraestrutura, ASGARD, serviços e administração não herdam esta trava.
 
 ## Quando a regra vale
@@ -21,7 +23,7 @@ A partir de 1201×740, `.dashboard-shell:has(.balanced)` fica com `height: 100dv
 
 `.dashboard.balanced` é uma coluna. Tudo que não é `.dashboard-blocks` — navegação, título, avisos, legenda — tem `flex-shrink: 0`. A grade `.dashboard-blocks` recebe `flex: 1` e `min-height: 0`. Cada `.dashboard-panel` dentro dela tem `height: 100%`, `min-height: 0` e `overflow: hidden`.
 
-A lista que pode crescer não estica o painel. Ela fica numa área com `flex: 1 1 0`, `min-height: 0` e `overflow: auto`. Já estão nesse grupo: problemas, VMs do ASGARD, hosts, containers, uptime e a grade de recursos. A grade de Disponibilidade de Serviços tem altura máxima própria e rola por dentro; o card continua 230×120, como em [minicards](availability-cards.md).
+A lista que pode crescer não estica o painel. Ela fica numa área com `flex: 1 1 0`, `min-height: 0` e `overflow: auto`. Já estão nesse grupo: problemas, VMs do ASGARD, hosts, containers, uptime e a grade de recursos. A grade de Disponibilidade de Serviços tem altura máxima própria e rola por dentro; o card mantém altura de 120px e largura usual até 230px, com colunas elásticas no split, como em [minicards](availability-cards.md).
 
 Nada é apagado para caber. O que não cabe na altura do painel continua acessível na rolagem interna.
 

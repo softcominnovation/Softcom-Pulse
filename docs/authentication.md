@@ -78,9 +78,9 @@ Logout limpa a interface imediatamente e tenta a revogação remota. Se a API fa
 
 ## Interface e validação
 
-`/login` apresenta a composição de duas metades a partir de 1024px e coluna única abaixo disso. Ilustração padrão PNG, proporção 4:3, limite 320×240; assinatura institucional preserva suas cores. A arte decorativa não é baixada no mobile. Fonte de sistema, fundo `#0c1116`, superfície `#121a21`, inputs `#18232c`, botão `#64d6b0`, raio 7px e controles com pelo menos 44px.
+`/login` usa o [Design system Kobra](design-system.md): duas metades a partir de 1024px e coluna única abaixo disso. O painel esquerdo contém uma vitrine ilustrativa em cards e assinatura institucional; seus números são estáticos e não comprovam estado operacional. O formulário usa `login-glass-card` de até 430px, gradientes ambientais, transparência/blur, `Brand`, `Input`, `Label`, `Badge` e botão primário neutro conforme o tema. Controles de login têm pelo menos 44px. A composição atual está em `components/auth/login-view.tsx` e `login-view.css`; o antigo contrato de ilustração PNG e botão verde deixou de representar essa tela.
 
-O campo de senha possui controle Mostrar senha/Ocultar senha integrado à sua direita, com a mesma altura e alvo de 44px. Eye/EyeOff de 20px, cor de texto principal e realce verde quando revelada, com tooltip da ação. Botão type=button, aria-label, aria-pressed e aria-controls; funciona por clique, toque, Enter e Espaço sem enviar o formulário. Envio válido volta a ocultar a senha e desabilita o controle enquanto aguarda. Valor e autofill são preservados.
+O campo de senha possui controle Mostrar senha/Ocultar senha integrado à sua direita, com a mesma altura e alvo de 44px. Eye/EyeOff de 20px, cor muted e realce de texto principal quando revelada, com título da ação. Botão type=button, aria-label, aria-pressed e aria-controls; funciona por clique, toque, Enter e Espaço sem enviar o formulário. Envio válido volta a ocultar a senha e desabilita o controle enquanto aguarda. Valor e autofill são preservados. Os sons de interação vêm do listener global descrito em [Sons da interface](interface-sounds.md).
 
 `/` e `/asgard` usam o shell protegido com marca, relógio e saída. O dashboard adiciona TV/fullscreen e player conforme [Interface](ui.md). A proteção do BFF permanece independente da interface.
 

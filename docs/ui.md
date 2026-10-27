@@ -1,6 +1,6 @@
 # Interface do dashboard
 
-`/` é o dashboard autenticado. O shell mantém marca Pulse, relógio de Fortaleza, modo TV, tela cheia e saída da sessão. A navegação contém apenas rotas implementadas. Não há sidebar, seletor de cenários simulados ou dados fictícios no aplicativo.
+`/` é o dashboard autenticado. O shell mantém marca Pulse, relógio de Fortaleza, modo TV, tela cheia e saída da sessão. A navegação contém apenas rotas implementadas, com busca global, controles de tema e som. Não há sidebar no shell atual. O padrão visual e de construção é o [Design system Kobra](design-system.md), com contrato de [Sons da interface](interface-sounds.md). Dados operacionais vêm dos contratos do BFF; a vitrine do login, o inventário local de WhatsApp e o modo de demonstração têm limites próprios descritos no guia de design.
 
 ## Composição e dados
 
@@ -63,7 +63,7 @@ A administração oferece **Como autorizar tela cheia automática** no painel Le
 
 ## Escala de leitura do telão
 
-A marca no cabeçalho da raiz ganha destaque quando TV ou fullscreen está ativo: ícone de 37px para 57px, texto e espaçamento proporcionais; até 1200px de largura, ícone de 45px. No dashboard balanceado com largura >1200px e altura 740–900px, usa 43px e reduz o padding vertical do cabeçalho para preservar o espaço do rodapé. O crescimento máximo do ícone é 20px, sem padding adicional. Essa medida não é multiplicada pela escala de leitura nem pelos dois modos combinados. Ao sair de ambos, restaura o tamanho normal. Login, administração e detalhes mantêm a marca anterior. Não há preferência ou gravação nova.
+A marca atual é o componente `Brand`, com símbolo de pulso Tabler e cores neutras do tema. O shell usa 32px no modo normal e passa 42px em apresentação, com texto e espaçamento proporcionais pelos seletores de `dashboard.css`. Até 1200px, o CSS usa 45px; no dashboard balanceado acima de 1200px com altura entre 740 e 900px, usa 43px. A marca não recebe multiplicação cumulativa por TV e fullscreen; ao sair de ambos retorna ao modo normal. Não há preferência ou gravação de marca no banco. As medidas 37/57px do desenho anterior não são referência para novas telas.
 
 `displayScalePercent` define 100%, 110%, 120% ou 125%, com default 110%, editável em `/admin/configuracoes`. A escala é aplicada apenas pelo shell da raiz quando `tvMode || isFullscreen`, sem multiplicação ao combinar os modos. Ao sair dos dois, retorna a 100%. Fullscreen acompanha `document.fullscreenElement`/`fullscreenchange`, inclusive saída pelo navegador; uma solicitação recusada não ativa a escala sozinha. F11/zoom externo do navegador não são tratados como fullscreen da aplicação.
 
@@ -75,9 +75,9 @@ Outras rotas e diálogos não herdam a escala. A prévia administrativa tem esco
 
 Em `/admin/configuracoes`, a grade dos formulários alinha label/controle/ajuda entre colunas, com checkboxes avulsos na altura dos inputs e grupos de opções regulares. Ações de restauração ficam junto do campo e botões de salvamento no rodapé do painel; mobile reorganiza em coluna. “Salvar leitura do telão” grava somente escala e inatividade na apresentação compartilhada no banco, sem enviar rascunhos de telas/reprodução. A revisão confirmada é reutilizada no próximo salvamento; cancelar conserva o último telão salvo. O salvamento integral do rodapé continua disponível. Não há localStorage para essas preferências.
 
-Fundo `#0c1116`, superfície `#121a21`, elevado `#18232c`, borda `#29343d`. Texto `#eef3f5`, secundários `#9daeb9`/`#82949f`. Estados usam verde `#64d6b0`, âmbar `#f2c275`, vermelho `#ff8585` e azul `#80bdf2`, sempre acompanhados de texto. Painéis/KPIs têm raio 14px, cards 9px, controles 7px e pílulas 5px. Botões usam a base shadcn/ui ajustada aos tokens Pulse.
+O visual atual usa tokens semânticos Kobra de `app/theme.css`, superfícies/efeitos de `app/kobra.css` e aliases `--pulse-*` de `app/globals.css`, nos temas claro e escuro. Ações, seleção e foco têm base neutra; estados usam success/warning/error/info acompanhados de texto. Usar as variantes de `components/ui`, sem restaurar cores hexadecimais do tema anterior. Gráficos e faixas ainda possuem paletas de domínio próprias, documentadas no [guia de design](design-system.md).
 
-Interface: `-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`. Números/horários: `ui-monospace, SFMono-Regular, Consolas, monospace`, tabulares. Sem fonte externa. Logo usa o asset oficial existente; a marca não é um ícone Lucide. O nome `softcom` foi preservado; somente `pulse` usa a cor institucional `#fba704`, conforme ajuste aprovado.
+Fontes de sistema em `--font-ui` e `--font-numeric`, com números tabulares. Reutilizar `Brand`; o componente atual usa `IconActivityHeartbeat` de Tabler e nome neutro, com contraste conforme o tema. Componentes Kobra fornecem foco, relevo, movimento e atributos usados pelo áudio global. Tema e som são preferências locais; escala/inatividade da apresentação permanecem compartilhadas no PostgreSQL.
 
 Status Docker e health são independentes. Em execução não significa saudável. Ausência de HEALTHCHECK comprovada é “Sem healthcheck”; ausência de evidência é “Desconhecido”, acompanhada do motivo quando informado. Ciclo falho/stale e `validUntil` vencido impedem pílula saudável. Valores antigos podem permanecer legíveis, identificados como desatualizados. O horário de coleta não substitui o da amostra.
 
@@ -91,7 +91,7 @@ Testes de dashboard cobrem 320×568, 360×800, 390×844, 768×1024, 1024×768, 1
 
 Arquivos principais: `components/dashboard/dashboard.tsx`, `blocks.tsx`, `asgard-panel.tsx`, `asgard-details.tsx`, `resource-card.tsx`, `metrics.tsx`, `player-toolbar.tsx`, `display-controls.tsx`, `use-poll.ts` e `dashboard.css`; estado puro em `lib/dashboard/player.ts`, formatação em `lib/dashboard/format.ts`. Testes em `tests/dashboard.test.mjs` e `tests/e2e/dashboard.spec.ts`. Execução e isolamento em [Ambiente](environment.md).
 
-Os editores `/admin/recursos` e `/admin/configuracoes` estão implementados, com opções v2 por bloco, prévia real, até três telas, revisão concorrente e templates. Regras, limites, acessibilidade e migração em [Administração](administration.md). Integrações funcionais WhatsApp/Meta, Signal, n8n, Hub/Shop e simulações continuam após o MVP.
+Os editores `/admin/recursos` e `/admin/configuracoes` estão implementados, com opções v2 por bloco, prévia real, até três telas, revisão concorrente e templates. Regras, limites, acessibilidade e migração em [Administração](administration.md). Signal possui leitura operacional própria; WhatsApp possui a superfície local descrita no [guia de design](design-system.md), sem comprovação de integração Meta/Evolution por sua aparência. Uma nova integração exige contrato de dados próprio.
 
 ## Serviços, containers e alertas
 
@@ -115,6 +115,6 @@ O modal chama apenas o wrapper por pai/VM documentado no [BFF](bff.md). Valida a
 
 Atualização segue refreshAfterMs somente enquanto aberto e visível, sem sobreposição. Fechar/trocar/navegar/desmontar cancela pedidos e timers; respostas antigas não aparecem em outra VM. Falha mantém somente o resultado da mesma identidade, com aviso persistente, retry e toast não repetido por ciclo. Atualização não recria expansões nem redefine foco/scroll.
 
-Diálogos Radix mantêm foco contido, Escape e retorno ao acionador; se a linha deixou de existir, o foco retorna à região estável da tabela. Cabeçalho/fechar permanecem fora do corpo rolável. O detalhe com gráfico pode ter 920px; o inventário de workloads, 1240px, ambos limitados ao espaço disponível por percentuais, inclusive com zoom CSS de 200%. São extensões de largura para dados reais; cores, bordas, tipografia, paddings e hierarquia seguem o diálogo do protótipo. Tabelas possuem rolagem interna e todas as ações continuam acessíveis no celular. A matriz de Serviços/modais foi verificada de 320px a 1920px, incluindo tablet, paisagem, toque e teclado; homologação física adicional permanece separada.
+Diálogos Radix mantêm foco contido, Escape e retorno ao acionador; se a linha deixou de existir, o foco retorna à região estável da tabela. Cabeçalho/fechar permanecem fora do corpo rolável. O detalhe com gráfico pode ter 920px; o inventário de workloads, 1240px, ambos limitados ao espaço disponível por percentuais, inclusive com zoom CSS de 200%. São extensões de largura para dados reais; cores, bordas, tipografia, paddings e hierarquia usam o componente `Dialog` atual e seus estilos Kobra. Tabelas possuem rolagem interna e todas as ações continuam acessíveis no celular. A matriz de Serviços/modais foi verificada de 320px a 1920px, incluindo tablet, paisagem, toque e teclado; homologação física adicional permanece separada.
 
 Implementação em `components/services`, com estados/rótulos em `lib/services/presentation.ts`, wrapper em `lib/server/monitoring/vm-workloads.ts` e testes em `tests/e2e/services.spec.ts` e na integração de configuração. Nenhuma migration, alteração de credenciais ou escrita externa é necessária.

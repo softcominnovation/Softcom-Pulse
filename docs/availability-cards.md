@@ -1,5 +1,7 @@
 # Minicards de Disponibilidade de Serviços
 
+Construção visual pelo [Design system Kobra](design-system.md). Os tokens Pulse abaixo acompanham o tema; cores fixas remanescentes das faixas são paletas de telemetria, não a paleta global.
+
 A grade **Disponibilidade de Serviços** é um único grid. No modo **default** do bloco entram as origens globais nesta ordem: recurso Zabbix destacado, aplicação da sonda, VPS destacada e Signal destacado. No modo **custom**, a ordem é a lista `cards` daquele bloco (`kind:uuid`). Um serviço novo que também apareça aqui entra nessa mesma grade, com o mesmo retângulo. O miolo muda conforme a leitura que o serviço tem. A caixa não muda.
 
 ## A grade
@@ -13,6 +15,8 @@ Classe `availability-grid`.
 
 O card novo não altera essas medidas. Não cria uma segunda grade ao lado.
 
+Exceção existente: em `overviewGrid: split`, `.overview-split-grid .availability-grid` usa quatro colunas elásticas e os cards ocupam a largura da coluna (`max-width: none`). A altura dos cards continua 120px. Essa regra de quatro colunas não possui override móvel próprio em `availability.css`; não presumir que empilhar os painéis também reduz suas colunas internas. Reutilizar a grade atual, sem impor largura fixa por componente que quebre esse modo.
+
 ## A caixa, comum aos três
 
 Classe `availability-card`. Todo card da grade usa esta classe.
@@ -25,7 +29,7 @@ Classe `availability-card`. Todo card da grade usa esta classe.
 | Padding do card com faixa | 8px 12px, pela classe `probe-card` |
 | Raio | 9px |
 | Borda | 1px `var(--pulse-line)` |
-| Fundo | `var(--pulse-service)`; hover `#1b2a32` |
+| Fundo | `var(--pulse-service)`; hover `var(--pulse-hover)` |
 | Direção | coluna, `overflow: hidden` |
 
 De cima para baixo, todo card tem quatro faixas:
@@ -35,7 +39,7 @@ De cima para baixo, todo card tem quatro faixas:
 3. **Descrição.** Classe `availability-description`, 10px, cor muted, uma linha com reticências.
 4. **Miolo preso embaixo.** `margin-top: auto`. É a única zona que muda entre os tipos. Termina no rodapé.
 
-O card é um `button` quando abre detalhe. O nome acessível diz o nome, o estado e, quando há faixa, a disponibilidade. O foco usa o contorno verde de 2px por dentro do card.
+O card é um `button` quando abre detalhe. O nome acessível diz o nome, o estado e, quando há faixa, a disponibilidade. O foco usa `var(--ring)` de 2px por dentro do card.
 
 ## Os dois miolos que já existem
 
@@ -74,19 +78,19 @@ O clique da aplicação abre o modal de histórico. O clique da VPS abre o modal
 
 | Tom | Uso no card | Token |
 |---|---|---|
-| `good` | disponível, no ar | `--pulse-green` (`#64d6b0`) |
-| `warn` | atenção, lento | `--pulse-amber` (`#f2c275`) |
-| `bad` | fora, indisponível | `--pulse-red` (`#ff8585`) |
-| `unknown` | sem dados, pausado, inativo, monitor ausente | `--pulse-muted` (`#9daeb9`) |
+| `good` | disponível, no ar | `--pulse-green` → `--success` |
+| `warn` | atenção, lento | `--pulse-amber` → `--warning` |
+| `bad` | fora, indisponível | `--pulse-red` → `--error` |
+| `unknown` | sem dados, pausado, inativo, monitor ausente | `--pulse-muted` → `--muted-foreground` |
 
-A barra de RAM usa `--pulse-blue` (`#80bdf2`). A faixa não troca para vermelho só porque o percentual subiu. O estado do texto é que carrega o tom.
+A barra de RAM usa `--pulse-blue` → `--info`. A faixa não troca para vermelho só porque o percentual subiu. O estado do texto é que carrega o tom. As faixas SVG ainda recebem cores fixas de seus helpers (`#64d6b0`, `#f2c275`, `#ff8585`, ausência `#9daeb9`); preservar a distinção entre mapa da série e tokens do texto.
 
 ## Especificação para o próximo card
 
 O serviço que for exibido nesta grade implementa um componente no mesmo grid, nesta ordem de blocos. Não inventa largura, altura, raio ou uma terceira fileira de rodapé.
 
 1. Use `availability-card`. Se a leitura principal for uma faixa de consultas, use também `probe-card`. Se for CPU e RAM no estilo do Zabbix, use só `availability-card` e `availability-readings`.
-2. Mantenha 230×120. Texto que não cabe leva reticências. Não aumente o card para caber uma linha a mais.
+2. Mantenha altura 120px e largura usual até 230px, aceitando a largura elástica do split pelo CSS existente. Texto que não cabe leva reticências. Não aumente a altura do card para caber uma linha a mais.
 3. Estado, nome e descrição permanecem nas três primeiras linhas, com as classes atuais.
 4. O miolo fica em `margin-top: auto`, para o rodapé encostar na base com o mesmo respiro dos cards atuais.
 5. O rodapé é a última linha, com `availability-footer`: borda superior, espaço entre as pontas, texto muted à esquerda, um número tabular à direita. Sem leitura, o número é **—**.

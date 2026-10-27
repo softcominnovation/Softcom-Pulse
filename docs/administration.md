@@ -1,5 +1,7 @@
 # Administração da visualização
 
+Novas telas e extensões dos editores seguem o [Design system Kobra](design-system.md) e o contrato de [Sons da interface](interface-sounds.md). Reutilizar componentes locais, tokens de tema e os estilos administrativos existentes; os controles de tema/mute/volume são preferências do browser e não integram a apresentação compartilhada no PostgreSQL.
+
 As rotas `/admin/recursos`, `/admin/aplicacoes`, `/admin/vps` e `/admin/configuracoes` usam a sessão corporativa existente. Em Recursos, o bloco **Escopo Zabbix** (associar Agents) aparece só para editor (`PULSE_EDITOR_EMAILS`). Configurações e escritas de Aplicações/VPS/Signal exigem editor. Os links ficam na navegação normal e são ocultos no modo TV. Recursos não tem espelho em `/monitor`: some do menu público e `/monitor/recursos` redireciona para login. Não há cadastro de usuários, permissão nova nem ação operacional no Zabbix/Proxmox.
 
 ## Softcom Signal

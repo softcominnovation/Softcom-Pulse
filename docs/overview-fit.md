@@ -6,7 +6,9 @@
 
 Em split, uma única Disponibilidade e um único Problemas conservam o par superior 1,25:1. Os demais painéis entram na grade. Sem dupla única, todos entram por UUID. Overview padrão e wall usam o mesmo empacotamento e as larguras efetivas existentes.
 
-Em >=1201×740, as fileiras dividem a altura restante. Se o mínimo de leitura não couber, só a composição rola; todos os painéis continuam alcançáveis e a legenda da raiz fica visível. A prévia anuncia esse fallback. Abaixo do recorte, a página rola normalmente. Nenhuma composição salva, escala ou fonte é alterada para produzir encaixe. O painel Storage conserva cabeçalho/rodapé e rola corpo/volumes. Consulte [Storage](storage.md). As seções seguintes descrevem também o caminho legado, preservado sem Storage.
+Em >=1201×740, as fileiras de painéis dividem a altura restante. Uma fileira composta somente por Disponibilidade de Serviços acompanha a altura real de seus cards, até o limite de linhas configurado; não recebe uma parcela igual da altura nem reserva linhas vazias. ASGARD, Storage e os demais painéis flexíveis aproveitam o espaço liberado. Uma Disponibilidade que divide a fileira com Problemas ou outro painel conserva o alinhamento pela altura compartilhada.
+
+O cálculo de encaixe mede as fileiras de Disponibilidade, os indicadores e os espaçamentos reais, e reage quando os cards ganham ou perdem uma linha. Se o mínimo de leitura dos demais painéis não couber, só a composição rola; todos os painéis continuam alcançáveis e a legenda da raiz fica visível. A prévia usa o mesmo cálculo e anuncia esse fallback. Abaixo do recorte, a página rola normalmente. Nenhuma composição salva, escala ou fonte é alterada para produzir encaixe. O painel Storage conserva cabeçalho/rodapé e rola corpo/volumes. Consulte [Storage](storage.md). As seções seguintes descrevem também o caminho legado, preservado sem Storage.
 
 Os componentes novos seguem o [Design system Kobra](design-system.md) e os [Sons da interface](interface-sounds.md). Este documento governa distribuição e rolagem; a paleta e as primitivas atuais vêm do guia de design.
 

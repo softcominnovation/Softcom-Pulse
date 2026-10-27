@@ -63,5 +63,5 @@ export function storageLayout(blocks: PresentationBlock[], split: boolean, wall 
     const row = rows.at(-1)!;
     row.blocks.push({ block, span }); row.minimum = Math.max(row.minimum, minimum(block)); occupied += span;
   }
-  return { summaries, rows };
+  return { summaries, rows: rows.map(row => ({ ...row, contentSized: row.blocks.every(({ block }) => block.type === "highlighted_resources") })) };
 }

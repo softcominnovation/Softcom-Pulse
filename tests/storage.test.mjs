@@ -100,3 +100,15 @@ test("Storage layout packs by UUID with ordered widths, unique top pair and inde
   for (const row of duplicate.rows) assert.ok(row.blocks.reduce((total, item) => total + item.span, 0) <= 12);
   assert.equal(playableScreens({ screens: [{ enabled: true, blocks: [block("storage_summary")] }] }).length, 1);
 });
+
+test("standalone availability rows keep natural height while mixed and split rows share panel height", () => {
+  const block = (type, width = "wide") => ({ id: randomUUID(), type, width, enabled: true, options: type === "storage_summary" ? { storageConfigId: randomUUID(), visibleRows: 3 } : effectiveOptions({ type }) });
+  const standalone = storageLayout([block("highlighted_resources", "full"), block("asgard_summary"), block("storage_summary")], false);
+  assert.deepEqual(standalone.rows.map(row => row.contentSized), [true, false]);
+  const mixed = storageLayout([block("highlighted_resources"), block("asgard_summary"), block("storage_summary", "full")], false);
+  assert.equal(mixed.rows[0].contentSized, false);
+  const paired = storageLayout([block("highlighted_resources", "full"), block("problems"), block("storage_summary")], true);
+  assert.equal(paired.rows[0].paired, true); assert.equal(paired.rows[0].contentSized, false);
+  const repeated = storageLayout([block("highlighted_resources"), block("highlighted_resources"), block("storage_summary", "full")], false);
+  assert.equal(repeated.rows[0].blocks.length, 2); assert.equal(repeated.rows[0].contentSized, true);
+});

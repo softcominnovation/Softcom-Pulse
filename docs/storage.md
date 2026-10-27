@@ -59,6 +59,8 @@ Para painel grande, configure a máquina em Serviços e adicione **Storage · ca
 
 `StoragePanel` é compartilhado por Serviços, raiz, modal e prévia. Volumes continuam alcançáveis por rolagem com cabeçalho/rodapé preservados. Telas com Storage usam planejador por UUID; layouts anteriores conservam seu caminho. A prévia avisa quando é preciso rolar. Consulte [Encaixe](overview-fit.md).
 
+Adicionar um painel Storage não estica uma fileira exclusiva de Disponibilidade: ela mantém a altura dos cards visíveis, com rodapé logo abaixo. O espaço restante atende aos painéis flexíveis. Fileiras mistas, como Disponibilidade/Problemas no split, continuam compartilhando altura. O encaixe se recalcula quando o conteúdo muda pelo monitoramento, também na prévia.
+
 Falha/409 preserva rascunho; recarregar e restaurar padrões exigem confirmação. Salvar usa toast Kobra após a resposta e o listener global fornece o som. Polling não toca alarmes. Tema, mute, volume e movimento reduzido seguem os [guias de interface](design-system.md) e [sons](interface-sounds.md).
 
 ## Persistência e BFF

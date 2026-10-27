@@ -18,6 +18,8 @@ O ramo tem até 8s, limitado pelo tempo restante do ciclo de 25s, com reserva pa
 
 Falha isolada preserva os dados anteriores com os horários originais e marca Storage como `failed`, sem envelhecer o ASGARD. Falha/cancelamento global mantém a semântica do Collector. Reempacotar o snapshot não renova classificação ou métricas. Classificação expira pelo `SNAPSHOT_STALE_AFTER_MS`; métricas usam a validade/heartbeat comum.
 
+Ao marcar uma falha global, o Lua/cjson do Redis pode regravar listas vazias como `{}`. A leitura normaliza somente esse objeto vazio para `[]` em `sync.keys` e `sync.extensionKeys`, preservando a leitura das últimas amostras como desatualizadas. Objetos com propriedades, listas inválidas e gerações misturadas continuam rejeitados. A marcação de falha não renova TTL, geração ou horário do último sucesso.
+
 Uma consulta completa confirma configurações ausentes em lote por hostid: `tag_missing` ou `host_missing`. Falha, limite e resposta inconsistente usam `inventory_unavailable`. Configurações são preservadas. Web novo com Collector antigo/sem a chave retorna `no_data`.
 
 Uma função define a pílula em Serviços, minicard e painel:

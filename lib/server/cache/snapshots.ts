@@ -14,7 +14,10 @@ export const snapshotKeys = {
 };
 const keySchema = z.string().max(2048).refine(key => /^pulse:(?:snapshot:(?:overview|host:.+|service:.+)|inventory:(?:hosts|storages|containers:.+)|problems:current|source:bindings)$/.test(key));
 const envelopeSchema = z.object({ data: z.unknown(), updatedAt: isoSchema, source: z.literal("zabbix"), generation: z.uuid() });
-const syncSchema = z.object({ status: z.enum(["ok", "failed"]), lastSuccessfulAt: isoSchema.nullable(), lastAttemptAt: isoSchema.optional(), error: z.string().max(80).nullable().optional(), keys: z.array(keySchema).max(50000), extensionKeys: z.array(z.string().max(2048)).max(50000).optional() }).transform(sync => ({ ...sync, keys: [...new Set([...sync.keys, ...(sync.extensionKeys ?? []).filter(key => keySchema.safeParse(key).success)])] }));
+// Redis Lua cjson re-encodes empty arrays as {} when marking a failed cycle.
+// Accept only that empty-object representation; nonempty objects remain invalid.
+const emptyRedisArraySchema = z.strictObject({}).transform((): string[] => []);
+const syncSchema = z.object({ status: z.enum(["ok", "failed"]), lastSuccessfulAt: isoSchema.nullable(), lastAttemptAt: isoSchema.optional(), error: z.string().max(80).nullable().optional(), keys: z.union([z.array(keySchema).max(50000), emptyRedisArraySchema]), extensionKeys: z.union([z.array(z.string().max(2048)).max(50000), emptyRedisArraySchema]).optional() }).transform(sync => ({ ...sync, keys: [...new Set([...sync.keys, ...(sync.extensionKeys ?? []).filter(key => keySchema.safeParse(key).success)])] }));
 export type SnapshotEnvelope = z.infer<typeof envelopeSchema>;
 export type SnapshotBatch = { snapshots: Map<string, SnapshotEnvelope | null>; sync: z.infer<typeof syncSchema> | null; generation: string | null };
 

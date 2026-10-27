@@ -12,7 +12,7 @@ import { getPrisma } from "../../lib/server/prisma.ts";
 import { sealEnvelope } from "../../lib/server/auth/envelope.ts";
 import { initialPresentation as initialV2, effectiveOptions } from "../../lib/config/presentation.ts";
 function initialPresentation(newId) { const document = initialV2(newId); document.schemaVersion = 1; document.screens.forEach(screen => screen.blocks.forEach(block => { delete block.options; })); return document; }
-import { publishSnapshots, markSyncFailure, readSnapshotBatch, snapshotKeys as keys } from "../../lib/server/cache/snapshots.ts";
+import { publishSnapshots, markSyncFailure, readSnapshotBatch, readResult, snapshotKeys as keys } from "../../lib/server/cache/snapshots.ts";
 import * as handlers from "../../lib/server/monitoring/handlers.ts";
 import { opaqueReference } from "../../lib/server/zabbix/observations.ts";
 import { saveVmConfig, listVmConfigs } from "../../lib/server/config/vms.ts";
@@ -330,6 +330,62 @@ test("stale uses collector failure, old cycle and individual evidence age; mixed
   assert.equal((await handlers.hostsGet(request())).status, 503);
   await clearSnapshots();
 });
+test("sync failure keeps snapshots readable when Redis Lua round-trips empty extension arrays", async () => {
+  const publishedAt = at();
+  const generation = await publish({ [keys.hosts]: [host()] }, publishedAt);
+  const originalSnapshot = await cache.get(keys.hosts), ttl = await cache.ttl(keys.sync);
+  await markSyncFailure("zabbix_unavailable");
+  await markSyncFailure("collection_failed");
+  const batch = await readSnapshotBatch([keys.hosts]);
+  assert.equal(batch.generation, generation);
+  assert.equal(batch.sync.status, "failed");
+  assert.equal(batch.sync.lastSuccessfulAt, publishedAt);
+  assert.deepEqual(batch.sync.keys, [keys.hosts]);
+  assert.deepEqual(batch.sync.extensionKeys, []);
+  assert.equal(readResult(null, batch, [keys.hosts]).stale, true);
+  assert.equal(await cache.get(keys.hosts), originalSnapshot);
+  assert.ok(await cache.ttl(keys.sync) <= ttl);
+  assert.ok(await cache.ttl(keys.sync) >= ttl - 2);
+  const response = await handlers.hostsGet(request());
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).stale, true);
+});
+
+test("sync failure preserves nonempty Storage extensions and accepts legacy generations", async () => {
+  await publish({ [keys.hosts]: [host()], [keys.storages]: { fixture: true } });
+  await markSyncFailure();
+  let batch = await readSnapshotBatch([keys.hosts, keys.storages]);
+  assert.deepEqual(batch.sync.keys, [keys.hosts, keys.storages]);
+  assert.deepEqual(batch.sync.extensionKeys, [keys.storages]);
+  assert.equal(batch.snapshots.get(keys.storages).generation, batch.generation);
+  await publish({ [keys.hosts]: [host()] });
+  const legacy = JSON.parse(await cache.get(keys.sync));
+  delete legacy.data.extensionKeys;
+  await cache.set(keys.sync, JSON.stringify(legacy), { KEEPTTL: true });
+  await markSyncFailure();
+  batch = await readSnapshotBatch([keys.hosts]);
+  assert.deepEqual(batch.sync.keys, [keys.hosts]);
+  assert.equal(batch.sync.extensionKeys, undefined);
+  assert.equal(batch.sync.status, "failed");
+});
+
+test("empty sync generations survive repeated failures without accepting malformed key lists", async () => {
+  await publish({});
+  await markSyncFailure();
+  await markSyncFailure();
+  const batch = await readSnapshotBatch([keys.hosts]);
+  assert.deepEqual(batch.sync.keys, []);
+  assert.deepEqual(batch.sync.extensionKeys, []);
+  assert.equal(batch.snapshots.get(keys.hosts), null);
+  assert.equal(readResult(null, batch, [keys.hosts]).stale, true);
+  const sync = JSON.parse(await cache.get(keys.sync));
+  for (const field of ["keys", "extensionKeys"]) for (const invalid of [{ forged: true }, null, "not-an-array", [42]]) {
+    await cache.set(keys.sync, JSON.stringify({ ...sync, data: { ...sync.data, keys: [], extensionKeys: [], [field]: invalid } }), { KEEPTTL: true });
+    await assert.rejects(readSnapshotBatch([keys.hosts]), error => error.code === "cache_unavailable");
+  }
+  await clearSnapshots();
+});
+
 test("Redis outage returns sanitized 503 while presentation can still be saved in PostgreSQL", async () => {
   if (globalThis.pulseCache?.isOpen) globalThis.pulseCache.destroy(); delete globalThis.pulseCache;
   const previous = process.env.REDIS_URL; process.env.REDIS_URL = "redis://127.0.0.1:1";

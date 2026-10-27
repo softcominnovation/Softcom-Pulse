@@ -84,6 +84,7 @@ test("packaged collector publishes real Redis contracts, serves history and excl
   try {
     await admin.connect(); await admin.query('CREATE DATABASE "' + databaseName + '"'); created = true; db.pathname = "/" + databaseName;
     await cache.connect(); assert.equal(await cache.set(leaseKey, lease, { NX: true, EX: 600 }), "OK"); owned = true; assert.equal(await cache.dbSize(), 1, "Redis DB 12 must be empty");
+    touched.add("pulse:discovery:agent-candidates");
     await new Promise((resolve, reject) => {
       const child = spawn(process.execPath, [fileURLToPath(new URL("node_modules/prisma/build/index.js", root)), "migrate", "deploy"], { cwd: fileURLToPath(root), env: { ...process.env, DATABASE_URL: db.href }, stdio: "ignore", windowsHide: true });
       child.once("error", reject); child.once("exit", code => code === 0 ? resolve() : reject(new Error("Migration failed")));
@@ -94,7 +95,7 @@ test("packaged collector publishes real Redis contracts, serves history and excl
     const check = await worker(["--conditions=react-server", "collector/index.mjs", "--check"], { ...environment, DATABASE_URL: "", REDIS_URL: "", ZABBIX_API_URL: "", ZABBIX_API_TOKEN: "" }).done;
     assert.equal(check.code, 0, check.output);
     const first = await worker(["--conditions=react-server", "collector/index.mjs", "--once"], environment).done; assert.equal(first.code, 0, first.output);
-    const sync = JSON.parse(await cache.get("pulse:sync:last")); sync.data.keys.forEach(key => touched.add(key)); touched.add("pulse:sync:last");
+    const sync = JSON.parse(await cache.get("pulse:sync:last")); [...sync.data.keys, ...(sync.data.extensionKeys ?? [])].forEach(key => touched.add(key)); touched.add("pulse:sync:last");
     await withServer(environment, async base => {
       const login = await fetch(base + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "collector@example.test", senha: "test-password" }) });
       assert.equal(login.status, 200); const auth = { Authorization: "Bearer " + (await login.json()).accessToken };

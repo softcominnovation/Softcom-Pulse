@@ -1,4 +1,5 @@
 "use client";
+import { TargetNotificationSettings } from "@/components/notifications/settings";
 import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
@@ -55,5 +56,6 @@ function StorageForm({ item, config, onSaved, onCancel, reload }: { item: Storag
     {!validInventory && <p className="admin-hint">Descoberta indisponível ou antiga. Nome e apresentação existentes podem ser editados; novas seleções precisam de descoberta atual.</p>}
     {error && <p role="alert" className="admin-error">{error}</p>}
     <div className="admin-actions"><Button type="button" disabled={mutation.busy} onClick={onCancel}>Cancelar</Button><ConfirmationDialog trigger={<Button type="button" disabled={mutation.busy}>Restaurar padrões</Button>} title="Restaurar padrões de Storage?" description="O rascunho voltará aos padrões. Salve para aplicar a alteração." confirmLabel="Restaurar padrões" onConfirm={() => { form.reset({ ...storagePreferencesSchema.parse({}), expectedRevision: defaults.expectedRevision }); setError(""); }} /><ConfirmationDialog trigger={<Button type="button" disabled={mutation.busy}>Recarregar versão salva</Button>} title="Descartar este rascunho?" description="A versão salva será carregada novamente." confirmLabel="Recarregar" onConfirm={reload} /><Button type="submit" variant="primary" disabled={mutation.busy}>{mutation.busy ? "Salvando…" : "Salvar Storage"}</Button></div>
+    <TargetNotificationSettings targetRef={config ? `storage:${config.id}` : undefined} />
   </form>;
 }

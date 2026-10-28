@@ -1,5 +1,7 @@
 # Design system do Softcom Pulse
 
+Para avisos operacionais e histórico compartilhado, seguir [Notificações de serviços](notifications.md): sininho e Sheet Kobra, toast temporário sobre a página e áudio centralizado. Não acrescentar uma faixa fixa nem alterar o tamanho dos cards para acomodar notificações.
+
 Padrão para construir e ampliar a interface a partir do Kobra já integrado ao aplicativo. Referência conferida em 27/10/2026, na branch `develop`, commit `b428b22`; a adoção visual está no commit `b4b69bb`. Este documento descreve o código atual e estabelece como reutilizá-lo. A paleta escura azulada, o botão verde e a marca laranja descritos em documentos anteriores deixaram de ser o padrão de novas telas.
 
 Leia este guia e [Sons da interface](interface-sounds.md) antes de implementar UI. Para a raiz, leia também [Encaixe do dashboard](overview-fit.md) e [Minicards](availability-cards.md). Os arquivos locais do app são a referência executável; o comentário de `app/theme.css` registra a origem externa Kobra. Não é necessário buscar ou reinstalar componentes de uma galeria para usar o sistema já incorporado.

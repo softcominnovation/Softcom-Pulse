@@ -17,7 +17,7 @@ npx prisma migrate dev
 npm run dev
 ```
 
-Abra http://127.0.0.1:3000/login e entre com o e-mail e a senha de colaborador. O login abre `/`, com o dashboard protegido: indicadores, recursos destacados, problemas e resumo Asgard/VMs. Os destaques ocupam uma faixa acima dos painéis compactos de ASGARD e problemas. “Ver ASGARD” abre `/asgard` com métricas e tabela detalhadas. A apresentação salva define os blocos e até três telas; modos overview/wall, TV, fullscreen e alternância funcionam também no celular. Controles, qualidade dos dados e padrões de interface: [docs/ui.md](docs/ui.md). `GET /api/health` verifica banco e cache. Fluxo, sessão e requisitos de navegador: [docs/authentication.md](docs/authentication.md). O schema contém três tabelas de configuração humana. `migrate dev` aplica as migrations; os scripts de dev/build geram o cliente Prisma automaticamente. Apresentação compartilhada, CRUD, snapshots e leituras autenticadas: [docs/bff.md](docs/bff.md).
+Abra http://127.0.0.1:3000/login e entre com o e-mail e a senha de colaborador. O login abre `/`, com o dashboard protegido: indicadores, recursos destacados, problemas e resumo Asgard/VMs. Os destaques ocupam uma faixa acima dos painéis compactos de ASGARD e problemas. “Ver ASGARD” abre `/asgard` com métricas e tabela detalhadas. A apresentação salva define os blocos e até três telas; modos overview/wall, TV, fullscreen e alternância funcionam também no celular. Controles, qualidade dos dados e padrões de interface: [docs/ui.md](docs/ui.md). `GET /api/health` verifica banco e cache. Fluxo, sessão e requisitos de navegador: [docs/authentication.md](docs/authentication.md). O PostgreSQL guarda configurações humanas, amostras próprias dos monitores HTTP e o histórico/leitura compartilhados das notificações; as séries Zabbix permanecem na origem. `migrate dev` aplica as migrations; os scripts de dev/build geram o cliente Prisma automaticamente. Apresentação compartilhada, CRUD, snapshots e leituras autenticadas: [docs/bff.md](docs/bff.md).
 
 Templates `tpl*` têm consultas próprias e metadados persistidos para labels e classificação Worker/Manager. Não entram na contagem operacional de VMs, preservando os recursos gerais do ASGARD. Contratos, capacidades disponíveis e limites: [docs/templates.md](docs/templates.md). O editor visual de templates está previsto para as configurações administrativas.
 
@@ -26,6 +26,10 @@ As abas Infraestrutura e Asgard & VMs abrem o inventário e os detalhes com hist
 Para alimentar o monitoramento, preencha `ZABBIX_API_URL` e `ZABBIX_API_TOKEN`, confirme o escopo e execute `npm run collector` em outro terminal. `npm run collector:once` coleta uma única vez. O processo não abre porta HTTP. Configuração de escopo, mapeamento, históricos e limites: [docs/zabbix.md](docs/zabbix.md). Sem coleta válida, o BFF informa ausência ou desatualização dos dados.
 
 `npm run check` valida lint, tipos, testes e build. Variáveis, versões, stacks, migrations e testes adicionais: [docs/environment.md](docs/environment.md).
+
+## Notificações
+
+Notificações operacionais usam histórico e leitura compartilhados no PostgreSQL, sininho no cabeçalho e avisos Kobra temporários. Os monitores existentes registram eventos; não há worker novo. Antes de usar a versão atualizada, aplicar a migration `20261028010000_notification_center`. Política, exceções por serviço, mute/volume zero e limites: [docs/notifications.md](docs/notifications.md).
 
 ## Versão e tag
 

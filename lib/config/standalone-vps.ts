@@ -88,6 +88,7 @@ export const standaloneVpsWriteSchema = z.strictObject({
   apiKey: apiKey.optional(),
   enabled: z.boolean().default(true),
   dashboardEnabled: z.boolean().default(false),
+  critical: z.boolean().default(false),
   timeoutMs: z.number().int().min(1000).max(30000).default(vpsDefaultTimeoutMs),
 });
 export const standaloneVpsPatchSchema = z.strictObject({
@@ -102,6 +103,7 @@ export const standaloneVpsPatchSchema = z.strictObject({
   enabled: z.boolean().optional(),
   monitorPaused: z.boolean().optional(),
   dashboardEnabled: z.boolean().optional(),
+  critical: z.boolean().optional(),
   timeoutMs: z.number().int().min(1000).max(30000).optional(),
 });
 export const vpsStackWriteSchema = z.strictObject({
@@ -127,6 +129,7 @@ export const vpsStackPatchSchema = z.strictObject({
 export type StandaloneVpsInput = z.infer<typeof standaloneVpsWriteSchema>;
 const monitorStateSchema = z.enum(["inactive", "not_configured", "pending", "up", "down", "paused"]);
 export const standaloneVpsCardSchema = z.object({
+  critical: z.boolean().optional(),
   id: z.uuid(), name: z.string(), provider: z.string().nullable(), ip: z.string(), domain: z.string().nullable(), managerUrl: z.string().nullable(), baseUrl: z.string().nullable(),
   monitorConfigured: z.boolean(), enabled: z.boolean(), monitorPaused: z.boolean().default(false), dashboardEnabled: z.boolean(), timeoutMs: z.number(), revision: z.number(), monitorState: monitorStateSchema, apiKey: z.string().nullable().optional(),
   progressStartedAt: z.string().nullable().optional(),
@@ -136,6 +139,7 @@ export const standaloneVpsCardSchema = z.object({
 export type StandaloneVpsCard = z.infer<typeof standaloneVpsCardSchema>;
 /** Lean payload for dashboard availability cards and their modal. No secrets, recipe or history. */
 export const standaloneVpsHighlightSchema = z.object({
+  critical: z.boolean().optional(),
   id: z.uuid(), name: z.string(), provider: z.string().nullable(), ip: z.string(),
   enabled: z.boolean(), monitorConfigured: z.boolean(), monitorPaused: z.boolean().default(false), monitorState: monitorStateSchema,
   cpuPercent: z.number().nullable(), memoryPercent: z.number().nullable(), diskPercent: z.number().nullable(),

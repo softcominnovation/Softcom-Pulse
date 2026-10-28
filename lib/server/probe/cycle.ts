@@ -1,4 +1,6 @@
 import "server-only";
+import { captureNotificationTargets, recordHttpNotification } from "../notifications/http.ts";
+import type { NotificationTarget } from "../notifications/targets.ts";
 import { probeConcurrency, probeDefaultTimeoutMs } from "../../config/external-services.ts";
 import { BffError } from "../bff.ts";
 import { classifyProbe, type ProbeObservation } from "./classify.ts";
@@ -16,7 +18,7 @@ function observationError(error: unknown): ProbeObservation {
   if (/CERT|TLS|UNABLE_TO_VERIFY|ERR_TLS|EPROTO/.test(code + (error instanceof Error ? error.message : ""))) return { error: "tls" };
   return { error: "network" };
 }
-async function checkOne(service: ServiceRow, transport: ProbeTransport, signal?: AbortSignal) {
+async function checkOne(service: ServiceRow, transport: ProbeTransport, signal?: AbortSignal, notificationTarget?: NotificationTarget) {
   const url = parseProbeUrl(service.url);
   let secret = "";
   if (service.secretCiphertext) secret = openProbeSecret(service.secretCiphertext);
@@ -33,16 +35,23 @@ async function checkOne(service: ServiceRow, transport: ProbeTransport, signal?:
   } catch (error) { observation = observationError(error); }
   const classified = classifyProbe(service.successMode, service.expectedStatuses, service.jsonPointer, service.expectedValue, observation, service.timeoutMs ?? probeDefaultTimeoutMs);
   const stats = await recordExternalSample(service.id, started, classified.reason, classified.latencyMs, classified.httpStatus);
-  await publishProbeResult(service.id, started.toISOString(), { ...classified, certNotAfter, ...stats });
+  await Promise.all([
+    publishProbeResult(service.id, started.toISOString(), { ...classified, certNotAfter, ...stats }),
+    recordHttpNotification(notificationTarget, "probe", classified.reason, started),
+  ]);
 }
 export async function runProbeCycle(options: { signal?: AbortSignal; transport?: ProbeTransport; services?: ServiceRow[] } = {}) {
   const services = options.services ?? await listEnabledExternalServices();
   const transport = options.transport ?? probeExchange;
+  const notificationTargets = await captureNotificationTargets();
   let index = 0;
   const worker = async () => {
-    while (index < services.length && !options.signal?.aborted) await checkOne(services[index++], transport, options.signal).catch(error => {
+    while (index < services.length && !options.signal?.aborted) {
+      const service = services[index++];
+      await checkOne(service, transport, options.signal, notificationTargets.get(`external_service:${service.id}`)).catch(error => {
       if (error instanceof BffError && (error.code === "database_unavailable" || error.code === "cache_unavailable")) throw error;
     });
+    }
   };
   await Promise.all(Array.from({ length: Math.min(probeConcurrency, services.length) }, worker));
 }

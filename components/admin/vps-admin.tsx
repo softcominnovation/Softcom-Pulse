@@ -1,4 +1,5 @@
 "use client";
+import { TargetNotificationSettings } from "@/components/notifications/settings";
 
 import { useEffect, useState, type ComponentProps } from "react";
 import { usePathname } from "next/navigation";
@@ -21,8 +22,8 @@ import { useAuthStore, useCanEdit } from "@/store/auth.store";
 import { Check, Field, ReadError, errorText, useAdminRead, useMutation } from "./shared";
 
 const parseList = (data: unknown) => z.object({ data: z.array(standaloneVpsCardSchema) }).parse(data).data;
-type Draft = { name: string; provider: string; ip: string; domain: string; managerUrl: string; baseUrl: string; apiKey: string; timeoutSeconds: number; enabled: boolean; dashboardEnabled: boolean };
-const emptyDraft: Draft = { name: "", provider: "", ip: "", domain: "", managerUrl: "", baseUrl: "", apiKey: "", timeoutSeconds: 5, enabled: true, dashboardEnabled: false };
+type Draft = { name: string; provider: string; ip: string; domain: string; managerUrl: string; baseUrl: string; apiKey: string; timeoutSeconds: number; enabled: boolean; dashboardEnabled: boolean; critical: boolean };
+const emptyDraft: Draft = { name: "", provider: "", ip: "", domain: "", managerUrl: "", baseUrl: "", apiKey: "", timeoutSeconds: 5, enabled: true, dashboardEnabled: false, critical: false };
 function ApiKeyField({ show, onToggle, ...props }: ComponentProps<"input"> & { show: boolean; onToggle: () => void }) {
   return <div className="admin-secret">
     <input type={show ? "text" : "password"} autoComplete="new-password" maxLength={4096} {...props} />
@@ -30,7 +31,7 @@ function ApiKeyField({ show, onToggle, ...props }: ComponentProps<"input"> & { s
   </div>;
 }
 function fromCard(item: StandaloneVpsCard): Draft {
-  return { ...emptyDraft, name: item.name, provider: item.provider ?? "", ip: item.ip, domain: item.domain ?? "", managerUrl: item.managerUrl ?? "", baseUrl: item.baseUrl ?? "", apiKey: item.apiKey ?? "", timeoutSeconds: Math.round(item.timeoutMs / 1000), enabled: item.enabled, dashboardEnabled: item.dashboardEnabled };
+  return { ...emptyDraft, name: item.name, provider: item.provider ?? "", ip: item.ip, domain: item.domain ?? "", managerUrl: item.managerUrl ?? "", baseUrl: item.baseUrl ?? "", apiKey: item.apiKey ?? "", timeoutSeconds: Math.round(item.timeoutMs / 1000), enabled: item.enabled, dashboardEnabled: item.dashboardEnabled, critical: item.critical ?? false };
 }
 export function VpsForm({ existing, onSaved, onCancel, onReload }: { existing?: StandaloneVpsCard; onSaved: () => void; onCancel: () => void; onReload: () => void }) {
   const form = useForm<Draft>({ defaultValues: existing ? fromCard(existing) : emptyDraft }), mutation = useMutation();
@@ -48,7 +49,7 @@ export function VpsForm({ existing, onSaved, onCancel, onReload }: { existing?: 
   const submit = form.handleSubmit(async draft => {
     setError(""); setConflict(false);
     const apiKey = draft.apiKey.trim();
-    const parsed = standaloneVpsWriteSchema.safeParse({ name: draft.name, provider: draft.provider, ip: draft.ip, domain: draft.domain, managerUrl: draft.managerUrl, baseUrl: draft.baseUrl, enabled: draft.enabled, dashboardEnabled: draft.dashboardEnabled, timeoutMs: Math.round(draft.timeoutSeconds * 1000), ...(apiKey ? { apiKey } : {}) });
+    const parsed = standaloneVpsWriteSchema.safeParse({ name: draft.name, provider: draft.provider, ip: draft.ip, domain: draft.domain, managerUrl: draft.managerUrl, baseUrl: draft.baseUrl, enabled: draft.enabled, dashboardEnabled: draft.dashboardEnabled, critical: draft.critical, timeoutMs: Math.round(draft.timeoutSeconds * 1000), ...(apiKey ? { apiKey } : {}) });
     if (!parsed.success) { setError("Revise os campos. O IP precisa ser IPv4 ou IPv6, o tempo limite fica entre 1 e 30 segundos, e a URL do monitor não leva usuário, senha, query ou fragmento."); return; }
     if (parsed.data.baseUrl && !apiKey && !existing?.monitorConfigured) { setError("Informe a URL base e a chave juntas, ou deixe as duas vazias."); return; }
     const body = { ...parsed.data, ...(existing ? { expectedRevision: existing.revision, ...(!parsed.data.baseUrl ? { apiKey: "" } : apiKey ? { apiKey } : {}) } : {}) };
@@ -70,6 +71,7 @@ export function VpsForm({ existing, onSaved, onCancel, onReload }: { existing?: 
     </div><div className="admin-checks">
       <Check label="Ativa. A VPS inativa não é consultada."><input type="checkbox" {...form.register("enabled")} /></Check>
       <Check label="Destacar no dashboard"><input type="checkbox" {...form.register("dashboardEnabled")} /></Check>
+      <Check label="Serviço crítico"><input type="checkbox" {...form.register("critical")} /></Check>
     </div></fieldset>
     {error && <p role="alert" className="admin-error">{error}</p>}
     <div className="admin-actions">
@@ -80,6 +82,7 @@ export function VpsForm({ existing, onSaved, onCancel, onReload }: { existing?: 
         : <ConfirmationDialog trigger={<Button type="button" disabled={mutation.busy}><Pause aria-hidden="true" />Pausar monitor</Button>} title="Pausar monitor?" description="A consulta para na próxima rodada e a faixa zera. O cadastro e o histórico permanecem. Nenhum recurso do Zabbix será alterado." confirmLabel="Pausar monitor" onConfirm={() => setPaused(true)} />)}
       {conflict && <Button type="button" onClick={onReload}>Recarregar versão salva</Button>}
     </div>
+    <TargetNotificationSettings targetRef={existing ? `standalone_vps:${existing.id}` : undefined} />
   </form>;
 }
 export function VpsAdmin() {

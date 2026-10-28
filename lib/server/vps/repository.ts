@@ -11,6 +11,7 @@ import { deleteVpsResult, readVpsResult } from "./store.ts";
 import { openVpsMonitorKey, sealVpsMonitorKey } from "./secret.ts";
 
 type VpsRow = {
+  critical: boolean;
   id: string; name: string; provider: string | null; ip: string; domain: string | null; managerUrl: string | null; baseUrl: string | null; apiKeyCiphertext: string | null;
   enabled: boolean; monitorPaused: boolean; progressStartedAt: Date | null; dashboardEnabled: boolean; timeoutMs: number; revision: number; createdAt: Date; updatedAt: Date;
 };
@@ -29,6 +30,7 @@ function publicVps(row: VpsRow, sample: SampleRow | null, strip: number[]) {
   const monitorConfigured = row.baseUrl !== null;
   const visible = row.enabled && monitorConfigured && !row.monitorPaused;
   return {
+    critical: row.critical,
     id: row.id, name: row.name, provider: row.provider, ip: row.ip, domain: row.domain, managerUrl: row.managerUrl, baseUrl: row.baseUrl, monitorConfigured,
     enabled: row.enabled, monitorPaused: row.monitorPaused, progressStartedAt: row.progressStartedAt?.toISOString() ?? null, dashboardEnabled: row.dashboardEnabled, timeoutMs: row.timeoutMs, revision: row.revision,
     monitorState: monitorState(row.enabled, monitorConfigured, sample?.reason ?? null, row.monitorPaused),
@@ -91,6 +93,7 @@ export function listStandaloneVps() {
 }
 function highlightCard(item: Awaited<ReturnType<typeof cards>>[number]) {
   return {
+    critical: item.critical,
     id: item.id, name: item.name, provider: item.provider, ip: item.ip,
     enabled: item.enabled, monitorConfigured: item.monitorConfigured, monitorPaused: item.monitorPaused, monitorState: item.monitorState,
     cpuPercent: item.cpuPercent, memoryPercent: item.memoryPercent, diskPercent: item.diskPercent,

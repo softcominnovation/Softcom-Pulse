@@ -1,4 +1,5 @@
 "use client";
+import { TargetNotificationSettings } from "@/components/notifications/settings";
 
 import { useEffect, useState } from "react";
 import { Pause, Pencil, Play, Trash2 } from "lucide-react";
@@ -68,6 +69,7 @@ function ApplicationForm({ existing, onSaved, onCancel, onReload }: { existing?:
       </div></fieldset>
       {error && <p role="alert" className="admin-error">{error}</p>}
       <div className="admin-actions"><Button type="submit" variant="primary" disabled={mutation.busy}>{mutation.busy ? "Salvando…" : "Salvar aplicação"}</Button><Button type="button" disabled={mutation.busy} onClick={onCancel}>Cancelar</Button>{conflict && <Button type="button" onClick={onReload}>Recarregar versão salva</Button>}</div>
+      <TargetNotificationSettings targetRef={existing ? `external_service:${existing.id}` : undefined} />
     </form></section>;
 }
 export function ApplicationsAdmin() {

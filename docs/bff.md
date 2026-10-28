@@ -1,5 +1,11 @@
 # Contratos do BFF e configuração
 
+## Central de notificações
+
+As rotas `/api/monitoring/notifications` oferecem histórico, incidentes, detalhe, mudanças por cursor e leitura compartilhada no PostgreSQL. Consultas públicas usam `/api/public/monitoring/notifications`, com o gate de Host existente. `POST .../read` e `/api/settings/notifications` exigem editor; não há escrita pública nem consulta Zabbix nesses GETs. Política tem revisão própria, e PUT por alvo preserva as outras exceções. O corpo da política geral aceita até 512 KiB; as demais rotas continuam limitadas a 64 KiB. Contratos completos, paginação, 409 e projeção pública em [Notificações de serviços](notifications.md).
+
+As cinco tabelas `notification_*` são persistência operacional deliberada, separada da configuração humana e das séries externas. Elas guardam transições, checkpoints mínimos e leitura global; Redis não determina o histórico. `standalone_vps.critical` é a única propriedade nova nos cadastros de domínio.
+
 ## Extensão Storage
 
 `GET /api/monitoring/storages` devolve `ReadResult<StorageInventory>` com items/órfãos e estado do ramo. `GET .../:storageKey` devolve o painel da máquina. Ambos leem Redis/preferências em lote, sem Zabbix. `GET /api/settings/storages` e `PUT .../:storageKey` são exclusivos de editor; PUT usa expectedRevision (0 na criação), deriva identidade no servidor e valida novas seleções pela descoberta atual. Defaults/reset conservam UUID. Contratos e falhas em [Storage](storage.md).

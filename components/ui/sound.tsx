@@ -254,12 +254,37 @@ function jitter(cents: number) {
   return (Math.random() * 2 - 1) * cents
 }
 
-function play(patch: { play: (name: string, opts?: object) => unknown }, cue: Cue) {
-  patch.play(cue.sound, {
+const voices = new Map<{ stop: (release?: number) => void }, ReturnType<typeof setTimeout>>()
+function silence() {
+  for (const [voice, timer] of voices) { voice.stop(0.01); clearTimeout(timer) }
+  voices.clear()
+  window.dispatchEvent(new Event('kobra:sound-silence'))
+}
+function readVolume() {
+  const raw = readPreference(VOLUME_KEY)
+  const value = raw === null ? DEFAULT_VOLUME : Number(raw)
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : DEFAULT_VOLUME
+}
+function canAttemptOperationalSound() {
+  return typeof window !== 'undefined' && navigator.userActivation?.hasBeenActive === true
+    && readPreference(STORAGE_KEY) !== '1' && readVolume() > 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+export function canPlayOperationalSound() {
+  return canAttemptOperationalSound() && !document.hidden
+}
+let operationalPlayer: ((sound: SoundName, velocity: number) => boolean) | null = null
+export function playOperationalSound(sound: SoundName, velocity: number) {
+  if (!canAttemptOperationalSound()) return false
+  return operationalPlayer?.(sound, velocity) ?? false
+}
+function play(patch: { play: (name: string, opts?: object) => { stop: (release?: number) => void } }, cue: Cue) {
+  if (readPreference(STORAGE_KEY) === '1' || readVolume() === 0) return
+  const voice = patch.play(cue.sound, {
     detune: (cue.detune ?? 0) + jitter(JITTER[cue.sound]),
 
     velocity: (cue.velocity ?? 1) * (0.9 + Math.random() * 0.1),
   })
+  voices.set(voice, setTimeout(() => voices.delete(voice), 5000))
 }
 
 const TOGGLE_SLOTS = new Set([
@@ -385,6 +410,8 @@ function sliderRange(el: HTMLElement) {
 function SoundEffectListener() {
   const patch = usePatch(PATCH)
   const muted = useSoundMuted()
+  const volume = useSoundVolume()
+  useEffect(() => { if (muted || volume === 0) silence() }, [muted, volume])
 
   const wasMuted = useRef(muted)
   useEffect(() => {
@@ -478,11 +505,13 @@ function SoundEffectListener() {
 
     // Pulse: let the official toast events use the same Kobra sound patch.
     const onToast = (event: Event) => {
-      const state = (event as CustomEvent<{ state?: string }>).detail?.state
+      const detail = (event as CustomEvent<{ state?: string; sound?: false | 'notification' | 'warning' | 'error' | 'success'; velocity?: number; operational?: boolean }>).detail
+      const state = detail?.state
+      if (detail?.sound === false || (detail?.operational && !canPlayOperationalSound())) return
       if (state === 'pending') return
       const sound: SoundName = state === 'success' ? 'success'
         : state === 'error' ? 'error' : state === 'warning' ? 'warning' : 'notification'
-      play(patch, { sound, velocity: 0.7 })
+      play(patch, { sound: detail?.sound ?? sound, velocity: Math.max(0, Math.min(1, detail?.velocity ?? 0.7)) })
     }
 
     const onInput = (event: Event) => {
@@ -550,8 +579,14 @@ function SoundEffectListener() {
     document.addEventListener('keydown', onKeyDown, true)
     document.addEventListener('contextmenu', onContextMenu, true)
     document.addEventListener('input', onInput, true)
+    operationalPlayer = (sound, velocity) => {
+      play(patch, { sound, velocity })
+      return true
+    }
     window.addEventListener('kobra:toast', onToast)
+    window.addEventListener('kobra:sound-silence', stopTicking)
     return () => {
+      operationalPlayer = null
       observer.disconnect()
       stopTicking()
       document.removeEventListener('pointerdown', onPointerDown, true)
@@ -562,6 +597,8 @@ function SoundEffectListener() {
       document.removeEventListener('contextmenu', onContextMenu, true)
       document.removeEventListener('input', onInput, true)
       window.removeEventListener('kobra:toast', onToast)
+      window.removeEventListener('kobra:sound-silence', stopTicking)
+      silence()
     }
   }, [patch])
 
@@ -612,6 +649,7 @@ function notify() {
 
 export function setSoundMuted(muted: boolean) {
   writePreference(STORAGE_KEY, muted ? '1' : '0')
+  if (muted) silence()
   notify()
 }
 
@@ -624,18 +662,16 @@ export function useSoundMuted() {
 }
 
 export function setSoundVolume(volume: number) {
-  writePreference(VOLUME_KEY, String(volume))
+  const next = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : DEFAULT_VOLUME
+  if (next < readVolume()) silence()
+  writePreference(VOLUME_KEY, String(next))
   notify()
 }
 
 export function useSoundVolume() {
   return useSyncExternalStore(
     subscribeMuted,
-    () => {
-      const stored = Number(readPreference(VOLUME_KEY))
-
-      return Number.isFinite(stored) && stored > 0 && stored <= 1 ? stored : DEFAULT_VOLUME
-    },
+    readVolume,
     () => DEFAULT_VOLUME,
   )
 }
@@ -645,7 +681,7 @@ export function SoundEffects({ children }: { children: React.ReactNode }) {
   const volume = useSoundVolume()
 
   return (
-    <SoundProvider enabled={!muted} volume={volume}>
+    <SoundProvider enabled={!muted && volume > 0} volume={volume}>
       <SoundEffectListener />
       {children}
     </SoundProvider>
@@ -660,7 +696,9 @@ const SLASH = 'M2 2 22 22'
 
 export function SoundToggle({ className, onClick, ...props }: React.ComponentProps<'button'>) {
 
-  const muted = useSoundMuted()
+  const storedMuted = useSoundMuted()
+  const volume = useSoundVolume()
+  const muted = storedMuted || volume === 0
   const maskId = useId()
 
   return (
@@ -670,7 +708,10 @@ export function SoundToggle({ className, onClick, ...props }: React.ComponentPro
       aria-pressed={muted}
       onClick={(event) => {
         onClick?.(event)
-        if (!event.defaultPrevented) setSoundMuted(!muted)
+        if (!event.defaultPrevented) {
+          if (muted && volume === 0) setSoundVolume(DEFAULT_VOLUME)
+          setSoundMuted(!muted)
+        }
       }}
 
       data-sound="swoosh"

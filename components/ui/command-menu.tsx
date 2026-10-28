@@ -381,7 +381,7 @@ export function CommandMenu({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         if (open) closeMenu()
         else openMenu()

@@ -1,4 +1,5 @@
 "use client";
+import { TargetNotificationSettings } from "@/components/notifications/settings";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pause, Pencil, Play, Plus, Trash2, Unlink } from "lucide-react";
@@ -454,5 +455,6 @@ function SignalEditForm({ existing, onSaved, onCancel }: {
       <Button type="submit" variant="primary" disabled={mutation.busy}>{mutation.busy ? "Salvando…" : "Salvar"}</Button>
       <Button type="button" onClick={onCancel}>Cancelar</Button>
     </div>
+    <TargetNotificationSettings targetRef={existing ? `signal_target:${existing.id}` : undefined} />
   </form>;
 }

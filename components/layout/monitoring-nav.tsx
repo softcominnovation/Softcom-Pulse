@@ -1,5 +1,5 @@
 "use client";
-
+// Não remover codigo da rota de WhatsApp, ela será usada futuramente #rota-whatsApp
 import {
   IconActivityHeartbeat,
   IconApps,
@@ -47,12 +47,12 @@ export function MonitoringNav() {
         icon: IconBox,
         active: path === "/monitor/servicos",
       },
-      {
-        href: "/monitor/whatsapp",
-        label: "WhatsApp",
-        icon: IconBrandWhatsapp,
-        active: path === "/monitor/whatsapp" || path.startsWith("/monitor/whatsapp/"),
-      },
+      // {
+      //   href: "/monitor/whatsapp",
+      //   label: "WhatsApp",
+      //   icon: IconBrandWhatsapp,
+      //   active: path === "/monitor/whatsapp" || path.startsWith("/monitor/whatsapp/"),
+      // },
       {
         href: "/monitor/aplicacoes",
         label: "Aplicações",
@@ -116,13 +116,13 @@ export function MonitoringNav() {
       active: path === "/servicos",
       admin: false,
     },
-    {
-      href: "/whatsapp",
-      label: "WhatsApp",
-      icon: IconBrandWhatsapp,
-      active: path === "/whatsapp" || path.startsWith("/whatsapp/"),
-      admin: false,
-    },
+    // {
+    //   href: "/whatsapp",
+    //   label: "WhatsApp",
+    //   icon: IconBrandWhatsapp,
+    //   active: path === "/whatsapp" || path.startsWith("/whatsapp/"),
+    //   admin: false,
+    // },
     {
       href: "/admin/aplicacoes",
       label: "Aplicações",

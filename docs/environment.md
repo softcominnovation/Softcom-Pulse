@@ -1,5 +1,9 @@
 # Ambiente e publicação
 
+## Preparação das notificações
+
+A migration `20261028010000_notification_center` deve preceder os processos atualizados: cria histórico/leitura compartilhados e checkpoints, inicializa a política e acrescenta criticidade às VPS, false por padrão. Aplicar migrations prontas com `npx prisma migrate deploy`; o entrypoint existente já realiza essa etapa. Não há env, porta, worker ou serviço adicional. Reiniciar os quatro monitores existentes com o código atualizado quando a versão for instalada. Primeira coleta estabelece estado silencioso, sem inventar histórico. Contratos e limitações em [Notificações](notifications.md).
+
 ## Versões e instalação
 
 Base validada em 02/10/2026: Next.js **16.3.8**, React **19.3.0**, Tailwind **4.3.3**, TypeScript **5.9.3**, Prisma **7.10.0** e cliente Redis **6.3.0**. Dependências diretas têm versões exatas; `package-lock.json` fixa a árvore.

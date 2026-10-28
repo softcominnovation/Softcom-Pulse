@@ -362,7 +362,7 @@ export function KobraControls({ publicRead = false }: { publicRead?: boolean }) 
               <SoundToggle
                 aria-label={muted ? "Ativar sons" : "Silenciar sons"}
               />
-              <span>{muted ? "Silenciados" : "Ativados"}</span>
+              <span>{muted || soundPercent === 0 ? "Silenciados" : "Ativados"}</span>
               <Badge variant="neutral" size="sm">
                 Kobra Sound
               </Badge>
@@ -372,7 +372,7 @@ export function KobraControls({ publicRead = false }: { publicRead?: boolean }) 
               <output>{soundPercent}%</output>
             </div>
             <Slider
-              min={10}
+              min={0}
               max={100}
               step={5}
               value={[soundPercent]}
@@ -391,12 +391,13 @@ export function KobraControls({ publicRead = false }: { publicRead?: boolean }) 
             </p>
             <Button
               variant="outline"
-              disabled={muted}
+              disabled={muted || soundPercent === 0}
               data-sound="notification"
               onClick={() =>
                 toast({
                   message: `Áudio de interface ativo em ${soundPercent}%.`,
                   state: "success",
+                  sound: false,
                 })
               }
             >

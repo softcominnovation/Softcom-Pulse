@@ -8,6 +8,8 @@ import { AuthGate } from "@/components/auth/auth-gate";
 import { Brand } from "@/components/brand";
 import { DisplayControls } from "@/components/dashboard/display-controls";
 import { KobraControls } from "@/components/layout/kobra-controls";
+import { NotificationBell } from "@/components/notifications/center";
+import { NotificationRuntime } from "@/components/notifications/provider";
 import { MonitoringNav } from "@/components/layout/monitoring-nav";
 import { Button } from "@/components/ui/button";
 import { getAuthController, useAuthStore } from "@/store/auth.store";
@@ -89,6 +91,7 @@ export function AppShell({
         Ir para o conteúdo
       </a>
       <header className="pulse-topbar">
+        <NotificationRuntime />
         <Link
           href={publicRead ? "/monitor" : "/"}
           aria-label="Ir para a página inicial"
@@ -132,6 +135,7 @@ export function AppShell({
               Sair
             </Button>
           )}
+          <NotificationBell publicRead={publicRead} />
         </div>
       </header>
       <main id="main" className={dashboard ? "dashboard-main" : "monitoring-main"}>

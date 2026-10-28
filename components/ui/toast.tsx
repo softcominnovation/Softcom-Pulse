@@ -23,6 +23,8 @@ import {
 import { ALERT_MARKS, type AlertTone } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/spinner'
+import { operationalToastPlace, subscribeOperationalToastPlace } from '@/lib/notifications/toast-place'
+import type { NotificationToastPosition } from '@/lib/notifications/policy'
 import { dissolve } from '@/lib/smoky-dissolve'
 import { cn } from '@/lib/utils'
 
@@ -74,6 +76,10 @@ export type ToastInput = {
   state?: ToastState
   action?: ToastAction
   lifetime?: number
+  sound?: false | 'notification' | 'warning' | 'error' | 'success'
+  velocity?: number
+  operational?: boolean
+  onDismiss?: () => void
 }
 export type Note = ToastInput & { id: string }
 export type ToastClock = { waits: Map<string, number>; since: number | null }
@@ -144,7 +150,7 @@ const TONE_INK: Record<Exclude<AlertTone, 'success'>, string> = {
 
 const BADGE_SIZE = { '--check-size': '16px' } as CSSProperties
 
-function ToastGlyph({ state }: { state: ToastState }) {
+function ToastGlyph({ state, light = false }: { state: ToastState; light?: boolean }) {
   switch (state) {
 
     case 'pending':
@@ -162,7 +168,7 @@ function ToastGlyph({ state }: { state: ToastState }) {
 
       return (
         <Mark
-          className={cn('shrink-0', state === 'error' ? 'size-5' : 'size-4', TONE_INK[state])}
+          className={cn('shrink-0', light ? 'size-6 text-white' : state === 'error' ? 'size-5' : 'size-4', !light && TONE_INK[state])}
           aria-hidden
         />
       )
@@ -189,8 +195,19 @@ const textSlide = (direction: TextDirection) => {
   } as const
 }
 
-function ToastLine({ message }: { message: string }) {
+function ToastLine({ message, alert = false }: { message: string; alert?: boolean }) {
   const direction = useDirection()
+  const split = alert ? message.indexOf(' · ') : -1
+  const title = split === -1 ? message : message.slice(0, split)
+  const detail = split === -1 ? null : message.slice(split + 3)
+  if (alert) {
+    return (
+      <div className="toast-operational-copy flex min-w-64 max-w-sm flex-col gap-0.5 text-start">
+        <span className="text-base leading-5 font-semibold tracking-tight">{title}</span>
+        {detail ? <span className="text-[13px] leading-4 font-medium opacity-85">{detail}</span> : null}
+      </div>
+    )
+  }
   return (
     <motion.div
       initial={{ width: 0 }}
@@ -214,6 +231,7 @@ const glyphKey = (state: ToastState) =>
   state === 'pending' || state === 'success' ? 'badge' : state
 
 function ToastPill({
+  operationalId,
   state,
   message,
   action,
@@ -221,6 +239,7 @@ function ToastPill({
   onDismiss,
   behind,
 }: {
+  operationalId?: string
   state?: ToastState
   message: string
   action?: ToastAction
@@ -229,10 +248,14 @@ function ToastPill({
   behind: boolean
 }) {
   const pill = useRef<HTMLDivElement>(null)
+  const alert = operationalId !== undefined
+  const tone = state === 'error' || state === 'warning' || state === 'success' || state === 'info' ? state : undefined
   return (
     <motion.div
+      data-operational-toast={operationalId}
+      data-tone={alert ? tone : undefined}
       ref={pill}
-      style={{ borderRadius: 9999 }}
+      style={{ borderRadius: alert ? 18 : 9999 }}
       drag={behind ? false : true}
       dragSnapToOrigin
       dragElastic={0.6}
@@ -248,11 +271,14 @@ function ToastPill({
       }}
       className={cn(
 
-        'toast-pill relative flex h-9 max-w-lg items-center overflow-hidden bg-popover/80 text-sm text-foreground backdrop-blur-md',
+        'toast-pill relative flex items-center overflow-hidden text-foreground',
+        alert
+          ? 'toast-operational mb-2 h-auto max-w-[min(28rem,calc(100vw-2rem))] py-4 text-base'
+          : 'h-9 max-w-lg bg-popover/80 text-sm backdrop-blur-md',
         behind ? 'pointer-events-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing',
 
-        action ? 'pe-2' : 'pe-4',
-        state ? 'ps-3' : 'ps-4',
+        alert ? 'pe-3 ps-4' : action ? 'pe-2' : 'pe-4',
+        !alert && (state ? 'ps-3' : 'ps-4'),
       )}
     >
       <motion.div
@@ -280,9 +306,12 @@ function ToastPill({
                       key={glyphKey(state)}
                       {...GLYPH_POP}
                       transition={MORPH}
-                      className="flex size-4 shrink-0 items-center justify-center"
+                      className={cn(
+                        'flex shrink-0 items-center justify-center',
+                        alert && tone === 'error' ? 'size-10 rounded-full bg-white/18' : 'size-4',
+                      )}
                     >
-                      <ToastGlyph state={state} />
+                      <ToastGlyph state={state} light={alert && tone === 'error'} />
                     </motion.span>
                   </AnimatePresence>
                 </div>
@@ -292,7 +321,7 @@ function ToastPill({
 
           <div className="flex items-center">
             <AnimatePresence initial={false}>
-              <ToastLine key={message} message={message} />
+              <ToastLine key={message} message={message} alert={alert} />
             </AnimatePresence>
           </div>
         </div>
@@ -308,8 +337,8 @@ function ToastPill({
 
               className="flex items-center overflow-hidden rounded-full"
             >
-              <div className="w-max ps-7">
-                <Button type="button" size="sm" onClick={onAction} className="h-7 rounded-full">
+              <div className={cn('w-max', alert ? 'ps-4' : 'ps-7')}>
+                <Button type="button" size="sm" variant={alert && tone === 'error' ? 'primary' : 'default'} onClick={onAction} className="h-8 rounded-full px-3">
                   {action.label}
                 </Button>
               </div>
@@ -394,10 +423,14 @@ function ToastStack({
   cards,
   onOpen,
   position,
+  className,
+  anchor,
 }: {
   cards: StackCard[]
   onOpen: (open: boolean) => void
   position: ToastPosition
+  className?: string
+  anchor?: 'header'
 }) {
   const [pointing, setPointing] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -406,6 +439,35 @@ function ToastStack({
   const measured = useRef(new Map<string, HTMLElement>())
   const root = useRef<HTMLDivElement>(null)
   const textDirection = useDirection()
+  const cardKey = cards.map((card) => card.id).join('|')
+
+  useLayoutEffect(() => {
+    const node = root.current
+    if (!node || anchor !== 'header') return
+    const place = () => {
+      const band = document.querySelector('.dashboard-nav') ?? document.querySelector('.pulse-topbar')
+      const card = node.querySelector('[data-operational-toast]')
+      const height = card?.getBoundingClientRect().height || 76
+      if (!band) {
+        node.style.top = '1rem'
+        return
+      }
+      const rect = band.getBoundingClientRect()
+      const top = rect.top + window.scrollY + rect.height / 2 - height / 2 - 16
+      node.style.top = `${Math.max(8, top)}px`
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    for (const selector of ['.dashboard-nav', '.pulse-topbar']) {
+      const band = document.querySelector(selector)
+      if (band) observer.observe(band)
+    }
+    window.addEventListener('resize', place)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', place)
+    }
+  }, [anchor, cardKey])
 
   const open = pointing || focused || holding
   const piled = cards.length > 1 && !open
@@ -525,6 +587,7 @@ function ToastStack({
       className={cn(
         'pointer-events-none fixed inset-x-0 z-100',
         side === 'top' ? 'top-4' : 'bottom-4',
+        className,
       )}
     >
       <AnimatePresence initial={false}>
@@ -568,10 +631,19 @@ function ToastStack({
   )
 }
 
+function useOperationalToastPlace(): NotificationToastPosition {
+  const [place, setPlace] = useState(operationalToastPlace)
+  useEffect(() => subscribeOperationalToastPlace(setPlace), [])
+  return place
+}
+
 export function Toasts({ position = 'top-center' }: { position?: ToastPosition }) {
   const [notes, setNotes] = useState<Note[]>([])
-  const [reading, setReading] = useState(false)
+  const [regularOpen, setRegularOpen] = useState(false)
+  const [alertOpen, setAlertOpen] = useState(false)
+  const reading = regularOpen || alertOpen
   const clock = useRef<ToastClock>({ waits: new Map(), since: null })
+  const operational = useRef(new Map<string, { left: number; at: number; onDismiss?: () => void }>())
 
   const issued = useRef<string | null>(null)
 
@@ -584,12 +656,17 @@ export function Toasts({ position = 'top-center' }: { position?: ToastPosition }
       setNotes((current) => upsertToast(current, note))
       tick(clock.current, performance.now())
       const delay = dismissDelay(note.state, note.action !== undefined, note.lifetime)
-      if (delay === null) clock.current.waits.delete(note.id)
+      if (note.operational) {
+        operational.current.set(note.id, { left: delay ?? 8000, at: performance.now(), onDismiss: note.onDismiss })
+        clock.current.waits.delete(note.id)
+      } else if (delay === null) clock.current.waits.delete(note.id)
       else clock.current.waits.set(note.id, delay)
     }
     const onDismiss = (event: Event) => {
       const id = (event as CustomEvent<string>).detail
       clock.current.waits.delete(id)
+      operational.current.get(id)?.onDismiss?.()
+      operational.current.delete(id)
       setNotes((current) => current.filter((note) => note.id !== id))
     }
 
@@ -599,6 +676,19 @@ export function Toasts({ position = 'top-center' }: { position?: ToastPosition }
       window.removeEventListener(EVENT, onToast)
       window.removeEventListener(DISMISS, onDismiss)
     }
+  }, [])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = performance.now()
+      for (const [id, entry] of operational.current) {
+        const focused = document.activeElement?.closest('[data-operational-toast]')?.getAttribute('data-operational-toast') === id
+        if (!focused) entry.left -= now - entry.at
+        entry.at = now
+        if (entry.left <= 0) dismissToast(id)
+      }
+    }, 100)
+    return () => window.clearInterval(timer)
   }, [])
 
   useEffect(() => {
@@ -628,36 +718,44 @@ export function Toasts({ position = 'top-center' }: { position?: ToastPosition }
     return () => window.clearTimeout(timer)
   }, [notes, reading])
 
+  const cardsFor = (items: readonly Note[]) =>
+    items.map((note) => {
+      const drop = () => {
+        dismissToast(note.id)
+      }
+      const act = () => {
+        issued.current = null
+        note.action?.run()
+        if (issued.current !== note.id) drop()
+      }
+      return {
+        id: note.id,
+        render: (behind: boolean) => (
+          <ToastPill
+            operationalId={note.operational ? note.id : undefined}
+            state={note.state}
+            message={note.message}
+            action={note.action}
+            onAction={act}
+            onDismiss={drop}
+            behind={behind}
+          />
+        ),
+      }
+    })
+  const place = useOperationalToastPlace()
+  const separate = place !== "bottom-end"
+  const alerts = notes.filter((note) => note.operational)
+  const regular = notes.filter((note) => !note.operational)
+
   return (
     <MotionConfig reducedMotion="user">
+      <ToastStack position={position} onOpen={setRegularOpen} cards={cardsFor(separate ? regular : notes)} />
       <ToastStack
-        position={position}
-        onOpen={setReading}
-        cards={notes.map((note) => {
-          const drop = () => {
-            clock.current.waits.delete(note.id)
-            setNotes((current) => current.filter((item) => item.id !== note.id))
-          }
-
-          const act = () => {
-            issued.current = null
-            note.action?.run()
-            if (issued.current !== note.id) drop()
-          }
-          return {
-            id: note.id,
-            render: (behind) => (
-              <ToastPill
-                state={note.state}
-                message={note.message}
-                action={note.action}
-                onAction={act}
-                onDismiss={drop}
-                behind={behind}
-              />
-            ),
-          }
-        })}
+        position={place === "top-end" ? "top-end" : "top-center"}
+        anchor={place === "header-center" ? "header" : undefined}
+        onOpen={setAlertOpen}
+        cards={cardsFor(separate ? alerts : [])}
       />
     </MotionConfig>
   )

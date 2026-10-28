@@ -1,4 +1,5 @@
 "use client";
+import { TargetNotificationSettings } from "@/components/notifications/settings";
 
 import { useForm, useWatch, type FieldPath } from "react-hook-form";
 import { useState } from "react";
@@ -64,6 +65,7 @@ export function ResourceForm({ initial, existing, hosts, containers, stale, onSa
       {isContainer && <div className="admin-candidates"><strong>{candidates.length} candidato(s) na última leitura</strong>{stale && <p>Descoberta indisponível ou desatualizada; não confirma o vínculo atual.</p>}<ul>{candidates.map(item => <li key={item.reference}>{item.name}</li>)}</ul>{!candidates.length && <p>Nenhum container corresponde ao seletor nesta leitura. A configuração existente será preservada.</p>}</div>}
       {error && <p role="alert" className="admin-error">{error}</p>}
       <div className="admin-actions"><Button type="submit" variant="primary" disabled={mutation.busy || ambiguous && changedSelector || invalidSelector || !existing && stale}>{mutation.busy ? "Salvando…" : "Salvar recurso"}</Button><Button type="button" disabled={mutation.busy} onClick={onCancel}>Cancelar</Button></div>
+      <TargetNotificationSettings targetRef={existing ? `resource:${existing.id}` : undefined} />
     </form>
     {parsed.success && resolution && (() => {
       const target = resolution.target;

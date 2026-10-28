@@ -35,7 +35,7 @@ export async function publicResponse(request: Request, action: () => Promise<unk
     return authJson({ error: { code: "internal_error" } }, 500);
   }
 }
-export async function jsonBody(request: Request) {
+export async function jsonBody(request: Request, maximumBytes = 65536) {
   if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get("Content-Type") ?? "")) throw new BffError(400, "invalid_request");
   const reader = request.body?.getReader();
   if (!reader) throw new BffError(400, "invalid_request");
@@ -46,7 +46,7 @@ export async function jsonBody(request: Request) {
       const { done, value } = await reader.read();
       if (done) break;
       bytes += value.byteLength;
-      if (bytes > 65536) { await reader.cancel(); throw new BffError(400, "invalid_request"); }
+      if (bytes > maximumBytes) { await reader.cancel(); throw new BffError(400, "invalid_request"); }
       chunks.push(value);
     }
     return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;

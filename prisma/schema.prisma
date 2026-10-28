@@ -109,6 +109,7 @@ model StandaloneVps {
   monitorPaused     Boolean   @default(false) @map("monitor_paused")
   progressStartedAt DateTime? @map("progress_started_at") @db.Timestamptz(3)
   dashboardEnabled  Boolean   @default(false) @map("dashboard_enabled")
+  critical          Boolean   @default(false)
   timeoutMs         Int       @default(5000) @map("timeout_ms")
   revision          Int       @default(1)
   createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -118,6 +119,81 @@ model StandaloneVps {
 
   @@index([name, id])
   @@map("standalone_vps")
+}
+
+model NotificationTargetState {
+  targetRef String @map("target_ref") @db.VarChar(60)
+  conditionKey String @map("condition_key") @db.VarChar(256)
+  epoch String @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  checkpoint Json @default("{}")
+  incidentId String? @map("incident_id") @db.Uuid
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(3)
+  @@id([targetRef, conditionKey])
+  @@map("notification_target_state")
+}
+
+model NotificationIncident {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  targetRef String @map("target_ref") @db.VarChar(60)
+  conditionKey String @map("condition_key") @db.VarChar(256)
+  displayName String @map("display_name") @db.VarChar(120)
+  source String @db.VarChar(16)
+  severity String @db.VarChar(16)
+  sourceSeverity Int? @map("source_severity") @db.SmallInt
+  status String @db.VarChar(16)
+  messageCode String @map("message_code") @db.VarChar(40)
+  openedAt DateTime @map("opened_at") @db.Timestamptz(3)
+  confirmedAt DateTime @map("confirmed_at") @db.Timestamptz(3)
+  changedAt DateTime @default(now()) @map("changed_at") @db.Timestamptz(3)
+  closedAt DateTime? @map("closed_at") @db.Timestamptz(3)
+  revision BigInt @default(0)
+  events NotificationEvent[]
+  @@index([status, changedAt(sort: Desc), id], map: "notification_incident_status_idx")
+  @@map("notification_incident")
+}
+
+model NotificationEvent {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  incidentId String @map("incident_id") @db.Uuid
+  incident NotificationIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  transitionKey String @unique @map("transition_key") @db.VarChar(180)
+  targetRef String @map("target_ref") @db.VarChar(60)
+  displayName String @map("display_name") @db.VarChar(120)
+  eventType String @map("event_type") @db.VarChar(16)
+  transition String @db.VarChar(16)
+  severity String @db.VarChar(16)
+  sourceSeverity Int? @map("source_severity") @db.SmallInt
+  criticalAtOccurrence Boolean @map("critical_at_occurrence")
+  messageCode String @map("message_code") @db.VarChar(40)
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  createdRevision BigInt @default(0) @map("created_revision")
+  revision BigInt @default(0)
+  announce Boolean @default(false)
+  readAt DateTime? @map("read_at") @db.Timestamptz(3)
+  readBy String? @map("read_by") @db.VarChar(254)
+  @@index([createdAt(sort: Desc), id(sort: Desc)], map: "notification_event_history_idx")
+  @@index([incidentId, createdAt(sort: Desc), id], map: "notification_event_incident_idx")
+  @@map("notification_event")
+}
+
+model NotificationStreamState {
+  id Int @id
+  revision BigInt @default(0)
+  deliveryRevision BigInt @default(1) @map("delivery_revision")
+  generation String @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  minimumRevision BigInt @default(0) @map("minimum_revision")
+  maintainedAt DateTime? @map("maintained_at") @db.Timestamptz(3)
+  @@map("notification_stream_state")
+}
+
+model NotificationChange {
+  revision BigInt @id
+  kind String @db.VarChar(24)
+  payload Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  @@index([createdAt], map: "notification_change_retention_idx")
+  @@map("notification_change")
 }
 
 model VpsStack {

@@ -89,16 +89,26 @@ test("packaged collector publishes real Redis contracts, serves history and excl
       const child = spawn(process.execPath, [fileURLToPath(new URL("node_modules/prisma/build/index.js", root)), "migrate", "deploy"], { cwd: fileURLToPath(root), env: { ...process.env, DATABASE_URL: db.href }, stdio: "ignore", windowsHide: true });
       child.once("error", reject); child.once("exit", code => code === 0 ? resolve() : reject(new Error("Migration failed")));
     });
-    const environment = { DATABASE_URL: db.href, REDIS_URL: redisUrl.href, API_BASE_URL: upstream.url, ZABBIX_API_URL: `http://127.0.0.1:${server.address().port}/api_jsonrpc.php`, ZABBIX_API_TOKEN: "test-zabbix-only" };
+    const environment = { DATABASE_URL: db.href, REDIS_URL: redisUrl.href, API_BASE_URL: upstream.url, ZABBIX_API_URL: `http://127.0.0.1:${server.address().port}/api_jsonrpc.php`, ZABBIX_API_TOKEN: "test-zabbix-only", TOKEN_ENCRYPTION_KEY: authKey, PULSE_EDITOR_EMAILS: "collector@example.test" };
     await writeFile(scopeFile, JSON.stringify(f.scope));
     const scope = await worker(["--conditions=react-server", "collector/configure-scope.mjs", fileURLToPath(scopeFile)], environment).done; assert.equal(scope.code, 0, scope.output);
     const check = await worker(["--conditions=react-server", "collector/index.mjs", "--check"], { ...environment, DATABASE_URL: "", REDIS_URL: "", ZABBIX_API_URL: "", ZABBIX_API_TOKEN: "" }).done;
     assert.equal(check.code, 0, check.output);
     const first = await worker(["--conditions=react-server", "collector/index.mjs", "--once"], environment).done; assert.equal(first.code, 0, first.output);
     const sync = JSON.parse(await cache.get("pulse:sync:last")); [...sync.data.keys, ...(sync.data.extensionKeys ?? [])].forEach(key => touched.add(key)); touched.add("pulse:sync:last");
+    try {
+      for (const phase of ["healthy", "candidate", "confirmed"]) {
+        const result = await worker(["--conditions=react-server", fileURLToPath(new URL("tests/fixtures/notification-worker.mjs", root)), phase], environment).done;
+        assert.equal(result.code, 0, result.output);
+      }
+    } finally { for (const key of await cache.keys("pulse:*")) if (key !== leaseKey) touched.add(key); }
     await withServer(environment, async base => {
       const login = await fetch(base + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "collector@example.test", senha: "test-password" }) });
       assert.equal(login.status, 200); const auth = { Authorization: "Bearer " + (await login.json()).accessToken };
+      const notifications = await (await fetch(base + "/api/monitoring/notifications", { headers: auth })).json();
+      assert.equal(notifications.counts.unreadCount, 3); assert.equal(notifications.counts.activeCount, 3);
+      const read = await fetch(base + "/api/monitoring/notifications/read", { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ ids: [notifications.events[0].id] }) });
+      assert.equal(read.status, 200); assert.equal((await read.json()).counts.unreadCount, 2);
       const overview = await fetch(base + "/api/dashboard/overview", { headers: auth }); assert.equal(overview.status, 200); assert.equal((await overview.json()).data.summary.containersStopped, 4);
       const hosts = await (await fetch(base + "/api/monitoring/hosts", { headers: auth })).json(); const vmKey = hosts.data[0].vms[0].vmKey;
       for (const path of ["/api/monitoring/hosts/ASGARD/history?range=7d", "/api/monitoring/hosts/ASGARD/vms/" + vmKey + "/history?range=1h"]) {
@@ -117,6 +127,10 @@ test("packaged collector publishes real Redis contracts, serves history and excl
     held.child.send("stop");
     const stopped = await held.done; assert.equal(stopped.code, 0, stopped.output);
     const resumed = await worker(["--conditions=react-server", "collector/index.mjs", "--once"], environment).done; assert.equal(resumed.code, 0, resumed.output);
+    await withServer({ ...environment, PULSE_PUBLIC_HOSTS: "127.0.0.1" }, async base => {
+      const response = await fetch(base + "/api/public/monitoring/notifications"); assert.equal(response.status, 200);
+      const restored = await response.json(); assert.equal(restored.counts.unreadCount, 2); assert.equal(restored.counts.activeCount, 3);
+    });
   } finally {
     for (const child of children) child.kill();
     await upstream.close(); await new Promise(resolve => server.close(resolve));

@@ -131,7 +131,7 @@ const originalFetch = globalThis.fetch;
 const hostConfig = { resourceType: "host", zabbixHostKey: "asgard", dashboardEnabled: true };
 const editorEmail = "editor@pulse.test";
 const user = { id: 42, email: editorEmail, administrador: false, permissoes: [] };
-const publicTables = ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "pulse_settings", "signal_infra_link", "signal_monitor_sample", "signal_target", "standalone_vps", "storage_config", "vm_display_config", "vm_template_config", "vps_monitor_sample", "vps_stack"];
+const publicTables = ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "notification_change", "notification_event", "notification_incident", "notification_stream_state", "notification_target_state", "pulse_settings", "signal_infra_link", "signal_monitor_sample", "signal_target", "standalone_vps", "storage_config", "vm_display_config", "vm_template_config", "vps_monitor_sample", "vps_stack"];
 const request = (path = "/", method = "GET", body, auth = token) => new Request("http://localhost/api" + path, {
   method, headers: { "Content-Type": "application/json", ...(auth ? { Authorization: "Bearer " + auth } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });

@@ -1,4 +1,5 @@
 import "server-only";
+import { maintainNotifications } from "../lib/server/notifications/maintenance.ts";
 import { setTimeout as delay } from "node:timers/promises";
 import { collectSnapshots } from "../lib/server/zabbix/collect.ts";
 import { publishSnapshots, markSyncFailure, snapshotTiming } from "../lib/server/cache/snapshots.ts";
@@ -21,13 +22,14 @@ export function createCycle(dependencies = { collect: collectSnapshots, publish:
       try {
         const discover = cycleIndex % everyN === 0;
         cycleIndex += 1;
-        const { entries, discovery } = await dependencies.collect({ signal, discover });
+        const { entries, discovery, notify } = await dependencies.collect({ signal, discover });
         if (signal?.aborted) return false;
         await dependencies.publish(entries, new Date().toISOString(), lastAttemptAt);
         if (discovery && dependencies.publishDiscovery) await dependencies.publishDiscovery(discovery).catch(error => {
           const code = error instanceof BffError ? error.code : "discovery_publish_failed";
           console.error(JSON.stringify({ event: "agent_discovery_publish_failed", error: code }));
         });
+        if (notify) await notify().catch(() => console.error(JSON.stringify({ event: "notification_collection_failed" })));
         return true;
       } catch (error) {
         const code = error instanceof BffError ? error.code : "collection_failed";
@@ -57,6 +59,7 @@ export async function runCollector(once = false) {
       const started = Date.now();
       await lease.query("SELECT 1");
       const success = await cycle(AbortSignal.any([shutdown.signal, AbortSignal.timeout(25000)]));
+      if (success && !shutdown.signal.aborted) await maintainNotifications();
       console.log(JSON.stringify({ event: "collector_cycle", success, durationMs: Date.now() - started }));
       if (once) { if (!success) process.exitCode = 1; break; }
       if (!shutdown.signal.aborted) await delay(Math.max(0, interval - (Date.now() - started)), undefined, { signal: shutdown.signal }).catch(() => {});

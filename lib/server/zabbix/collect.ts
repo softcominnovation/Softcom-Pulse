@@ -1,4 +1,6 @@
 import "server-only";
+import { captureNotificationTargets } from "../notifications/http.ts";
+import { recordZabbixNotifications } from "../notifications/zabbix.ts";
 import { z } from "zod";
 import { listResources } from "../config/repository.ts";
 import { readScopeSettings, selectScope, assertHypervisor, ensureBootstrapMonitoringScope } from "./scope.ts";
@@ -47,6 +49,7 @@ export async function collectSnapshots(options: {
   previousStorage?: StorageSnapshot | null;
 } = {}) {
   const startedAt = Date.now();
+  const notificationTargets = options.scope ? new Map() : await captureNotificationTargets();
   const rpc = options.rpc ?? zabbixCall, signal = options.signal;
   const runDiscovery = options.discover !== false;
   let settings = options.scope ?? await readScopeSettings();
@@ -113,5 +116,10 @@ export async function collectSnapshots(options: {
       console.error(JSON.stringify({ event: "agent_discovery_failed", error: code }));
     }
   }
-  return { entries, discovery, counts: { hosts: inventory.hosts.length, vms: summary.vms, containers: inventory.containers.length, problems: activeProblems.length } };
+  const notify = async () => {
+    if (!notificationTargets.size || signal?.aborted) return;
+    await recordZabbixNotifications({ targets: [...notificationTargets.values()], configs, inventory, hosts: scope.hosts,
+      problems: rawProblems, triggers: triggerRows, storage: storageSnapshotSchema.parse(entries[snapshotKeys.storages]), checkedAt: options.now ?? Date.now(), rpc, signal });
+  };
+  return { entries, discovery, notify, counts: { hosts: inventory.hosts.length, vms: summary.vms, containers: inventory.containers.length, problems: activeProblems.length } };
 }

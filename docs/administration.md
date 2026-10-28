@@ -1,5 +1,9 @@
 # Administração da visualização
 
+## Notificações de serviços
+
+Configurações inclui política geral de notificações, independente da apresentação do dashboard. Recursos, aplicações, VPS, Signal e Storage têm uma seção de exceções após salvar seu cadastro. A ação **Salvar notificações deste serviço** grava somente a exceção e preserva os demais rascunhos. Conflitos de revisão mantêm a edição para revisão; recarregar pede confirmação de descarte. VPS possui criticidade inicialmente desativada. Uso, leitura global e limites em [Notificações](notifications.md).
+
 ## Preferências de Storage
 
 Editar em **Serviços → Storages**, a partir da descoberta exata role=storage. Configure nome, descrição, destaque/criticidade/ordem, volumes e interface opcional. Múltiplos volumes exigem confirmação de independência. Não há cadastro livre ou escrita de tag/hostid. Órfãos permanecem editáveis em área separada. Criação/novas seleções exigem descoberta atual; texto/apresentação/reset existentes não dependem de Redis. Revisão/409 preserva rascunho; reset/recarregar exigem confirmação.

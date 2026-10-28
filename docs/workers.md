@@ -137,7 +137,7 @@ Ele armazena:
 
 O Collector do Zabbix **não grava telemetria histórica no PostgreSQL**.
 
-Ele apenas lê a configuração necessária para executar sua coleta.
+Ele lê a configuração necessária para executar sua coleta. Os quatro processos existentes também registram transições de notificações no PostgreSQL; o Collector executa a retenção limitada. Não há worker adicional nem cópia de séries Zabbix. Contrato e preparação da migration em [Notificações de serviços](notifications.md).
 
 ---
 

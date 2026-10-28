@@ -146,7 +146,7 @@ test("disabled or deleted configuration is immediately excluded, and a disappear
   await deleteResource(config.id); assert.equal((await readOverview()).data.highlightedResources.length, 0);
   const next = (await collectSnapshots({ rpc: absent.rpc })).entries; await publish(next);
   assert.equal((await readSnapshotBatch([keys.service(config.id)])).snapshots.get(keys.service(config.id)), null);
-  const tables = await getDatabase().query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"); assert.deepEqual(tables.rows.map(r => r.table_name), ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "pulse_settings", "signal_infra_link", "signal_monitor_sample", "signal_target", "standalone_vps", "storage_config", "vm_display_config", "vm_template_config", "vps_monitor_sample", "vps_stack"]);
+  const tables = await getDatabase().query("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"); assert.deepEqual(tables.rows.map(r => r.table_name), ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "notification_change", "notification_event", "notification_incident", "notification_stream_state", "notification_target_state", "pulse_settings", "signal_infra_link", "signal_monitor_sample", "signal_target", "standalone_vps", "storage_config", "vm_display_config", "vm_template_config", "vps_monitor_sample", "vps_stack"]);
 });
 
 test("Storage migration, revisioned preferences, isolated snapshots and authenticated/public BFF agree", async () => {

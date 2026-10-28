@@ -11,6 +11,7 @@ import {
 import { Toaster } from "sonner";
 import { AuthRuntime } from "@/components/auth/auth-runtime";
 import { SoundEffects } from "@/components/ui/sound";
+import { NotificationProvider } from "@/components/notifications/provider";
 import { Toasts } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { InstanceInventoryProvider } from "@/components/whatsapp/whatsapp-instances";
@@ -95,7 +96,7 @@ export function Providers({
           <TooltipProvider delay={180}>
             <InstanceInventoryProvider>
               <AuthRuntime />
-              {children}
+              <NotificationProvider>{children}</NotificationProvider>
               <Toasts position="bottom-end" />
               <Toaster
                 theme={theme}

@@ -1,4 +1,6 @@
 import "server-only";
+import { captureNotificationTargets, recordHttpNotification } from "../notifications/http.ts";
+import type { NotificationTarget } from "../notifications/targets.ts";
 import { monitorEndpoint, vpsConcurrency } from "../../config/standalone-vps.ts";
 import { BffError } from "../bff.ts";
 import { classifyVpsCheck } from "./classify.ts";
@@ -10,7 +12,7 @@ import { publishVpsResult } from "./store.ts";
 type Transport = (url: string, apiKey: string, timeoutMs: number, signal?: AbortSignal) => Promise<MonitorExchange>;
 type Target = { id: string; baseUrl: string | null; apiKeyCiphertext: string | null; timeoutMs: number };
 
-async function consult(target: Target, transport: Transport, signal?: AbortSignal) {
+async function consult(target: Target, transport: Transport, signal?: AbortSignal, notificationTarget?: NotificationTarget) {
   if (!target.baseUrl || !target.apiKeyCiphertext) return;
   const apiKey = openVpsMonitorKey(target.apiKeyCiphertext);
   const call = async (path: "/ping/latency" | "/status") => {
@@ -23,18 +25,20 @@ async function consult(target: Target, transport: Transport, signal?: AbortSigna
   const check = classifyVpsCheck(ping, status, target.timeoutMs);
   const checkedAt = new Date();
   await recordVpsSample(target.id, checkedAt, check.reason, check.latencyMs, check.reading?.cpuPercent ?? null, check.reading?.memoryPercent ?? null, check.reading?.diskPercent ?? null);
+  await recordHttpNotification(notificationTarget, "vps", check.reason, checkedAt);
   await publishVpsResult(target.id, checkedAt.toISOString(), check.reason, check.latencyMs, check.reading).catch(() => undefined);
 }
 
 export async function runVpsMonitorCycle(options: { signal?: AbortSignal; transport?: Transport; targets?: Target[] } = {}) {
   const targets = options.targets ?? await listEnabledMonitoredVps();
   const transport = options.transport ?? monitorExchange;
+  const notificationTargets = await captureNotificationTargets();
   let index = 0;
   const worker = async () => {
     while (index < targets.length && !options.signal?.aborted) {
       const target = targets[index++];
       if (!target) break;
-      await consult(target, transport, options.signal).catch(error => {
+      await consult(target, transport, options.signal, notificationTargets.get(`standalone_vps:${target.id}`)).catch(error => {
         if (error instanceof BffError && (error.code === "database_unavailable" || error.code === "cache_unavailable")) throw error;
       });
     }

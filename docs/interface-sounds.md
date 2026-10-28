@@ -1,8 +1,10 @@
 # Sons da interface
 
-Contrato do áudio Kobra incorporado ao Pulse, conferido no código de `develop` em 27/10/2026 (`b428b22`). Complementa o [Design system](design-system.md). O áudio acompanha interação e feedback de UI; não há nesta implementação um mecanismo de sirene operacional acionado por incidentes do monitoramento.
+Contrato do áudio Kobra incorporado ao Pulse, atualizado em 28/10/2026. Complementa o [Design system](design-system.md) e as [Notificações de serviços](notifications.md). O áudio acompanha interação, feedback e transições operacionais elegíveis, sem sirene ou repetição persistente.
 
 ## 1. Onde o som funciona
+
+Para avisos de monitoramento, `toast` também aceita `operational`, `sound`, `velocity` e `onDismiss`. `sound: false` evita áudio no resultado de uma interação já sonorizada. Avisos operacionais usam o mesmo host; expiram sem pausa por hover, pausando somente com foco dentro do próprio aviso. A entrega centralizada controla agrupamento, idade, deduplicação e cooldown. O aviso na tela usa `canPlayOperationalSound` e exige aba visível, interação prévia, volume positivo, ausência de mute e de movimento reduzido. A chegada com a aba atrás usa `playOperationalSound`: as mesmas condições, sem exigir aba visível, e sem abrir o aviso. Som que o navegador recusar não fica pendente para o foco. Não disparar sons diretamente a cada resposta de polling.
 
 `Providers` monta uma única instância de `SoundEffects`, que envolve a aplicação, inclusive login e leitura pública. Ela usa `SoundProvider` e `usePatch` de `@web-kits/audio/react` (versão instalada 0.2.0). O patch `kobra-ui` fica em `components/ui/sound.tsx`: síntese de senoides, triângulos, ruído, envelopes e filtros; não há arquivos MP3/WAV para cada interação nem download de um pacote sonoro remoto nesse caminho.
 
@@ -15,17 +17,17 @@ Reprodução depende do contexto de áudio do navegador. O pacote cria/reutiliza
 | Preferência | Contrato atual |
 |---|---|
 | Mute | `localStorage["kobra-sound-muted"]`: `"1"` silencia; demais valores não silenciam; padrão ativado |
-| Volume | `localStorage["kobra-sound-volume"]`: leitura aceita valor finito >0 e <=1; ausente/inválido usa 0.5 |
-| Controle visual | Slider 10–100%, passo 5; usar mute para silêncio |
+| Volume | `localStorage["kobra-sound-volume"]`: leitura aceita valor finito >=0 e <=1; ausente/inválido usa 0.5; zero é silêncio |
+| Controle visual | Slider 0–100%, passo 5; mute e zero silenciam |
 | APIs exportadas | `setSoundMuted`, `useSoundMuted`, `setSoundVolume`, `useSoundVolume`, `SoundToggle`, `SoundEffects` e tipo `SoundName` |
 | Sincronização | `useSyncExternalStore`, notificações na mesma aba e evento `storage` entre abas da mesma origem |
 | Storage bloqueado | Fallback em memória para a sessão; não impede operar os controles |
 
-`setSoundVolume` grava o número recebido sem clamp próprio. Chamadores devem enviar valor válido; a leitura faz o fallback. Volume zero não é mute e volta ao default na leitura.
+`setSoundVolume` limita valores válidos ao intervalo 0–1. Zero persiste após recarregar. Mute, zero e redução do volume interrompem vozes em execução e limpam ticks pendentes. Reativar não reproduz eventos descartados. Ativar pelo botão quando o volume está zero restaura 0.5.
 
 As preferências pertencem ao browser/origem e não são gravadas no PostgreSQL. O volume do sistema operacional e o mute da aba também afetam o que se ouve, mas não são controlados pelo Pulse.
 
-`KobraControls` coloca mute e ajustes no cabeçalho. O diálogo **Sons da interface** oferece toggle, slider, teste e Concluir. A busca global também permite ativar/silenciar e abrir ajustes. Ao sair de mudo para ativado, o listener toca `swoosh`. O botão **Testar som** usa `data-sound="notification"` e emite um toast Kobra de sucesso; a sequência pode conter tanto o som de interação quanto o de resultado, como no código atual.
+`KobraControls` coloca mute e ajustes no cabeçalho. O diálogo **Sons da interface** oferece toggle, slider, teste e Concluir. A busca global também permite ativar/silenciar e abrir ajustes. Ao sair de mudo para ativado, o listener toca `swoosh`, se o volume permitir. **Testar som** usa `data-sound="notification"` e um toast silencioso, evitando áudio duplicado; fica desabilitado em mute/zero.
 
 TV/fullscreen ocultam o grupo de controles no cabeçalho, mas não alteram mute/volume. Não presumir que um telão entrou em silêncio ao ativar apresentação.
 

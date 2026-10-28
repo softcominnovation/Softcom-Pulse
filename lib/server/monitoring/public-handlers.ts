@@ -1,4 +1,5 @@
 import "server-only";
+import { readNotificationRoute } from "../notifications/handlers.ts";
 import { z } from "zod";
 import { hostKeySchema, uuidSchema, historyRangeSchema } from "../../config/resources.ts";
 import { getPresentation, getResource, listResources } from "../config/repository.ts";
@@ -93,6 +94,7 @@ function redactPublicOverviewIps<T extends {
 async function readPublic(request: Request, segments: string[]) {
   const [root, second, third, fourth, fifth, sixth] = segments;
   const authed = hasAccessSession(request);
+  if (root === "monitoring" && second === "notifications") return readNotificationRoute(request, segments.slice(2), "public");
   if (root === "monitoring" && second === "storages" && segments.length === 2) { queryParams(request, emptyQuery); return readStorages({ publicRead: true }); }
   if (root === "monitoring" && second === "storages" && third && segments.length === 3) { queryParams(request, emptyQuery); return readStorage(storageKeySchema.parse(third), true); }
   if (isDemoMode()) {

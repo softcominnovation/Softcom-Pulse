@@ -1,5 +1,7 @@
 # Interface do dashboard
 
+O sininho do cabeçalho abre a central de [notificações](notifications.md) em um Sheet Kobra. Histórico e leitura são compartilhados; apresentação pública permanece somente leitura. Avisos de eventos novos são temporários e sobrepostos, sem alterar a grade ou altura dos cards, inclusive em TV/fullscreen. Mute e volume zero silenciam também esses avisos. O bloco legado comentado e `showStatusBanner` permanecem preservados.
+
 Storage acrescenta um contêiner em **Serviços → Storages**, com título e um painel por máquina, minicard com CPU/disco ocupado (%) e rodapé RX/TX da interface configurada na Disponibilidade, além do bloco `storage_summary` configurável por máquina. Serviços, painel grande, modal e prévia reutilizam `StoragePanel`; o minicard usa a mesma regra de disponibilidade. Os cabeçalhos dos painéis seguem nome **•** disponibilidade com `ServiceTitle`, conforme o guia Kobra. Não injeta blocos em telas existentes. Com Storage, layouts usam empacotamento por UUID e fallback explícito de rolagem; sem Storage, o layout anterior permanece. Novos fluxos seguem Kobra e sons centralizados. Uso e limites em [Storage](storage.md) e [Encaixe](overview-fit.md).
 
 `/` é o dashboard autenticado. O shell mantém marca Pulse, relógio de Fortaleza, modo TV, tela cheia e saída da sessão. A navegação contém apenas rotas implementadas, com busca global, controles de tema e som. Não há sidebar no shell atual. O padrão visual e de construção é o [Design system Kobra](design-system.md), com contrato de [Sons da interface](interface-sounds.md). Dados operacionais vêm dos contratos do BFF; a vitrine do login, o inventário local de WhatsApp e o modo de demonstração têm limites próprios descritos no guia de design.
@@ -47,7 +49,7 @@ O contador informa VMs em execução com evidência atual, total operacional e q
 
 Overview/wall, TV e fullscreen são independentes e combináveis. Uma tela apta permanece estática; a alternância fica desabilitada com explicação. Duas ou três usam ordem e duração salvas, voltam à primeira e repetem. Falha ou ausência de telemetria não pula slide. Sem composição utilizável, apresenta erro de configuração com ação de recarga.
 
-Atalhos: **T** para TV, **F** para fullscreen, **R** para alternar/parar. Campos de edição, seletores, contenteditable, diálogos, teclas modificadoras e repetição automática não acionam esses atalhos. Fullscreen recusado ou indisponível gera aviso; TV, conteúdo e player continuam utilizáveis.
+Atalhos: **T** para TV, **F** para fullscreen, **R** para alternar/parar. **Ctrl+Shift+K** abre a central de notificações; **Ctrl+K** continua a busca e não dispara com Shift ou Alt. Campos de edição, seletores, contenteditable, diálogos, teclas modificadoras e repetição automática não acionam T, F e R. Fullscreen recusado ou indisponível gera aviso; TV, conteúdo e player continuam utilizáveis.
 
 Toque, rolagem ou foco no conteúdo pausam até Continuar. Aba oculta e diálogo aberto suspendem a contagem; ao voltarem, retomam com intervalo completo, salvo pausa de leitura/parada manual. A mudança de slide preserva o shell e fullscreen. Ao sair da rota, requests, temporizador e listeners são encerrados; TV e fullscreen são desfeitos.
 

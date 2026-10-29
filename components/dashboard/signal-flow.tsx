@@ -29,6 +29,7 @@ export type SignalFlowPayload = {
     oldestOutboxSeconds: number | null;
     oldestInboxSeconds: number | null;
     checks: Record<string, unknown> | null;
+    flowKpis?: { id: string; displayName: string; flowKpi: "database" | "redis" | null; kpiLabel: string; tone: "good" | "warn" | "bad" | "unknown"; healthNote?: string | null }[];
   } | null;
 };
 
@@ -107,10 +108,18 @@ export function SignalFlowPanel({ data, options }: { data: SignalFlowPayload; op
     </div>
     <div className="signal-flow-body">
       <div className="signal-flow-top">
-        <div className="signal-flow-jobs" aria-label="Jobs do índice de conhecimento">
+        <div className={`signal-flow-jobs${(target.flowKpis?.length ?? 0) > 0 ? " is-expanded" : ""}`} aria-label="Jobs do índice de conhecimento" style={(target.flowKpis?.length ?? 0) > 0 ? { gridTemplateColumns: `repeat(${3 + (target.flowKpis?.length ?? 0)}, minmax(0, 1fr))` } : undefined}>
           <JobStat label="Em fila" value={jobs.queued} />
           <JobStat label="Rodando" value={jobs.running} />
           <JobStat label="Pendentes" value={jobs.pending} />
+          {[...(target.flowKpis ?? [])].sort((a, b) => Number(a.flowKpi === "redis") - Number(b.flowKpi === "redis")).map(item => {
+            const kind = item.flowKpi === "database" ? "Banco" : "Redis";
+            const caption = `${item.displayName}, ${kind}: ${item.kpiLabel}. Leitura do container.${item.healthNote ? ` ${item.healthNote}` : ""}`;
+            return <div key={item.id} className="signal-flow-job" title={caption} aria-label={caption}>
+              <strong className={`tone-${item.tone}`}>{item.kpiLabel}</strong>
+              <span className="signal-flow-job-caption"><span className="signal-flow-job-name">{item.displayName}</span><span>{kind}</span></span>
+            </div>;
+          })}
         </div>
         {meta && <p className="signal-flow-meta">{meta}</p>}
       </div>

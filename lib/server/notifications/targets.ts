@@ -13,6 +13,7 @@ const targetSql = `SELECT t.*,s.epoch FROM (
   UNION ALL SELECT 'external_service:'||id,id,'external_service',display_name,critical,enabled,'{}'::jsonb FROM external_service
   UNION ALL SELECT 'standalone_vps:'||id,id,'standalone_vps',name,critical,enabled AND NOT monitor_paused AND base_url IS NOT NULL,'{}'::jsonb FROM standalone_vps
   UNION ALL SELECT 'signal_target:'||id,id,'signal_target',display_name,critical,enabled,'{}'::jsonb FROM signal_target
+  UNION ALL SELECT 'signal_service:'||s.id,s.id,'signal_service',s.display_name,s.critical,s.enabled AND p.enabled,jsonb_build_object('targetId',s.target_id,'servicePrefix',s.service_prefix) FROM signal_service s JOIN signal_target p ON p.id=s.target_id
   UNION ALL SELECT 'storage:'||id,id,'storage',COALESCE(display_name,'Storage'),critical,true,jsonb_build_object('hostId',zabbix_host_id,'storageKey',storage_key) FROM storage_config
 ) t JOIN notification_target_state s ON s.target_ref=t.ref AND s.condition_key='$lifecycle'`;
 export async function notificationTargets(client?: PoolClient, ref?: string): Promise<NotificationTarget[]> {
@@ -20,10 +21,13 @@ export async function notificationTargets(client?: PoolClient, ref?: string): Pr
   return (await client.query<NotificationTarget>(targetSql + (ref ? " WHERE t.ref=$1" : "") + " ORDER BY t.ref", ref ? [ref] : [])).rows;
 }
 const tables: Record<AvailabilityCardKind, string> = {
-  resource: "monitored_resource_config", external_service: "external_service", standalone_vps: "standalone_vps", signal_target: "signal_target", storage: "storage_config",
+  resource: "monitored_resource_config", external_service: "external_service", standalone_vps: "standalone_vps", signal_target: "signal_target", signal_service: "signal_service", storage: "storage_config",
 };
 export async function lockTarget(client: PoolClient, target: NotificationTarget) {
   // Table identifiers come only from this allowlist; all caller data is parameterized.
+  if (target.kind === "signal_service") {
+    await client.query("SELECT id FROM signal_target WHERE id=$1 FOR SHARE", [target.identity.targetId]);
+  }
   await client.query(`SELECT id FROM ${tables[target.kind]} WHERE id=$1 FOR SHARE`, [target.id]);
   const current = (await notificationTargets(client, target.ref))[0];
   return current?.epoch === target.epoch ? current : null;

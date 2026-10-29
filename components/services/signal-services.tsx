@@ -20,6 +20,7 @@ import { Check, Field, errorText, useMutation } from "@/components/admin/shared"
 import { signalStateColor, signalStateLabel, signalStateTone, signalWorkersLabel } from "@/lib/signal/labels";
 import { useCanEdit } from "@/store/auth.store";
 import { ServiceTitle } from "@/components/dashboard/service-title";
+import { SignalClusterServices, type ClusterService } from "@/components/services/signal-cluster-services";
 import "./signal-services.css";
 
 const linkSchema = z.object({
@@ -42,6 +43,11 @@ const targetSchema = z.object({
   uptime7d: z.object({ available: z.number(), total: z.number() }).nullable().optional(),
   uptime30d: z.object({ available: z.number(), total: z.number() }).nullable().optional(),
   checkedAt: z.string().nullable(), links: z.array(linkSchema),
+  services: z.array(z.object({
+    id: z.string(), displayName: z.string(), servicePrefix: z.string(), enabled: z.boolean(), dashboardEnabled: z.boolean(),
+    panelEnabled: z.boolean(), flowKpi: z.enum(["database", "redis"]).nullable(), critical: z.boolean(), displayOrder: z.number(), revision: z.number(),
+    kpiLabel: z.string(), tone: z.string(), vmName: z.string().nullable(), hostKey: z.string().nullable(), reason: z.string(),
+  })).optional(),
 });
 type Target = z.infer<typeof targetSchema>;
 type AgentVm = { parentHostKey: string; vmKey: string; name: string; linuxHostKey: string; state: string };
@@ -274,6 +280,8 @@ export function SignalServicesPanel() {
             </li>;
           })}</ul> : <p className="panel-empty">{editor ? "Nenhuma VM vinculada. Use Vincular VM para associar manager ou workers." : "Nenhuma VM vinculada."}</p>}
         </section>
+
+        <SignalClusterServices targetId={target.id} revision={target.revision} services={(target.services ?? []) as ClusterService[]} editor={editor} onSaved={refresh} />
 
         <LinkVmDialog
           open={linkOpen}

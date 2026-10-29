@@ -22,8 +22,8 @@ import { createStandaloneVps, createVpsStack, deleteStandaloneVps, deleteVpsStac
 import { deleteMonitoringScopeLink, postMonitoringScopeLink, readMonitoringScopeDocument } from "../config/monitoring-scope.ts";
 import { signalHistoryRangeSchema } from "../../config/signal-targets.ts";
 import {
-  addSignalInfraLink, createSignalTarget, deleteSignalTarget, getSignalTarget, listSignalTargets,
-  removeSignalInfraLink, signalTargetHistory, updateSignalTarget,
+  addSignalInfraLink, createSignalService, createSignalTarget, deleteSignalService, deleteSignalTarget, getSignalTarget, listSignalServiceCandidates, listSignalTargets,
+  removeSignalInfraLink, signalServicesForAudience, signalTargetHistory, updateSignalService, updateSignalTarget,
 } from "../signal/repository.ts";
 import {
   buildDemoConfiguredResources,
@@ -445,10 +445,11 @@ export function externalServiceHistoryGet(request: Request, context: Params<"id"
   });
 }
 export function signalTargetsGet(request: Request) {
-  return protectedResponse(request, async () => {
+  return protectedResponse(request, async editor => {
     queryParams(request, emptyQuery);
     if (isDemoMode()) return { data: buildDemoSignalTargets() };
-    return { data: await listSignalTargets() };
+    const data = await listSignalTargets();
+    return { data: data.map(item => signalServicesForAudience(item, editor)) };
   });
 }
 export function signalTargetPost(request: Request) {
@@ -463,14 +464,14 @@ export function signalTargetPost(request: Request) {
   }, 201);
 }
 export function signalTargetGet(request: Request, context: Params<"id">) {
-  return protectedResponse(request, async () => {
+  return protectedResponse(request, async editor => {
     queryParams(request, emptyQuery);
     const id = uuidSchema.parse((await context.params).id);
     if (isDemoMode()) {
       const list = buildDemoSignalTargets();
       return { data: list.find(t => t.id === id) ?? list[0] };
     }
-    return { data: await getSignalTarget(id) };
+    return { data: signalServicesForAudience(await getSignalTarget(id), editor) };
   });
 }
 export function signalTargetPatch(request: Request, context: Params<"id">) {
@@ -525,6 +526,61 @@ export function signalInfraLinkDelete(request: Request, context: Params<"id" | "
       return { data: { ...existing, links: existing.links.filter(l => l.id !== linkId), revision: existing.revision + 1 } };
     }
     return { data: await removeSignalInfraLink(id, linkId, body) };
+  });
+}
+export function signalServicePost(request: Request, context: Params<"id">) {
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const id = uuidSchema.parse((await context.params).id);
+    const body = await jsonBody(request);
+    if (isDemoMode()) return { data: buildDemoSignalTargets()[0] };
+    return { data: await createSignalService(id, body) };
+  }, 201);
+}
+export function signalServiceGet(request: Request, context: Params<"id" | "serviceId">) {
+  return protectedResponse(request, async editor => {
+    queryParams(request, emptyQuery);
+    const route = await context.params;
+    const targetId = uuidSchema.parse(route.id);
+    const serviceId = uuidSchema.parse(route.serviceId);
+    if (isDemoMode()) {
+      const list = buildDemoSignalTargets();
+      const target = list.find(item => item.id === targetId) ?? list[0];
+      const service = (target.services as { id: string; enabled: boolean }[]).find(item => item.id === serviceId);
+      if (!service || (!editor && (!target.enabled || !service.enabled))) throw new BffError(404, "not_found");
+      return { data: service };
+    }
+    const target = await getSignalTarget(targetId);
+    const service = target.services.find(item => item.id === serviceId);
+    if (!service || (!editor && (!target.enabled || !service.enabled))) throw new BffError(404, "not_found");
+    return { data: service };
+  });
+}
+export function signalServicePatch(request: Request, context: Params<"id" | "serviceId">) {
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const route = await context.params;
+    const body = await jsonBody(request);
+    if (isDemoMode()) return { data: buildDemoSignalTargets()[0] };
+    return { data: await updateSignalService(uuidSchema.parse(route.id), uuidSchema.parse(route.serviceId), body) };
+  });
+}
+export function signalServiceDelete(request: Request, context: Params<"id" | "serviceId">) {
+  return protectedResponse(request, async () => {
+    queryParams(request, emptyQuery);
+    const route = await context.params;
+    const body = await jsonBody(request);
+    if (isDemoMode()) return { data: buildDemoSignalTargets()[0] };
+    return { data: await deleteSignalService(uuidSchema.parse(route.id), uuidSchema.parse(route.serviceId), body) };
+  });
+}
+export function signalServiceCandidatesGet(request: Request, context: Params<"id">) {
+  return protectedResponse(request, async editor => {
+    queryParams(request, emptyQuery);
+    if (!editor) throw new BffError(403, "editor_required");
+    const id = uuidSchema.parse((await context.params).id);
+    if (isDemoMode()) return { data: [], truncated: false, coverageReason: "coverage_unavailable" };
+    return listSignalServiceCandidates(id);
   });
 }
 export function hostHistoryGet(request: Request, context: Params<"hostKey">) {

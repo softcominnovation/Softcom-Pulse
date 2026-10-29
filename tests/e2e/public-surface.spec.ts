@@ -30,7 +30,7 @@ test("public services hide container inventory and menu omits Recursos", async (
   await expect(page.getByRole("heading", { name: "Inventário de containers" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Recursos configurados" })).toBeVisible();
   const labels = await page.locator(".monitoring-nav a").evaluateAll(nodes => nodes.map(node => node.textContent?.trim()));
-  expect(labels).toEqual(["Visão geral", "Infraestrutura", "VPS", "Serviços", "WhatsApp", "Aplicações"]);
+  expect(labels).toEqual(["Visão geral", "Infraestrutura", "VPS", "Serviços", "Aplicações"]);
   expect(labels).not.toContain("Recursos");
 });
 

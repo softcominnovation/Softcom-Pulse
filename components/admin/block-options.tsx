@@ -23,6 +23,7 @@ const availabilityKindMeta: Record<AvailabilityCardKind, { title: string; hint: 
   standalone_vps: { title: "VPS avulsas", hint: "VPS com monitoramento próprio", short: "VPS" },
   signal_target: { title: "Softcom Signal", hint: "Alvos Signal na grade", short: "Signal" },
   storage: { title: "Storages", hint: "VMs classificadas no Zabbix e configuradas em Serviços", short: "Storage" },
+  signal_service: { title: "Serviços do cluster Signal", hint: "Postgres, Redis e outros containers do alvo, por prefixo", short: "Cluster" },
 };
 
 export type AvailabilityCatalogItem = { kind: AvailabilityCardKind; id: string; label: string; detail?: string };

@@ -94,6 +94,12 @@ export type ConfiguredResource = {
 export const configuredResourceSchema = z.object({ id: z.uuid(), config: resourceConfigSchema, resolved: z.boolean(), resolution: z.enum(["resolved", "missing", "ambiguous"]), resource: z.union([hostSchema, containerSchema]).nullable(), metrics: metricsSchema });
 export const vmWorkloadsSchema = z.object({ vm: vmSchema, association: z.enum(["linked", "unlinked", "host_unavailable"]), containers: z.array(containerSchema), configuredServices: z.array(configuredResourceSchema) });
 export type VmWorkloads = z.infer<typeof vmWorkloadsSchema>;
+export type SignalServiceCard = {
+  id: string; targetId: string; displayName: string; servicePrefix: string; critical: boolean; displayOrder: number;
+  enabled: boolean; dashboardEnabled: boolean; panelEnabled: boolean; flowKpi: "database" | "redis" | null;
+  kpiLabel: string; tone: "good" | "warn" | "bad" | "unknown"; hostKey: string | null; vmName: string | null;
+  cpu: number | null; memory: number | null; uptimeSeconds: number | null; reason: string;
+};
 export type SignalFlowBlockData = {
   target: {
     id: string; displayName: string; description: string | null; state: number; latencyMs: number | null;
@@ -101,6 +107,7 @@ export type SignalFlowBlockData = {
     checkedAt: string | null; outboxPending: number | null; inboxPending: number | null;
     outboxDead: number | null; inboxDead: number | null; oldestOutboxSeconds: number | null;
     oldestInboxSeconds: number | null; checks: Record<string, unknown> | null;
+    flowKpis?: { id: string; displayName: string; flowKpi: "database" | "redis" | null; kpiLabel: string; tone: "good" | "warn" | "bad" | "unknown"; healthNote?: string | null }[];
   } | null;
 };
 export type ProbeCard = {
@@ -122,6 +129,7 @@ export type AvailabilityPanelData = {
     | { kind: "standalone_vps"; item: import("../config/standalone-vps.ts").StandaloneVpsHighlight }
     | { kind: "signal_target"; item: SignalOverviewCard }
     | { kind: "storage"; item: StorageView }
+    | { kind: "signal_service"; item: SignalServiceCard }
   >;
 };
 export type StorageBlockData = { target: StorageView | null };

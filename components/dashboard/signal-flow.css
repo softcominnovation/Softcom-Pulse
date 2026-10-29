@@ -26,6 +26,12 @@
   min-width: 0;
 }
 
+@media (max-width: 720px) {
+  .signal-flow-jobs.is-expanded {
+    grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr)) !important;
+  }
+}
+
 .signal-flow-job {
   display: grid;
   gap: 0.15rem;
@@ -40,7 +46,15 @@
   font: 1.35rem/1.1 var(--font-numeric, ui-monospace, SFMono-Regular, Consolas, monospace);
   font-variant-numeric: tabular-nums;
   color: var(--pulse-text, #eef3f5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+.signal-flow-job strong.tone-good { color: var(--success, #64d6b0); }
+.signal-flow-job strong.tone-warn { color: var(--warning, #f2c275); }
+.signal-flow-job strong.tone-bad { color: var(--error, #ff8585); }
+.signal-flow-job strong.tone-unknown { color: var(--muted-foreground, #9daeb9); }
 
 .signal-flow-job span {
   color: var(--pulse-muted, #9daeb9);
@@ -49,6 +63,25 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.signal-flow-job-caption {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.signal-flow-job-caption > span:last-child {
+  flex: none;
+}
+
+.signal-flow-job span.signal-flow-job-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--pulse-text, #eef3f5);
+  font-size: 0.8rem;
+  font-weight: 650;
 }
 
 .signal-flow-meta {

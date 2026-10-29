@@ -21,7 +21,7 @@ import { visibleMetric } from "../../services/presentation.ts";
 import { hostMetricsPreference, mergeCardCpuRam, resolveCardCpuRam } from "../../monitoring/card-metrics.ts";
 import { listProbeCardsByIds, readProbeOverview } from "../probe/overview.ts";
 import { listHighlightedStandaloneVps, listStandaloneVpsByIds } from "../vps/repository.ts";
-import { listHighlightedSignalTargets, listSignalFlowTarget, listSignalTargetsByIds } from "../signal/repository.ts";
+import { listHighlightedSignalTargets, listSignalFlowTarget, listSignalServiceCards, listSignalTargetsByIds } from "../signal/repository.ts";
 import { readStorages } from "./storages.ts";
 
 export function linkedMachineName(hostKey: string, hosts: Host[]) {
@@ -143,6 +143,8 @@ export async function readOverview(screenId?: string) {
   const probe = await readProbeOverview(visibleBlocks.some(block => block.type === "uptime_list")).catch(() => ({ externalServices: [], uptimeBoard: [] }));
   const standaloneVps = await listHighlightedStandaloneVps().catch(() => []);
   const signalCards = await listHighlightedSignalTargets().catch(() => []);
+  const signalServices = await listSignalServiceCards().catch(() => []);
+  const signalServicePool = new Map(signalServices.map(item => [item.id, item]));
   const [customProbes, customVps, customSignal] = await Promise.all([
     listProbeCardsByIds(customProbeIds).catch(() => []),
     listStandaloneVpsByIds(customVpsIds).catch(() => []),
@@ -179,8 +181,8 @@ export async function readOverview(screenId?: string) {
       const options = effectiveOptions({ ...block, type: "highlighted_resources" });
       const panel: AvailabilityPanelData = {
         cards: options.selection === "custom"
-          ? buildCustomAvailabilityCards(options.cards, { resources: resourcePool, probes: probePool, vps: vpsPool, signalCards: signalPool, storages })
-          : buildDefaultAvailabilityCards(highlightedResources, probe.externalServices, standaloneVps, signalCards, options, storageItems),
+          ? buildCustomAvailabilityCards(options.cards, { resources: resourcePool, probes: probePool, vps: vpsPool, signalCards: signalPool, storages, signalServices: signalServicePool })
+          : buildDefaultAvailabilityCards(highlightedResources, probe.externalServices, standaloneVps, signalCards, options, storageItems, signalServices),
       };
       data = panel;
       keys = configs.flatMap(resourceKeys);

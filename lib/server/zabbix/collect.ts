@@ -1,6 +1,7 @@
 import "server-only";
 import { captureNotificationTargets } from "../notifications/http.ts";
 import { recordZabbixNotifications } from "../notifications/zabbix.ts";
+import { recordSignalServiceNotifications } from "../notifications/signal-service.ts";
 import { z } from "zod";
 import { listResources } from "../config/repository.ts";
 import { readScopeSettings, selectScope, assertHypervisor, ensureBootstrapMonitoringScope } from "./scope.ts";
@@ -98,6 +99,12 @@ export async function collectSnapshots(options: {
     [snapshotKeys.bindings]: sourceBindingsSchema.parse(inventory.bindings),
   };
   for (const host of inventory.hosts) { entries[snapshotKeys.host(host.hostKey)] = host; entries[snapshotKeys.containers(host.hostKey)] = inventory.containers.filter(c => c.hostKey === host.hostKey); }
+  entries[snapshotKeys.dockerCoverage] = {
+    hosts: inventory.hosts.filter(host => host.role === "linux").map(host => ({
+      hostKey: host.hostKey, complete: false, names: [], observedAt: null, validUntil: null, reason: "coverage_unavailable",
+      disabled: scope.hosts.find(item => item.host === host.hostKey)?.status === "1",
+    })),
+  };
   for (const service of highlighted) entries[snapshotKeys.service(service.id)] = { ...service, status: service.resolution };
   const previousStorage = options.previousStorage !== undefined ? options.previousStorage : options.scope ? null : await readSnapshotBatch([snapshotKeys.storages]).then(batch => snapshotData(batch, snapshotKeys.storages, storageSnapshotSchema.nullable(), null)).catch(() => null);
   const knownStorageHostIds = options.storageHostIds ?? (options.scope ? [] : await getPrisma().storageConfig.findMany({ select: { zabbixHostId: true }, take: 100 }).then(rows => rows.map(row => row.zabbixHostId)).catch(() => []));
@@ -118,8 +125,27 @@ export async function collectSnapshots(options: {
   }
   const notify = async () => {
     if (!notificationTargets.size || signal?.aborted) return;
+    const checkedAt = options.now ?? Date.now();
     await recordZabbixNotifications({ targets: [...notificationTargets.values()], configs, inventory, hosts: scope.hosts,
-      problems: rawProblems, triggers: triggerRows, storage: storageSnapshotSchema.parse(entries[snapshotKeys.storages]), checkedAt: options.now ?? Date.now(), rpc, signal });
+      problems: rawProblems, triggers: triggerRows, storage: storageSnapshotSchema.parse(entries[snapshotKeys.storages]), checkedAt, rpc, signal });
+    const services = await getPrisma().signalService.findMany({ include: { target: { include: { links: true } } } });
+    const fresh = (until: string | null | undefined) => !!until && Date.parse(until) > checkedAt;
+    await recordSignalServiceNotifications({
+      targets: [...notificationTargets.values()],
+      services: services.map(service => ({ id: service.id, targetId: service.targetId, servicePrefix: service.servicePrefix, enabled: service.enabled })),
+      links: services.flatMap(service => service.target.links.map(link => ({ targetId: service.targetId, hostKey: link.hostKey, vmKey: link.vmKey, parentHostKey: link.parentHostKey }))),
+      hosts: inventory.hosts.map(host => ({
+        hostKey: host.hostKey, role: host.role, disabled: scope.hosts.find(item => item.host === host.hostKey)?.status === "1", readable: true,
+      })),
+      vms: inventory.hosts.flatMap(host => host.vms.map(vm => ({ parentHostKey: vm.parentHostKey, vmKey: vm.vmKey, linuxHostKey: vm.linuxHostKey }))),
+      containers: inventory.containers.map(container => ({
+        hostKey: container.hostKey, name: container.name, status: container.status, statusFresh: fresh(container.evidence.validUntil),
+        health: container.health, healthFresh: fresh(container.healthValidUntil),
+        cpu: container.metrics.cpuUsagePercent?.value ?? null, memory: container.metrics.memoryUsagePercent?.value ?? null, uptimeSeconds: container.metrics.uptimeSeconds?.value ?? null,
+      })),
+      coverage: inventory.hosts.filter(host => host.role === "linux").map(host => ({ hostKey: host.hostKey, complete: false, fresh: false, names: [] as string[] })),
+      checkedAt, signal,
+    });
   };
   return { entries, discovery, notify, counts: { hosts: inventory.hosts.length, vms: summary.vms, containers: inventory.containers.length, problems: activeProblems.length } };
 }

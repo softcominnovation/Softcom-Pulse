@@ -4,7 +4,8 @@ import { ZodError } from "zod";
 import { z } from "zod";
 import {
   signalApiBaseUrl, signalHistoryRangeSchema, signalInfraLinkLimit, signalLinkBodySchema,
-  signalSampleRetentionMs, signalStates, signalStripLength, signalTargetLimit, signalTargetPatchSchema,
+  signalSampleRetentionMs, signalServiceLimit, signalServicePatchSchema, signalServiceWriteSchema,
+  signalStates, signalStripLength, signalTargetLimit, signalTargetPatchSchema,
   signalTargetWriteSchema, signalUnlinkBodySchema,
 } from "../../config/signal-targets.ts";
 import { hostSchema } from "../../monitoring/contracts.ts";
@@ -13,6 +14,8 @@ import { readResult, readSnapshotBatch, snapshotData, snapshotKeys } from "../ca
 import { getPrisma } from "../prisma.ts";
 import type { SignalClassification } from "./classify.ts";
 import { deleteSignalResult, publishSignalResult, readSignalResults } from "./store.ts";
+import { evidenceInput, readSignalServiceEvidence, resolveRows, type SignalServiceRow } from "./service-view.ts";
+import { suggestServicePrefix } from "../../signal/service-prefix.ts";
 
 type TargetRow = {
   id: string; displayName: string; description: string | null; baseUrl: string; enabled: boolean;
@@ -147,6 +150,7 @@ function publicTarget(
   uptime7d: { available: number; total: number } | null,
   uptime30d: { available: number; total: number } | null,
   links: ReturnType<typeof publicLink>[],
+  services: ReturnType<typeof resolveRows>,
   redis: Awaited<ReturnType<typeof readSignalResults>> extends Map<string, infer V> ? V : never,
 ) {
   const recent = row.enabled ? (redis ?? (sample ? {
@@ -172,6 +176,7 @@ function publicTarget(
     uptime24h: recent?.uptime24h ?? uptime24h, uptime7d, uptime30d,
     checkedAt: recent && "checkedAt" in recent ? recent.checkedAt : sample?.checkedAt.toISOString() ?? null,
     links,
+    services,
     createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -188,23 +193,43 @@ async function assemble(rows: TargetRow[]) {
     database(() => getPrisma().signalInfraLink.findMany({ where: { targetId: { in: ids } }, orderBy: [{ role: "asc" }, { hostKey: "asc" }] }) as Promise<LinkRow[]>),
   ]);
   const inventory = await resolveInventory(allLinks);
+  const evidence = await readSignalServiceEvidence().catch(() => null);
+  const observed = evidence ? evidenceInput(evidence, Date.now()) : { hosts: [], vms: [], containers: [], coverage: [], names: [] };
+  const serviceRows = ids.length
+    ? await database(() => getPrisma().signalService.findMany({ where: { targetId: { in: ids } }, orderBy: [{ displayOrder: "asc" }, { id: "asc" }] })) as SignalServiceRow[]
+    : [];
   const byTarget = new Map<string, LinkRow[]>();
   for (const link of allLinks) {
     const list = byTarget.get(link.targetId) ?? [];
     list.push(link);
     byTarget.set(link.targetId, list);
   }
+  const servicesByTarget = new Map<string, SignalServiceRow[]>();
+  for (const service of serviceRows) {
+    const list = servicesByTarget.get(service.targetId) ?? [];
+    list.push(service);
+    servicesByTarget.set(service.targetId, list);
+  }
   const missing: LinkInventory = { status: "missing", name: null, availability: null, cpuUsagePercent: null, memoryUsagePercent: null };
-  return rows.map(row => publicTarget(
-    row,
-    samples.get(row.id) ?? null,
-    presence.get(row.id) ?? [],
-    day.get(row.id) ?? null,
-    week.get(row.id) ?? null,
-    month.get(row.id) ?? null,
-    (byTarget.get(row.id) ?? []).map(link => publicLink(link, inventory.get(link.id) ?? missing)),
-    redis.get(row.id) ?? null,
-  ));
+  return rows.map(row => {
+    const links = byTarget.get(row.id) ?? [];
+    const services = resolveRows({
+      rows: (servicesByTarget.get(row.id) ?? []).map(service => ({ ...service, flowKpi: service.flowKpi === "database" || service.flowKpi === "redis" ? service.flowKpi : null })),
+      links: links.map(link => ({ hostKey: link.hostKey, vmKey: link.vmKey, parentHostKey: link.parentHostKey })),
+      ...observed,
+    });
+    return publicTarget(
+      row,
+      samples.get(row.id) ?? null,
+      presence.get(row.id) ?? [],
+      day.get(row.id) ?? null,
+      week.get(row.id) ?? null,
+      month.get(row.id) ?? null,
+      links.map(link => publicLink(link, inventory.get(link.id) ?? missing)),
+      services,
+      redis.get(row.id) ?? null,
+    );
+  });
 }
 
 export function listEnabledSignalTargets() {
@@ -293,7 +318,22 @@ export function listSignalFlowTarget() {
       outboxDead: item.outboxDead, inboxDead: item.inboxDead,
       oldestOutboxSeconds: item.oldestOutboxSeconds, oldestInboxSeconds: item.oldestInboxSeconds,
       checks: item.checks,
+      flowKpis: item.services.filter(service => service.enabled && service.flowKpi).map(service => ({
+        id: service.id, displayName: service.displayName, flowKpi: service.flowKpi, kpiLabel: service.kpiLabel, tone: service.tone, healthNote: service.healthNote,
+      })).sort((a, b) => Number(a.flowKpi === "redis") - Number(b.flowKpi === "redis")),
     };
+  });
+}
+
+export function listSignalServiceCards() {
+  return database(async () => {
+    const rows = await getPrisma().signalTarget.findMany({ where: { enabled: true }, orderBy: [{ displayOrder: "asc" }, { id: "asc" }] }) as TargetRow[];
+    return (await assemble(rows)).flatMap(target => target.services.filter(service => service.enabled).map(service => ({
+      id: service.id, targetId: target.id, displayName: service.displayName, servicePrefix: service.servicePrefix,
+      critical: service.critical, displayOrder: service.displayOrder, enabled: service.enabled, dashboardEnabled: service.dashboardEnabled,
+      panelEnabled: service.panelEnabled, flowKpi: service.flowKpi, kpiLabel: service.kpiLabel, tone: service.tone,
+      hostKey: service.hostKey, vmName: service.vmName, cpu: service.cpu, memory: service.memory, uptimeSeconds: service.uptimeSeconds, reason: service.reason,
+    })));
   });
 }
 
@@ -456,6 +496,115 @@ export function signalTargetHistory(id: string, range: z.infer<typeof signalHist
         checkedAt: row.checkedAt.toISOString(), state: row.state, latencyMs: row.latencyMs,
         readyStatus: row.readyStatus, workerStatus: row.workerStatus,
       })),
+    };
+  });
+}
+
+function serviceConflict(error: unknown): never {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+    const target = JSON.stringify(error.meta ?? {});
+    throw new BffError(409, target.includes("kpi") ? "signal_service_kpi_conflict" : "signal_service_conflict");
+  }
+  throw error;
+}
+
+async function lockedTarget(tx: Prisma.TransactionClient, targetId: string, expectedTargetRevision: number) {
+  await lockWrites(tx);
+  const target = await tx.signalTarget.findUnique({ where: { id: targetId } });
+  if (!target) throw new BffError(404, "not_found");
+  if (target.revision !== expectedTargetRevision) throw new BffError(409, "revision_conflict");
+  await tx.$queryRaw`SELECT id FROM signal_target WHERE id = ${targetId}::uuid FOR UPDATE`;
+  await tx.$queryRaw`SELECT id FROM signal_service WHERE target_id = ${targetId}::uuid FOR UPDATE`;
+  return target;
+}
+
+export function signalServicesForAudience<T extends { enabled: boolean; services: { enabled: boolean; panelEnabled: boolean }[] }>(target: T, editor: boolean) {
+  if (editor) return target;
+  return { ...target, services: target.services.filter(service => target.enabled && service.enabled && service.panelEnabled) };
+}
+
+export function createSignalService(targetId: string, body: unknown) {
+  const input = signalServiceWriteSchema.parse(body);
+  return database(async () => {
+    try {
+      await getPrisma().$transaction(async tx => {
+        await lockedTarget(tx, targetId, input.expectedTargetRevision);
+        const count = await tx.signalService.count({ where: { targetId } });
+        if (count >= signalServiceLimit) throw new BffError(409, "signal_service_limit");
+        await tx.signalService.create({ data: {
+          targetId, displayName: input.displayName, servicePrefix: input.servicePrefix, enabled: input.enabled,
+          dashboardEnabled: input.dashboardEnabled, panelEnabled: input.panelEnabled, flowKpi: input.flowKpi,
+          critical: input.critical, displayOrder: input.displayOrder,
+        } });
+        await tx.signalTarget.update({ where: { id: targetId }, data: { revision: { increment: 1 } } });
+      });
+    } catch (error) { serviceConflict(error); }
+    return getSignalTarget(targetId);
+  });
+}
+
+export function updateSignalService(targetId: string, serviceId: string, body: unknown) {
+  const input = signalServicePatchSchema.parse(body);
+  return database(async () => {
+    try {
+      await getPrisma().$transaction(async tx => {
+        await lockedTarget(tx, targetId, input.expectedTargetRevision);
+        const current = await tx.signalService.findFirst({ where: { id: serviceId, targetId } });
+        if (!current) throw new BffError(404, "not_found");
+        if (current.revision !== input.expectedRevision) throw new BffError(409, "revision_conflict");
+        const { expectedTargetRevision: _target, expectedRevision: _service, ...patch } = input;
+        void _target; void _service;
+        await tx.signalService.update({ where: { id: serviceId }, data: { ...patch, revision: { increment: 1 } } });
+        await tx.signalTarget.update({ where: { id: targetId }, data: { revision: { increment: 1 } } });
+      });
+    } catch (error) { serviceConflict(error); }
+    return getSignalTarget(targetId);
+  });
+}
+
+export function deleteSignalService(targetId: string, serviceId: string, body: unknown) {
+  const input = z.strictObject({ expectedTargetRevision: z.number().int().positive(), expectedRevision: z.number().int().positive() }).parse(body);
+  return database(async () => {
+    await getPrisma().$transaction(async tx => {
+      await lockedTarget(tx, targetId, input.expectedTargetRevision);
+      const current = await tx.signalService.findFirst({ where: { id: serviceId, targetId } });
+      if (!current) throw new BffError(404, "not_found");
+      if (current.revision !== input.expectedRevision) throw new BffError(409, "revision_conflict");
+      await tx.signalService.delete({ where: { id: serviceId } });
+      await tx.signalTarget.update({ where: { id: targetId }, data: { revision: { increment: 1 } } });
+    });
+    return getSignalTarget(targetId);
+  });
+}
+
+export function getSignalService(targetId: string, serviceId: string) {
+  return database(async () => {
+    const target = await getSignalTarget(targetId);
+    const service = target.services.find(item => item.id === serviceId);
+    if (!service) throw new BffError(404, "not_found");
+    return service;
+  });
+}
+
+export function listSignalServiceCandidates(targetId: string) {
+  return database(async () => {
+    const target = await getPrisma().signalTarget.findUnique({ where: { id: targetId }, include: { links: true } });
+    if (!target) throw new BffError(404, "not_found");
+    const observed = evidenceInput(await readSignalServiceEvidence(), Date.now());
+    const hostKeys = new Set<string>();
+    for (const link of target.links) {
+      if (link.vmKey) {
+        const vm = observed.vms.find(item => item.parentHostKey === (link.parentHostKey ?? link.hostKey) && item.vmKey === link.vmKey);
+        if (vm?.linuxHostKey) hostKeys.add(vm.linuxHostKey);
+      } else hostKeys.add(link.hostKey);
+    }
+    const rows = observed.containers.filter(container => hostKeys.has(container.hostKey)).sort((a, b) => a.hostKey.localeCompare(b.hostKey) || a.name.localeCompare(b.name));
+    return {
+      data: rows.slice(0, 200).map(container => ({
+        hostKey: container.hostKey, name: container.name, suggestedPrefix: suggestServicePrefix(container.name), status: container.status, health: container.health,
+      })),
+      truncated: rows.length > 200,
+      coverageReason: "coverage_unavailable" as const,
     };
   });
 }

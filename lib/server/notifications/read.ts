@@ -41,6 +41,7 @@ async function targetHref(client: PoolClient, ref: string, scope: Cursor["scope"
   const prefix = scope === "public" ? "/monitor" : "";
   if (target.kind === "standalone_vps") return `${scope === "public" ? prefix : "/admin"}/vps/${target.id}`;
   if (target.kind === "external_service") return `${scope === "public" ? prefix : "/admin"}/aplicacoes`;
+  if (target.kind === "signal_service" && target.identity.targetId) return `${prefix}/servicos?signalTarget=${target.identity.targetId}&signalService=${target.id}#signal`;
   return `${prefix}/servicos`;
 }
 async function delivery(client: PoolClient, events: NotificationEventView[], policy: Awaited<ReturnType<typeof readPolicy>>) {

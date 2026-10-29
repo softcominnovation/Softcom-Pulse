@@ -176,6 +176,10 @@
   padding-right: 28px;
 }
 
+.signal-cluster-card .availability-footer {
+  margin-top: auto;
+}
+
 .signal-linked-unlink {
   position: absolute;
   top: 6px;

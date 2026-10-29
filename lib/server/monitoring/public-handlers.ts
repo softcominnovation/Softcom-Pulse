@@ -16,7 +16,7 @@ import { storageKeySchema } from "../../config/storages.ts";
 import { storageViewSchema } from "../../storage/contracts.ts";
 import { publicStorage } from "../../storage/presentation.ts";
 import { readStorage, readStorages } from "./storages.ts";
-import { getSignalTarget, listSignalTargets, signalTargetHistory } from "../signal/repository.ts";
+import { getSignalTarget, listSignalTargets, signalServicesForAudience, signalTargetHistory } from "../signal/repository.ts";
 import {
   buildDemoConfiguredResources,
   buildDemoExternalServiceHistory,
@@ -209,11 +209,11 @@ async function readPublic(request: Request, segments: string[]) {
   }
   if (second === "signal-targets" && segments.length === 2) {
     queryParams(request, emptyQuery);
-    return { data: await listSignalTargets() };
+    return { data: (await listSignalTargets()).map(item => signalServicesForAudience(item, false)) };
   }
   if (second === "signal-targets" && third && segments.length === 3) {
     queryParams(request, emptyQuery);
-    return { data: await getSignalTarget(uuidSchema.parse(third)) };
+    return { data: signalServicesForAudience(await getSignalTarget(uuidSchema.parse(third)), false) };
   }
   if (second === "signal-targets" && third && fourth === "history" && segments.length === 4) {
     return {
@@ -222,6 +222,13 @@ async function readPublic(request: Request, segments: string[]) {
         queryParams(request, z.strictObject({ range: signalHistoryRangeSchema.default("24h") })).range,
       ),
     };
+  }
+  if (second === "signal-targets" && third && fourth === "services" && fifth && segments.length === 5) {
+    queryParams(request, emptyQuery);
+    const target = await getSignalTarget(uuidSchema.parse(third));
+    const service = target.enabled ? target.services.find(item => item.id === fifth && item.enabled) : undefined;
+    if (!service) throw new BffError(404, "not_found");
+    return { data: service };
   }
   throw new BffError(404, "not_found");
 }

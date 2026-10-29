@@ -43,6 +43,8 @@ De cima para baixo, todo card tem quatro faixas:
 
 O card é um `button` quando abre detalhe. O nome acessível diz o nome, o estado e, quando há faixa, a disponibilidade. O foco usa `var(--ring)` de 2px por dentro do card.
 
+O card de container do cluster Signal (`signal_service`) usa o mesmo envelope. O estado vem do container resolvido pelo prefixo nas VMs vinculadas ao alvo, não do `/health/ready`. Sem `flowKpi`, a fileira Em fila / Rodando / Pendentes do bloco `signal_flow` permanece em três colunas. Com Banco e/ou Redis, esses blocos entram na mesma fileira e os três KPIs dividem a largura. Crítico é propriedade do cadastro e segue a política de notificações já existente. A ausência do container só vira Fora quando houver cobertura Docker integral; neste ambiente a cobertura publicada é `coverage_unavailable`, então o sumiço fica Sem leitura.
+
 ## Os dois miolos que já existem
 
 ### Recurso do Zabbix

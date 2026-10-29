@@ -23,7 +23,10 @@ import { readSchema } from "@/components/infrastructure/data";
 
 const parseApps = (data: unknown) => z.object({ data: z.array(externalServicePublicSchema.pick({ id: true, displayName: true, enabled: true, dashboardEnabled: true })) }).parse(data).data;
 const parseVps = (data: unknown) => z.object({ data: z.array(standaloneVpsCardSchema.pick({ id: true, name: true, enabled: true, dashboardEnabled: true })) }).parse(data).data;
-const parseSignal = (data: unknown) => z.object({ data: z.array(z.object({ id: z.string(), displayName: z.string(), enabled: z.boolean(), dashboardEnabled: z.boolean().optional() })) }).parse(data).data;
+const parseSignal = (data: unknown) => z.object({ data: z.array(z.object({
+  id: z.string(), displayName: z.string(), enabled: z.boolean(), dashboardEnabled: z.boolean().optional(),
+  services: z.array(z.object({ id: z.string(), displayName: z.string(), servicePrefix: z.string(), enabled: z.boolean() })).optional(),
+})) }).parse(data).data;
 
 const parseDocument = (data: unknown) => presentationDocumentSchema.parse((data as { data: unknown }).data);
 function editable(document: PresentationDocument): PresentationSettings {
@@ -159,6 +162,9 @@ export function PresentationAdmin() {
       kind: "signal_target" as const, id: item.id, label: item.displayName,
       detail: item.dashboardEnabled ? "Signal · destaque no dashboard" : "Signal",
     })),
+    ...(signals.data ?? []).flatMap(item => (item.services ?? []).filter(service => service.enabled).map(service => ({
+      kind: "signal_service" as const, id: service.id, label: service.displayName, detail: service.servicePrefix,
+    }))),
     ...[...(storages.data?.items ?? []), ...(storages.data?.orphans ?? [])].flatMap(item => item.configId ? [{ kind: "storage" as const, id: item.configId, label: item.displayName, detail: item.resolution === "resolved" ? "Storage · Zabbix Agent" : "Storage · sem descoberta atual" }] : []),
   ], [resources.data, apps.data, vps.data, signals.data, storages.data]);
   if (document.loading) return <p className="panel-empty" role="status">Carregando apresentação salva…</p>;

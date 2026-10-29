@@ -276,6 +276,7 @@ model SignalTarget {
   createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   links            SignalInfraLink[]
+  services         SignalService[]
   samples          SignalMonitorSample[]
 
   @@index([displayOrder, id])
@@ -296,6 +297,27 @@ model SignalInfraLink {
 
   @@index([targetId, id])
   @@map("signal_infra_link")
+}
+
+model SignalService {
+  id               String       @id @default(uuid()) @db.Uuid
+  targetId         String       @map("target_id") @db.Uuid
+  target           SignalTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  displayName      String       @map("display_name") @db.VarChar(120)
+  servicePrefix    String       @map("service_prefix") @db.VarChar(200)
+  enabled          Boolean      @default(true)
+  dashboardEnabled Boolean      @default(false) @map("dashboard_enabled")
+  panelEnabled     Boolean      @default(true) @map("panel_enabled")
+  flowKpi          String?      @map("flow_kpi") @db.VarChar(16)
+  critical         Boolean      @default(false)
+  displayOrder     Int          @default(0) @map("display_order")
+  revision         Int          @default(1)
+  createdAt        DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([targetId, servicePrefix])
+  @@index([targetId, displayOrder, id])
+  @@map("signal_service")
 }
 
 model SignalMonitorSample {

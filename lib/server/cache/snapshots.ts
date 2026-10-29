@@ -9,10 +9,11 @@ export const snapshotKeys = {
   overview: "pulse:snapshot:overview", hosts: "pulse:inventory:hosts", storages: "pulse:inventory:storages", problems: "pulse:problems:current", sync: "pulse:sync:last",
   bindings: "pulse:source:bindings",
   containers: (hostKey: string) => "pulse:inventory:containers:" + encodeURIComponent(hostKey),
+  dockerCoverage: "pulse:inventory:docker-coverage",
   host: (hostKey: string) => "pulse:snapshot:host:" + encodeURIComponent(hostKey),
   service: (id: string) => "pulse:snapshot:service:" + id,
 };
-const keySchema = z.string().max(2048).refine(key => /^pulse:(?:snapshot:(?:overview|host:.+|service:.+)|inventory:(?:hosts|storages|containers:.+)|problems:current|source:bindings)$/.test(key));
+const keySchema = z.string().max(2048).refine(key => /^pulse:(?:snapshot:(?:overview|host:.+|service:.+)|inventory:(?:hosts|storages|docker-coverage|containers:.+)|problems:current|source:bindings)$/.test(key));
 const envelopeSchema = z.object({ data: z.unknown(), updatedAt: isoSchema, source: z.literal("zabbix"), generation: z.uuid() });
 // Redis Lua cjson re-encodes empty arrays as {} when marking a failed cycle.
 // Accept only that empty-object representation; nonempty objects remain invalid.
@@ -68,7 +69,8 @@ export async function publishSnapshots(entries: Record<string, unknown>, updated
       // Older Web versions validate every sync.keys entry against their original
       // allowlist. Publish extensions atomically but advertise them separately so
       // those readers keep consuming the unchanged primary generation.
-      tx.set(snapshotKeys.sync, wrap({ status: "ok", lastSuccessfulAt: updatedAt, lastAttemptAt: isoSchema.parse(lastAttemptAt), error: null, keys: keys.filter(key => key !== snapshotKeys.storages), extensionKeys: keys.filter(key => key === snapshotKeys.storages) }), { EX: ttl });
+      const extension = (key: string) => key === snapshotKeys.storages || key === snapshotKeys.dockerCoverage;
+      tx.set(snapshotKeys.sync, wrap({ status: "ok", lastSuccessfulAt: updatedAt, lastAttemptAt: isoSchema.parse(lastAttemptAt), error: null, keys: keys.filter(key => !extension(key)), extensionKeys: keys.filter(extension) }), { EX: ttl });
       return tx.exec();
     });
   } catch { throw new BffError(503, "cache_unavailable"); }

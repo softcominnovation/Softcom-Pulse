@@ -3,7 +3,7 @@ import {
   formatAvailabilityCardRef, parseAvailabilityCardRef, type AvailabilityCardKind,
 } from "../config/availability-card-refs.ts";
 import type { StandaloneVpsHighlight } from "../config/standalone-vps.ts";
-import type { AvailabilityPanelData, ConfiguredResource, ProbeCard, SignalOverviewCard } from "../monitoring/contracts.ts";
+import type { AvailabilityPanelData, ConfiguredResource, ProbeCard, SignalOverviewCard, SignalServiceCard } from "../monitoring/contracts.ts";
 import { selectHighlights } from "./block-options.ts";
 import type { StorageView } from "../storage/contracts.ts";
 
@@ -42,6 +42,7 @@ export function buildDefaultAvailabilityCards(
   signalCards: SignalAvailabilityCard[],
   options: OptionsByType["highlighted_resources"],
   storages: StorageView[] = [],
+  signalServices: SignalServiceCard[] = [],
 ): AvailabilityPanelCard[] {
   return [
     ...selectHighlights(resources, options).map(item => ({ kind: "resource" as const, item })),
@@ -49,6 +50,7 @@ export function buildDefaultAvailabilityCards(
     ...vps.map(item => ({ kind: "standalone_vps" as const, item })),
     ...signalCards.map(item => ({ kind: "signal_target" as const, item })),
     ...storages.filter(item => item.configId && item.dashboardEnabled && (!options.criticalOnly || item.critical)).map(item => ({ kind: "storage" as const, item })),
+    ...signalServices.filter(item => item.enabled && item.dashboardEnabled && (!options.criticalOnly || item.critical)).sort((a, b) => a.displayOrder - b.displayOrder || a.id.localeCompare(b.id)).map(item => ({ kind: "signal_service" as const, item })),
   ];
 }
 
@@ -60,6 +62,7 @@ export function buildCustomAvailabilityCards(
     vps: Map<string, StandaloneVpsHighlight>;
     signalCards: Map<string, SignalAvailabilityCard>;
     storages?: Map<string, StorageView>;
+    signalServices?: Map<string, SignalServiceCard>;
   },
 ): AvailabilityPanelCard[] {
   const cards: AvailabilityPanelCard[] = [];
@@ -84,6 +87,11 @@ export function buildCustomAvailabilityCards(
     if (ref.kind === "storage") {
       const item = pools.storages?.get(ref.id);
       if (item) cards.push({ kind: "storage", item });
+      continue;
+    }
+    if (ref.kind === "signal_service") {
+      const item = pools.signalServices?.get(ref.id);
+      if (item?.enabled) cards.push({ kind: "signal_service", item });
       continue;
     }
     const item = pools.signalCards.get(ref.id);

@@ -4,7 +4,7 @@ A central do cabeçalho reúne histórico, não lidas e incidentes atuais. Aviso
 
 ## Uso e configuração
 
-A política geral fica em **Configurações → Notificações de serviços**. Recursos, aplicações HTTP, VPS, Signal e Storage possuem exceções no respectivo editor, depois que o cadastro existe. Salvar notificações é uma ação própria; não salva nem descarta o rascunho do cadastro. Criticidade continua sendo propriedade do serviço; as exceções de notificações não a alteram.
+A política geral fica em **Configurações → Notificações de serviços**. Recursos, aplicações HTTP, VPS, Signal, serviços do cluster Signal e Storage possuem exceções no respectivo editor, depois que o cadastro existe. Salvar notificações é uma ação própria; não salva nem descarta o rascunho do cadastro. Criticidade continua sendo propriedade do serviço; as exceções de notificações não a alteram. O serviço do cluster (`signal_service`) notifica status e health do container pelo prefixo estável. A troca da task não cancela o incidente. Sem cobertura Docker integral, a ausência do container não abre indisponibilidade.
 
 | Opção | Padrão |
 |---|---|

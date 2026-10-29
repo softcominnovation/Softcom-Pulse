@@ -224,7 +224,7 @@ test("menu order keeps presentation links and parks screen rotation with the ind
   await signIn(page);
   await page.setViewportSize({ width: 1440, height: 900 });
   const labels = await page.locator(".monitoring-nav a").evaluateAll(nodes => nodes.map(node => node.textContent?.trim()));
-  expect(labels).toEqual(["Visão geral", "Infraestrutura", "Asgard & VMs", "VPS", "Serviços", "WhatsApp", "Aplicações", "Recursos", "Configurações"]);
+  expect(labels).toEqual(["Visão geral", "Infraestrutura", "Asgard & VMs", "VPS", "Serviços", "Aplicações", "Recursos", "Configurações"]);
   const rotate = page.getByRole("button", { name: "Alternar telas", exact: true });
   const screenLabel = page.locator(".screen-controls label");
   await expect(rotate).toBeVisible();
@@ -233,7 +233,7 @@ test("menu order keeps presentation links and parks screen rotation with the ind
   expect(rotateBox && labelBox && rotateBox.x < labelBox.x && Math.abs((rotateBox.y + rotateBox.height / 2) - (labelBox.y + labelBox.height / 2)) < 12).toBe(true);
   await page.getByRole("button", { name: "Modo TV", exact: true }).click();
   for (const name of ["VPS", "Aplicações", "Recursos", "Configurações"]) await expect(page.getByRole("link", { name, exact: true })).toBeHidden();
-  for (const name of ["Visão geral", "Infraestrutura", "Asgard & VMs", "Serviços", "WhatsApp"]) await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+  for (const name of ["Visão geral", "Infraestrutura", "Asgard & VMs", "Serviços"]) await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Sair do modo TV", exact: true }).click();
   await page.getByRole("button", { name: "Tela cheia", exact: true }).click();
   await expect(page.getByRole("link", { name: "VPS", exact: true })).toBeHidden();

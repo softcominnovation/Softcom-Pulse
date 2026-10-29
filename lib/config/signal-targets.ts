@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { hostKeySchema } from "./resources.ts";
 import { vmKeySchema } from "./vms.ts";
+import { servicePrefixError } from "../signal/service-prefix.ts";
 
 const control = /[\u0000-\u001F\u007F]/;
 const label = (max: number) => z.string().trim().min(1).max(max).refine(value => !control.test(value));
@@ -125,5 +126,38 @@ export const signalUnlinkBodySchema = z.strictObject({
   expectedRevision: z.number().int().positive(),
 });
 
+export const signalServiceLimit = 20;
+export const signalFlowKpis = ["database", "redis"] as const;
+
+const servicePrefixField = z.string().trim().min(1).max(200).superRefine((value, context) => {
+  const message = servicePrefixError(value);
+  if (message) context.addIssue({ code: "custom", message });
+});
+
+export const signalServiceWriteSchema = z.strictObject({
+  expectedTargetRevision: z.number().int().positive(),
+  displayName: label(120),
+  servicePrefix: servicePrefixField,
+  enabled: z.boolean().default(true),
+  dashboardEnabled: z.boolean().default(false),
+  panelEnabled: z.boolean().default(true),
+  flowKpi: z.enum(signalFlowKpis).nullable().default(null),
+  critical: z.boolean().default(false),
+  displayOrder: z.number().int().min(0).max(2147483647).default(0),
+});
+export const signalServicePatchSchema = z.strictObject({
+  expectedTargetRevision: z.number().int().positive(),
+  expectedRevision: z.number().int().positive(),
+  displayName: label(120).optional(),
+  servicePrefix: servicePrefixField.optional(),
+  enabled: z.boolean().optional(),
+  dashboardEnabled: z.boolean().optional(),
+  panelEnabled: z.boolean().optional(),
+  flowKpi: z.enum(signalFlowKpis).nullable().optional(),
+  critical: z.boolean().optional(),
+  displayOrder: z.number().int().min(0).max(2147483647).optional(),
+}).refine(value => Object.keys(value).some(key => key !== "expectedTargetRevision" && key !== "expectedRevision"));
+
 export type SignalTargetInput = z.infer<typeof signalTargetWriteSchema>;
 export type SignalInfraLinkInput = z.infer<typeof signalInfraLinkSchema>;
+export type SignalServiceInput = z.infer<typeof signalServiceWriteSchema>;

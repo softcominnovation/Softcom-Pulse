@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const availabilityCardKinds = ["resource", "external_service", "standalone_vps", "signal_target", "storage"] as const;
+export const availabilityCardKinds = ["resource", "external_service", "standalone_vps", "signal_target", "storage", "signal_service"] as const;
 export type AvailabilityCardKind = (typeof availabilityCardKinds)[number];
 export type AvailabilityCardRef = { kind: AvailabilityCardKind; id: string };
 

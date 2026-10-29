@@ -111,10 +111,12 @@ test("VM rows stay compact with multiple Agent filesystems and explicit CPU capa
     await mkdir(".cache/screenshots", { recursive: true });
     await page.locator(".vm-detail-panel").screenshot({ path: `.cache/screenshots/vm-compact-${width}.png` });
   }
+  await page.setViewportSize({ width: 1366, height: 1080 });
   expect(state.calls).toHaveLength(1);
   await linked.getByRole("link", { name: "Detalhes do Agent" }).click();
-  await expect(page.getByText("/boot", { exact: true })).toBeVisible();
-  await expect(page.getByText("/var/lib/docker", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/hosts\/linux-operacao\?range=24h$/, { timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "/boot", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "/var/lib/docker", exact: true })).toBeVisible();
   await expect(page.getByText("CPUs reconhecidas · SO", { exact: true })).toBeVisible();
   await page.goto("/asgard?hostKey=ASGARD&vm=vm-0");
   await expect(linked.locator(".vm-cpu-count")).toHaveText("8 vCPUs");

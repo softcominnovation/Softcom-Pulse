@@ -2,12 +2,16 @@ import { test, expect, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
 const key = "pulse.auth.v1";
+async function expectAuthenticated(page: Page) {
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("button", { name: "Sair", exact: true })).toBeVisible();
+}
 async function enter(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("E-mail", { exact: true }).fill(email);
   await page.getByLabel("Senha", { exact: true }).fill("test-password");
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
+  await expectAuthenticated(page);
 }
 const sizes = [[1920,1080],[1366,768],[1024,768],[1023,768],[768,1024],[390,844],[320,640],[360,640],[640,450]];
 for (const [width, height] of sizes) {
@@ -76,7 +80,7 @@ test("form validation, keyboard, error messages and loading prevent duplicate su
   await expect(page.getByRole("button", { name: "Entrar", exact: true })).toHaveCSS("outline-style", "solid");
   await page.keyboard.press("Enter");
   await expect(page.getByRole("button", { name: "Entrando…" })).toBeDisabled();
-  await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
+  await expectAuthenticated(page);
   expect(await (await page.request.get("http://127.0.0.1:3102/test-state?email=slow-ui@example.test")).json()).toMatchObject({ logins: 1 });
 });
 test("password visibility stays inside the input, supports keyboard and never submits the form", async ({ page }) => {
@@ -131,7 +135,7 @@ test("BFF login, reload, protected shell and logout work without direct corporat
   expect(saved.session.user.administrador).toBe(false);
   expect(saved.session.user.permissoes).toEqual([]);
   await page.reload();
-  await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
+  await expectAuthenticated(page);
   await page.goto("/login");
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByText("FORTALEZA · UTC−3", { exact: true })).toBeVisible();
@@ -145,28 +149,40 @@ test("BFF login, reload, protected shell and logout work without direct corporat
   expect(JSON.parse((await page.evaluate(key => localStorage.getItem(key), key))!).session).toBeNull();
   expect(corporate).toHaveLength(0);
 });
-test("two real browser tabs rotate once, preserve thin user and synchronize logout", async ({ page, context }) => {
+test("two real browser tabs rotate once, preserve thin user and synchronize logout", async ({ page, context, browser }) => {
   await enter(page, "tabs@example.test");
-  const other = await context.newPage();
-  await other.goto("/");
-  await expect(other.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
-  await page.evaluate(key => {
-    const record = JSON.parse(localStorage.getItem(key)!);
-    record.session.expiresAt = Date.now() - 1;
-    localStorage.setItem(key, JSON.stringify(record));
-  }, key);
-  await Promise.all([page.reload(), other.reload()]);
-  await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
-  await expect(other.getByRole("heading", { name: "Toda a operação. Um só lugar." })).toBeVisible();
-  const counters = await (await page.request.get("http://127.0.0.1:3102/test-state?email=tabs@example.test")).json();
-  expect(counters.refreshes).toBe(1);
-  const a = JSON.parse((await page.evaluate(key => localStorage.getItem(key), key))!).session;
-  const b = JSON.parse((await other.evaluate(key => localStorage.getItem(key), key))!).session;
-  expect(a.refreshToken).toBe(b.refreshToken);
-  expect(a.user.empresa).toBe("JP");
-  await other.getByRole("button", { name: "Sair", exact: true }).click();
-  await expect(page).toHaveURL(/\/login$/);
-  await expect(other).toHaveURL(/\/login$/);
+  const origin = new URL(page.url()).origin;
+  const state = await context.storageState();
+  const saved = state.origins.find(item => item.origin === origin)?.localStorage.find(item => item.name === key);
+  if (!saved) throw new Error("Authenticated session missing from browser storage");
+  const expired = JSON.parse(saved.value);
+  expired.session.expiresAt = Date.now() - 1;
+  saved.value = JSON.stringify(expired);
+  // Seed expiry before opening app documents: expiring live polling tabs and
+  // reloading can abort a refresh after its one-use token has been consumed.
+  await page.close();
+  const tabs = await browser.newContext({ baseURL: origin, storageState: state });
+  try {
+    const first = await tabs.newPage(), other = await tabs.newPage();
+    await Promise.all([first.goto("/"), other.goto("/")]);
+    await expectAuthenticated(first);
+    await expectAuthenticated(other);
+    const counters = await (await first.request.get("http://127.0.0.1:3102/test-state?email=tabs@example.test")).json();
+    expect(counters.refreshes).toBe(1);
+    const a = JSON.parse((await first.evaluate(key => localStorage.getItem(key), key))!).session;
+    const b = JSON.parse((await other.evaluate(key => localStorage.getItem(key), key))!).session;
+    expect(a.refreshToken).not.toBe(expired.session.refreshToken);
+    expect(a.refreshToken).toBe(b.refreshToken);
+    expect(a.expiresAt).toBeGreaterThan(Date.now());
+    expect(a.user).toEqual(expired.session.user);
+    expect(b.user).toEqual(a.user);
+    expect(a.user.empresa).toBe("JP");
+    await other.getByRole("button", { name: "Sair", exact: true }).click();
+    await expect(first).toHaveURL(/\/login$/);
+    await expect(other).toHaveURL(/\/login$/);
+  } finally {
+    await tabs.close();
+  }
 });
 test("direct HTTP BFF requests reject wrong purpose and tampered ciphertext", async ({ request }) => {
   const response = await request.post("/api/auth/login", { data: { email: "direct@example.test", senha: "test-password" } });

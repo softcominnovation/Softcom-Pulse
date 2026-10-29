@@ -160,7 +160,7 @@ test("Storage migration, revisioned preferences, isolated snapshots and authenti
     const result = await collectSnapshots({ rpc: f.rpc }); await publish(result.entries);
     const advertised = JSON.parse(await cache.get(keys.sync)).data;
     assert.equal(advertised.keys.includes(keys.storages), false);
-    assert.deepEqual(advertised.extensionKeys, [keys.storages]);
+    assert.deepEqual([...advertised.extensionKeys].sort(), [keys.dockerCoverage, keys.storages].sort());
     // The old Web allowlist sees only its original keys; new Web resolves the
     // extension in the same generation without changing primary DTOs.
     assert.ok(advertised.keys.every(key => /^pulse:(?:snapshot:(?:overview|host:.+|service:.+)|inventory:(?:hosts|containers:.+)|problems:current|source:bindings)$/.test(key)));

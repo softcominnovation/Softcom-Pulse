@@ -4,13 +4,17 @@ Contrato do áudio Kobra incorporado ao Pulse, atualizado em 28/10/2026. Complem
 
 ## 1. Onde o som funciona
 
-Para avisos de monitoramento, `toast` também aceita `operational`, `sound`, `velocity` e `onDismiss`. `sound: false` evita áudio no resultado de uma interação já sonorizada. Avisos operacionais usam o mesmo host; expiram sem pausa por hover, pausando somente com foco dentro do próprio aviso. A entrega centralizada controla agrupamento, idade, deduplicação e cooldown. O aviso na tela usa `canPlayOperationalSound` e exige aba visível, interação prévia, volume positivo, ausência de mute e de movimento reduzido. A chegada com a aba atrás usa `playOperationalSound`: as mesmas condições, sem exigir aba visível, e sem abrir o aviso. Som que o navegador recusar não fica pendente para o foco. Não disparar sons diretamente a cada resposta de polling.
+Para avisos de monitoramento, `toast` também aceita `operational`, `sound`, `velocity` e `onDismiss`. `sound: false` evita áudio no resultado de uma interação já sonorizada. Avisos operacionais usam o mesmo host; expiram sem pausa por hover, pausando somente com foco dentro do próprio aviso. A entrega centralizada controla agrupamento, idade, deduplicação e cooldown. A chegada usa `playOperationalSound` tanto em primeiro como em segundo plano; o toast visual é emitido silenciosamente para não repetir o áudio. Som que o navegador recusar não fica pendente para o foco. Não disparar sons diretamente a cada resposta de polling.
 
-`Providers` monta uma única instância de `SoundEffects`, que envolve a aplicação, inclusive login e leitura pública. Ela usa `SoundProvider` e `usePatch` de `@web-kits/audio/react` (versão instalada 0.2.0). O patch `kobra-ui` fica em `components/ui/sound.tsx`: síntese de senoides, triângulos, ruído, envelopes e filtros; não há arquivos MP3/WAV para cada interação nem download de um pacote sonoro remoto nesse caminho.
+`Providers` monta uma instância de `SoundEffects`. Os efeitos de interação usam o sintetizador Kobra; notificações usam `NotificationAudio`, com WAVs locais decodificados em `AudioBuffer` e um novo `AudioBufferSourceNode` por chegada. Os quatro arquivos em `public/sounds/notifications` foram renderizados das definições Kobra por `node scripts/generate-notification-audio.mjs`, sem áudio externo. O contexto Web Audio é compartilhado com os efeitos de interface e retomado antes de reproduzir, se necessário. Ambos passam pelos mesmos controles de mute, volume e movimento reduzido.
 
 `SoundEffectListener` escuta eventos por delegação no documento e observa atributos. Não é preciso registrar handlers de áudio em cada botão. O helper interno `play` varia levemente afinação e intensidade, respeitando o volume/mute do provider. Ele e o patch não são exportados como um player público de efeitos.
 
-Reprodução depende do contexto de áudio do navegador. O pacote cria/reutiliza `AudioContext` e tenta retomá-lo quando suspenso; um navegador ainda pode exigir interação. Não simular cliques nem assumir que abrir a página garante áudio. `usePatch` também respeita `prefers-reduced-motion`: na versão instalada, essa preferência suprime sons, mesmo com o controle visual em Ativados.
+Durante uma interação confiável na página visível, o contexto é desbloqueado e os arquivos são carregados e decodificados em cache. O evento `click` também prepara o áudio, cobrindo a ativação de toque que ocorre depois do pointerdown. Não há reprodução silenciosa nem loop. Ao recarregar, interagir novamente com a página; o botão **Testar som** usa o mesmo caminho das notificações.
+
+`playOperationalSound(sound, velocity, eligible?)` retorna Promise<boolean> em primeiro e segundo plano. Retoma o contexto se estiver suspenso, aguarda o buffer e só confirma após `source.start(0)` com o contexto em execução e a elegibilidade revalidada. Recusa, cancelamento ou preparação acima de 1500 ms não consomem a notificação compartilhada nem deixam um início pendente. Mute e zero interrompem a fonte e zeram seu ganho. Erros de preparação/reprodução são registrados no console como `[Pulse] Notification audio could not start`.
+
+O provider tenta o som diretamente ao receber alterações elegíveis, independentemente de `document.hidden`, `document.hasFocus`, fila visual, agrupamento ou expiração de toasts. O cooldown e a deduplicação entre abas continuam aplicados. O relógio visual apenas monta o toast silencioso. O player HTMLAudioElement da tentativa anterior foi substituído depois da comparação com a rotina de áudio do projeto de referência fornecido pelo dev.
 
 ## 2. Preferências e controles
 
@@ -27,7 +31,7 @@ Reprodução depende do contexto de áudio do navegador. O pacote cria/reutiliza
 
 As preferências pertencem ao browser/origem e não são gravadas no PostgreSQL. O volume do sistema operacional e o mute da aba também afetam o que se ouve, mas não são controlados pelo Pulse.
 
-`KobraControls` coloca mute e ajustes no cabeçalho. O diálogo **Sons da interface** oferece toggle, slider, teste e Concluir. A busca global também permite ativar/silenciar e abrir ajustes. Ao sair de mudo para ativado, o listener toca `swoosh`, se o volume permitir. **Testar som** usa `data-sound="notification"` e um toast silencioso, evitando áudio duplicado; fica desabilitado em mute/zero.
+`KobraControls` coloca mute e ajustes no cabeçalho. **Testar som** reproduz o WAV de notificação e informa se o navegador iniciou a reprodução. Não duplica o som por pointerdown; usa data-sound="none". O teste fica desabilitado em mute/zero.
 
 TV/fullscreen ocultam o grupo de controles no cabeçalho, mas não alteram mute/volume. Não presumir que um telão entrou em silêncio ao ativar apresentação.
 
@@ -55,7 +59,7 @@ Essa ordem importa: por exemplo, `aria-pressed` tem prioridade sobre a variante 
 
 Nomes válidos de `data-sound`: `tap`, `select`, `toggleOn`, `toggleOff`, `open`, `close`, `tick`, `sliderTick`, `destructive`, `key`, `success`, `error`, `warning`, `copy`, `notification`, `swoosh`, `chirp`, `command`, `blocked`.
 
-Um nome desconhecido não desliga áudio: cai nas regras automáticas. Não existe `data-sound="none"` nem contrato de opt-out por subárvore. Não adicionar atributos fictícios como se fossem suportados.
+`data-sound="none"` desliga o efeito automático daquele controle, permitindo testar o player de notificações sem som duplicado. Demais nomes desconhecidos continuam nas regras automáticas.
 
 ### Exemplos para novas funcionalidades
 

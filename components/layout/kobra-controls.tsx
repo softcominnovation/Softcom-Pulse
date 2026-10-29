@@ -43,6 +43,7 @@ import {
   SoundToggle,
   useSoundMuted,
   useSoundVolume,
+  playOperationalSound,
 } from "@/components/ui/sound";
 import { toast } from "@/components/ui/toast";
 import {
@@ -392,14 +393,13 @@ export function KobraControls({ publicRead = false }: { publicRead?: boolean }) 
             <Button
               variant="outline"
               disabled={muted || soundPercent === 0}
-              data-sound="notification"
-              onClick={() =>
-                toast({
-                  message: `Áudio de interface ativo em ${soundPercent}%.`,
-                  state: "success",
-                  sound: false,
-                })
-              }
+              data-sound="none"
+              onClick={() => {
+                void playOperationalSound('notification', 0.7).then(played => toast({
+                  message: played ? `Som de notificação reproduzido em ${soundPercent}%.` : 'O navegador não iniciou o som. Tente ativar o áudio novamente.',
+                  state: played ? 'success' : 'warning', sound: false,
+                }))
+              }}
             >
               <IconVolume data-icon="inline-start" />
               Testar som

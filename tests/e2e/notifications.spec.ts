@@ -5,6 +5,7 @@ import { signIn } from "../fixtures/infrastructure";
 import { notificationFixture, notificationFixtureState, addNotification } from "../fixtures/notifications";
 import { overview, presentation } from "../fixtures/dashboard";
 import { enterNativeFullscreen, exitNativeFullscreen } from "../fixtures/fullscreen";
+import { observeAudio } from "../fixtures/audio";
 
 test("shared read state updates isolated browsers while startup history stays silent", async ({ page, browser, baseURL }) => {
   test.setTimeout(60000);
@@ -72,16 +73,27 @@ for (const width of [360, 1440]) test(`notification center overlays the dashboar
   await expect(page.getByRole("button", { name: /^Notificações:/ })).toBeFocused();
 });
 
+test('new arrivals sound immediately even while the previous toast is still displayed', async ({ page }) => {
+  test.setTimeout(60000);
+  await observeAudio(page);
+  const state = await notificationFixture(page);
+  await adminFixture(page); await signIn(page);
+  await expect(page.getByRole('button', { name: 'Notificações: 0 não lidas, 0 incidentes atuais', exact: true })).toBeVisible();
+  await page.locator('.pulse-brand-caption').click();
+  await page.evaluate(() => { window.pulseAudioTest.recording = true; });
+  addNotification(state);
+  await expect.poll(() => page.evaluate(() => window.pulseAudioTest.bufferStarts), { timeout: 16000 }).toBe(1);
+  await expect(page.locator('[data-operational-toast]')).toBeVisible();
+  await page.locator('[data-operational-toast]').getByRole('button', { name: 'Ver central' }).focus();
+  await page.waitForTimeout(state.policy.soundCooldownMs + 50);
+  addNotification(state);
+  await expect.poll(() => page.evaluate(() => window.pulseAudioTest.bufferStarts), { timeout: 16000 }).toBe(2);
+  await expect(page.locator('[data-operational-toast]')).toHaveCount(1);
+});
+
 test("two active tabs show their own toast but coordinate one operational sound", async ({ page, context }) => {
   test.setTimeout(45000);
-  await context.addInitScript(() => {
-    const sounds: string[] = [];
-    Object.defineProperty(window, "operationalSounds", { value: sounds });
-    window.addEventListener("kobra:toast", event => {
-      const detail = (event as CustomEvent<{ operational?: boolean; sound?: string | false }>).detail;
-      if (detail.operational && detail.sound) sounds.push(detail.sound);
-    });
-  });
+  await observeAudio(context);
   const state = notificationFixtureState();
   await adminFixture(page); await notificationFixture(page, state); await signIn(page);
   const other = await context.newPage(); await adminFixture(other); await notificationFixture(other, state); await other.goto("/");
@@ -89,11 +101,31 @@ test("two active tabs show their own toast but coordinate one operational sound"
     await expect(tab.getByRole("button", { name: "Notificações: 0 não lidas, 0 incidentes atuais", exact: true })).toBeVisible();
     await tab.getByRole("button", { name: /^Notificações:/ }).click(); await tab.keyboard.press("Escape");
   }
+  for (const tab of [page, other]) await tab.evaluate(() => { window.pulseAudioTest.recording = true; });
   addNotification(state);
   for (const tab of [page, other]) await expect(tab.locator('[data-operational-toast]')).toContainText("Storage de operações", { timeout: 16000 });
-  const sounds = await Promise.all([page, other].map(tab => tab.evaluate(() => (window as typeof window & { operationalSounds: string[] }).operationalSounds)));
-  expect(sounds.flat()).toEqual(["error"]);
+  const sounds = await Promise.all([page, other].map(tab => tab.evaluate(() => window.pulseAudioTest.bufferStarts)));
+  expect(sounds.filter(starts => starts > 0)).toHaveLength(1);
   await other.close();
+});
+
+test("brief contention between tabs does not discard a fresh sound", async ({ page }) => {
+  test.setTimeout(30000); await observeAudio(page);
+  const state = await notificationFixture(page); await adminFixture(page); await signIn(page);
+  await expect(page.getByRole("button", { name: "Notificações: 0 não lidas, 0 incidentes atuais", exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    const request = navigator.locks.request.bind(navigator.locks);
+    Object.defineProperty(navigator.locks, "request", { value: async (name: string, options: LockOptions, callback: LockGrantedCallback<unknown>) => {
+      let release = () => {};
+      const hold = new Promise<void>(resolve => { release = resolve; });
+      await new Promise<void>(ready => { void request(name, () => { ready(); return hold; }); });
+      setTimeout(release, 100);
+      return request(name, options, callback);
+    } });
+    window.pulseAudioTest.recording = true;
+  });
+  addNotification(state);
+  await expect.poll(() => page.evaluate(() => window.pulseAudioTest.bufferStarts), { timeout: 16000 }).toBeGreaterThan(0);
 });
 
 test("authenticated public notification center remains read-only and uses public routes", async ({ page }) => {
@@ -104,7 +136,10 @@ test("authenticated public notification center remains read-only and uses public
   await page.route("**/api/public/dashboard/overview*", route => route.fulfill({ json: overview(document) }));
   await page.goto("/monitor");
   const requests: string[] = [];
-  page.on("request", request => { if (request.url().includes("/notifications")) requests.push(`${request.method()} ${new URL(request.url()).pathname}`); });
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith('/api/') && path.includes('/notifications')) requests.push(`${request.method()} ${path}`);
+  });
   await page.getByRole("button", { name: /^Notificações: 1 não lidas/ }).click();
   const dialog = page.getByRole("dialog", { name: "Notificações", exact: true });
   await expect(dialog.getByRole("heading", { name: "Storage de operações" })).toBeVisible();

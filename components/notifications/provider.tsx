@@ -6,7 +6,7 @@ import { api } from "@/lib/client/api";
 import { isPublicPath } from "@/lib/public/paths";
 import { getAuthController, useAuthStore } from "@/store/auth.store";
 import { toast, dismissToast } from "@/components/ui/toast";
-import { canPlayOperationalSound, playOperationalSound, type SoundName } from "@/components/ui/sound";
+import { playOperationalSound, type SoundName } from "@/components/ui/sound";
 import { arrivingSound, hiddenSoundMaxAgeMs, NotificationDelivery } from "@/lib/notifications/delivery";
 import { notificationMessages, type NotificationSnapshot, type NotificationChanges, type NotificationCounts } from "@/lib/notifications/contracts";
 import { setOperationalToastPlace } from "@/lib/notifications/toast-place";
@@ -22,46 +22,40 @@ export function NotificationRuntime() {
   return null;
 }
 
-async function claim(ids: string[], cooldown: number, eligible: () => boolean, emit: (sound: boolean) => void, key: string) {
-  // Only audio is coordinated. Every visible screen can still show its own temporary toast.
-  const run = () => {
-    const now = Date.now();
-    if (!eligible() || !canPlayOperationalSound()) { emit(false); return; }
-    try {
-      const raw = JSON.parse(localStorage.getItem(key) ?? "{}") as { ids?: Record<string, number> };
-      const claims = Object.fromEntries(Object.entries(raw.ids ?? {}).filter(([, at]) => typeof at === "number" && now - at < 120000));
-      const last = Number(localStorage.getItem("pulse-notification-last-sound")) || 0;
-      const sound = !ids.some(id => claims[id]) && now - last >= cooldown;
-      if (sound) {
-        for (const id of ids) claims[id] = now;
-        localStorage.setItem(key, JSON.stringify({ ids: Object.fromEntries(Object.entries(claims).slice(-1000)) }));
-        localStorage.setItem("pulse-notification-last-sound", String(now));
-      }
-      emit(sound);
-    } catch { emit(true); }
-  };
-  if (!navigator.locks) { run(); return; }
-  // Do not queue audio behind another tab or play after a delayed lock handoff.
-  await navigator.locks.request("pulse-notification-delivery", { ifAvailable: true }, lock => { if (lock) run(); else emit(false); });
-}
-
+let localLastSound = 0;
+const localClaims = new Map<string, number>();
 async function playArrivingSound(ids: string[], cooldown: number, sound: SoundName, velocity: number, eligible: () => boolean, key: string) {
-  const run = () => {
+  let attempted = false;
+  const run = async () => {
+    attempted = true;
     if (!eligible()) return;
+    const now = Date.now();
+    for (const [id, at] of localClaims) if (now - at >= 180000) localClaims.delete(id);
+    let claims: Record<string, number> = {}, last = localLastSound;
     try {
-      const now = Date.now();
-      const raw = JSON.parse(localStorage.getItem(key) ?? "{}") as { ids?: Record<string, number> };
-      const claims = Object.fromEntries(Object.entries(raw.ids ?? {}).filter(([, at]) => typeof at === "number" && now - at < 120000));
-      const last = Number(localStorage.getItem("pulse-notification-last-sound")) || 0;
-      if (ids.some(id => claims[id]) || now - last < cooldown) return;
-      if (!playOperationalSound(sound, velocity)) return;
-      for (const id of ids) claims[id] = now;
+      const raw = JSON.parse(localStorage.getItem(key) ?? '{}');
+      claims = Object.fromEntries(Object.entries(raw.ids ?? {}).filter((entry): entry is [string, number] => typeof entry[1] === 'number' && now - entry[1] < 180000));
+      last = Math.max(last, Number(localStorage.getItem('pulse-notification-last-sound')) || 0);
+    } catch { /* Keep the per-tab guard when storage is unavailable. */ }
+    if (ids.some(id => claims[id] || localClaims.has(id)) || now - last < cooldown) return;
+    // Claim only an actually started source; a suspended context must not consume an alert.
+    if (!await playOperationalSound(sound, velocity, eligible)) return;
+    localLastSound = Date.now();
+    for (const id of ids) { claims[id] = now; localClaims.set(id, now); }
+    while (localClaims.size > 1000) localClaims.delete(localClaims.keys().next().value!);
+    try {
       localStorage.setItem(key, JSON.stringify({ ids: Object.fromEntries(Object.entries(claims).slice(-1000)) }));
-      localStorage.setItem("pulse-notification-last-sound", String(now));
-    } catch { /* A failed hidden tab must not burn the sound for a visible one. */ }
+      localStorage.setItem('pulse-notification-last-sound', String(now));
+    } catch { /* The voice already started; do not replay it on a storage error. */ }
   };
-  if (!navigator.locks) { run(); return; }
-  await navigator.locks.request("pulse-notification-delivery", { ifAvailable: true }, lock => { if (lock) run(); });
+  if (!navigator.locks) { await run(); return; }
+  try {
+    // Let a refused resume release its claim, but never wait indefinitely for another tab.
+    await navigator.locks.request('pulse-notification-delivery', { signal: AbortSignal.timeout(400) }, run);
+  } catch (error) {
+    const timedOut = error instanceof DOMException && ['AbortError', 'TimeoutError'].includes(error.name);
+    if (!attempted && !timedOut) await run();
+  }
 }
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
@@ -127,11 +121,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           delivery.update(events, read, closed);
           const heard = events.filter(event => !read.includes(event.id) && (event.eventType === "recovery" || !closed.includes(event.incidentId)));
           const arrived = Date.now() + offset;
-          if (document.hidden) {
-            // A recovery in the same poll must not erase the outage. The visible toast still uses `heard`.
-            const cue = arrivingSound(events.filter(event => !read.includes(event.id)), arrived, { ...runtime, maxDeliveryAgeMs: Math.max(runtime.maxDeliveryAgeMs, hiddenSoundMaxAgeMs) });
-            if (cue) void playArrivingSound(cue.ids, runtime.soundCooldownMs, cue.sound, cue.velocity, () => !stopped && run === generation, `pulse-notification-claims:${scope}`);
-          } else delivery.add(heard, arrived, runtime);
+          // Sound follows receipt, independently of toast timing, page focus or visibility.
+          const cue = arrivingSound(events.filter(event => !read.includes(event.id)), arrived, { ...runtime, maxDeliveryAgeMs: Math.max(runtime.maxDeliveryAgeMs, hiddenSoundMaxAgeMs) });
+          if (cue) void playArrivingSound(cue.ids, runtime.soundCooldownMs, cue.sound, cue.velocity, () => !stopped && run === generation, `pulse-notification-claims:${scope}`);
+          if (!document.hidden) delivery.add(heard, arrived, runtime);
           if (count) publishCounts(count); setRevision(latest.streamRevision);
         }
         lastSuccess = Date.now(); setDataKey(viewKey); setAvailable(true);
@@ -145,20 +138,19 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       if (!batch) return;
       const epoch = generation;
       const valid = () => !stopped && epoch === generation && !document.hidden;
-      const emit = (sound: boolean) => {
+      const emit = () => {
         if (!valid()) { delivery.dismissed(now, policy); return; }
         const event = batch.events[0];
         visibleEvents = batch.events.map(item => ({ id: item.id, incidentId: item.incidentId, recovery: item.eventType === "recovery" }));
         toast({ id: toastId, operational: true, lifetime: policy.toastLifetimeMs,
           message: batch.events.length > 1 ? `${batch.events.length} ocorrências em ${batch.targetCount} ${batch.targetCount === 1 ? "serviço" : "serviços"} · ${event.displayName}` : `${event.displayName} · ${notificationMessages[event.messageCode]}`,
           state: event.eventType === "recovery" ? "success" : event.severity === "critical" ? "error" : event.severity === "warning" ? "warning" : "info",
-          sound: sound ? batch.sound : false, velocity: event.severity === "critical" ? 0.65 : 0.45,
+          sound: false, velocity: event.severity === "critical" ? 0.65 : 0.45,
           action: { label: "Ver central", run: () => setOpen(true) },
           onDismiss: () => delivery.dismissed(Date.now() + offset, policy),
         });
       };
-      if (!batch.sound) emit(false);
-      else void claim(batch.events.map(event => event.id), policy.soundCooldownMs, valid, emit, `pulse-notification-claims:${scope}`).catch(() => emit(false));
+      emit();
     }, 250);
     const interval = setInterval(() => void poll(), 10000);
     document.addEventListener("visibilitychange", visibility); window.addEventListener("online", visibility);

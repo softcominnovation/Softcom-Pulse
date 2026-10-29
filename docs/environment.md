@@ -6,6 +6,8 @@ A migration `20261028010000_notification_center` deve preceder os processos atua
 
 ## Versões e instalação
 
+Os testes de áudio em segundo plano incluem Chromium com janela e política de autoplay exigindo interação. No Windows, `npm run test:ui` executa a regressão com janela realmente minimizada em um perfil temporário independente, sem a emulação de foco do Playwright e sem modificar o navegador pessoal. Essa suíte de janelas nativas é exclusiva do Windows e é ignorada nos runners Linux; os testes de componentes de áudio e demais e2e continuam portáveis. Os workflows mantêm os comandos existentes. Não há novo requisito de execução para o aplicativo.
+
 Base validada em 02/10/2026: Next.js **16.3.8**, React **19.3.0**, Tailwind **4.3.3**, TypeScript **5.9.3**, Prisma **7.10.0** e cliente Redis **6.3.0**. Dependências diretas têm versões exatas; `package-lock.json` fixa a árvore.
 
 Next 16 está na linha Active LTS da [política oficial](https://nextjs.org/support-policy). A escolha usa o patch estável dessa linha. Não se copiou Next 14 da referência. Node **24 LTS** é a linha de execução: `.nvmrc`, CI e imagem usam **24.21.0**; o host Windows foi validado com **24.20.0** e npm **11.19.0**, compatíveis com `engines`. Ver [ciclo do Node](https://nodejs.org/en/about/previous-releases). Prisma 7 mantém os comandos `migrate dev` e `migrate deploy` exigidos; não foi adotada a versão candidata do Prisma 8. Ver [CLI Prisma 7](https://docs.prisma.io/docs/cli/v7).

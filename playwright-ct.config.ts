@@ -3,5 +3,5 @@ import { fileURLToPath } from "node:url";
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= fileURLToPath(new URL(".cache/ms-playwright", import.meta.url));
 export default defineConfig({
   testDir: "./tests/components", workers: 1,
-  use: { trace: "retain-on-failure", ctPort: 3101, ctViteConfig: { resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } } } },
+  use: { trace: "retain-on-failure", ctPort: 3101, ctViteConfig: { publicDir: fileURLToPath(new URL("./public/", import.meta.url)), resolve: { alias: { "@": fileURLToPath(new URL(".", import.meta.url)) } } } },
 });

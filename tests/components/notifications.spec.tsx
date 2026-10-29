@@ -1,5 +1,98 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import { NotificationToastFixture } from "../fixtures/notification-toast";
+import { observeAudio } from "../fixtures/audio";
+
+test("an unactivated page stays silent and does not replay its alert after the first interaction", async ({ mount, page }) => {
+  await observeAudio(page); await page.evaluate(() => localStorage.clear()); await mount(<NotificationToastFixture />);
+  const played = await page.evaluate(() => new Promise<boolean>(complete => {
+    Object.defineProperty(document, "hidden", { value: true, configurable: true });
+    window.dispatchEvent(new CustomEvent("test:background-sound", { detail: { complete } }));
+  }));
+  expect(played).toBe(false); expect(await page.evaluate(() => window.pulseAudioTest.contexts.length)).toBe(0);
+  await page.evaluate(() => { Object.defineProperty(document, "hidden", { value: false, configurable: true }); window.pulseAudioTest.recording = true; });
+  await page.getByLabel("Entrada sem efeito sonoro").click(); await page.waitForTimeout(500);
+  expect(await page.evaluate(() => window.pulseAudioTest.starts)).toBe(0);
+});
+
+test("a quiet trusted interaction prepares decoded audio and a hidden arrival renders the WAV", async ({ mount, page }) => {
+  await observeAudio(page); await page.evaluate(() => { localStorage.clear(); window.pulseAudioTest.recording = true; });
+  await mount(<NotificationToastFixture />);
+  await page.getByLabel("Entrada sem efeito sonoro").click();
+  await expect.poll(() => page.evaluate(() => window.pulseAudioTest.contexts[0]?.state)).toBe("running");
+  expect(await page.evaluate(() => window.pulseAudioTest.contexts.length)).toBe(1);
+  expect(await page.evaluate(() => window.pulseAudioTest.starts)).toBe(0);
+  const played = await page.evaluate(async () => {
+    Object.defineProperty(document, "hidden", { value: true, configurable: true });
+    window.pulseAudioTest.recording = true;
+    return new Promise<boolean>(complete => window.dispatchEvent(new CustomEvent("test:background-sound", { detail: { complete } })));
+  });
+  expect(played).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.pulseAudioTest.bufferStarts)).toBeGreaterThan(0);
+  await expect.poll(() => page.evaluate(() => window.pulseAudioTest.audible)).toBeGreaterThan(0);
+  await expect(page.locator('[data-operational-toast]')).toHaveCount(0);
+});
+
+test('a suspended unlocked context resumes and renders a background arrival', async ({ mount, page }) => {
+  await observeAudio(page); await page.evaluate(() => localStorage.clear()); await mount(<NotificationToastFixture />);
+  await page.getByLabel('Entrada sem efeito sonoro').click();
+  const played = await page.evaluate(async () => {
+    await window.pulseAudioTest.contexts[0].suspend();
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    window.pulseAudioTest.recording = true;
+    return new Promise<boolean>(complete => window.dispatchEvent(new CustomEvent('test:background-sound', { detail: { complete } })));
+  });
+  expect(played).toBe(true);
+  expect(await page.evaluate(() => window.pulseAudioTest.contexts[0].state)).toBe('running');
+  await expect.poll(() => page.evaluate(() => window.pulseAudioTest.audible)).toBeGreaterThan(0);
+});
+
+test("blocked context does not queue an alert for a later focus", async ({ mount, page }) => {
+  await observeAudio(page); await page.evaluate(() => localStorage.clear()); await mount(<NotificationToastFixture />);
+  await page.getByLabel("Entrada sem efeito sonoro").click();
+  const played = await page.evaluate(async () => {
+    await window.pulseAudioTest.contexts[0].suspend();
+    AudioContext.prototype.resume = () => new Promise<void>(() => {});
+    Object.defineProperty(document, "hidden", { value: true, configurable: true }); window.pulseAudioTest.recording = true;
+    return new Promise<boolean>(complete => window.dispatchEvent(new CustomEvent("test:background-sound", { detail: { complete } })));
+  });
+  expect(played).toBe(false);
+  await page.evaluate(async () => {
+    Object.defineProperty(document, "hidden", { value: false, configurable: true }); document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => window.pulseAudioTest.starts)).toBe(0);
+  expect(await page.evaluate(() => window.pulseAudioTest.bufferStarts)).toBe(0);
+});
+
+for (const control of ["Silenciar áudio", "Volume zero"]) test(`hidden arrivals obey ${control}`, async ({ mount, page }) => {
+  await observeAudio(page); await page.evaluate(() => localStorage.clear()); await mount(<NotificationToastFixture />);
+  await page.getByRole("button", { name: control, exact: true }).click();
+  const result = await page.evaluate(async () => {
+    Object.defineProperty(document, "hidden", { value: true, configurable: true }); window.pulseAudioTest.recording = true;
+    const played = await new Promise<boolean>(complete => window.dispatchEvent(new CustomEvent("test:background-sound", { detail: { complete } })));
+    return { played, starts: window.pulseAudioTest.starts };
+  });
+  expect(result).toEqual({ played: false, starts: 0 });
+});
+
+for (const control of ["Silenciar áudio", "Volume zero"]) test(`a decoded notification already playing stops on ${control}`, async ({ mount, page }) => {
+  await observeAudio(page); await page.evaluate(() => localStorage.clear()); await mount(<NotificationToastFixture />);
+  await page.getByLabel("Entrada sem efeito sonoro").click();
+  await page.evaluate(() => {
+    const stop = AudioBufferSourceNode.prototype.stop;
+    Object.defineProperty(window, 'notificationStops', { value: 0, writable: true });
+    AudioBufferSourceNode.prototype.stop = function (...args) {
+      (window as typeof window & { notificationStops: number }).notificationStops++;
+      return stop.apply(this, args);
+    };
+    window.pulseAudioTest.recording = true;
+  });
+  const played = await page.evaluate(() => new Promise<boolean>(complete => window.dispatchEvent(new CustomEvent("test:background-sound", { detail: { complete } }))));
+  expect(played).toBe(true);
+  expect(await page.evaluate(() => window.pulseAudioTest.bufferStarts)).toBeGreaterThan(0);
+  await page.getByRole("button", { name: control, exact: true }).click();
+  expect(await page.evaluate(() => (window as typeof window & { notificationStops: number }).notificationStops)).toBeGreaterThan(0);
+});
 
 for (const action of ["Notificar e silenciar", "Notificar e zerar"]) test(`${action} cuts already scheduled oscillator voices within 100ms`, async ({ mount, page }) => {
   await page.evaluate(() => {

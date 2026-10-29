@@ -1,10 +1,10 @@
 "use client";
 
-import type { SoundPatch } from '@web-kits/audio'
-import { SoundProvider, usePatch } from '@web-kits/audio/react'
+import { createPatchInstance, getMasterBus, type SoundPatch } from '@web-kits/audio'
 import { useEffect, useId, useRef, useSyncExternalStore } from 'react'
 
 import { cn } from '@/lib/utils'
+import { NotificationAudio } from '@/lib/client/notification-audio'
 
 const STORAGE_KEY = 'kobra-sound-muted'
 const VOLUME_KEY = 'kobra-sound-volume'
@@ -254,8 +254,16 @@ function jitter(cents: number) {
   return (Math.random() * 2 - 1) * cents
 }
 
+const soundPatch = createPatchInstance(PATCH)
+let audioContext: AudioContext | null = null
+let notificationAudio: NotificationAudio | null = null
+function getAudioContext() {
+  if (!audioContext || audioContext.state === 'closed') audioContext = getMasterBus().context as AudioContext
+  return audioContext
+}
 const voices = new Map<{ stop: (release?: number) => void }, ReturnType<typeof setTimeout>>()
 function silence() {
+  notificationAudio?.stop()
   for (const [voice, timer] of voices) { voice.stop(0.01); clearTimeout(timer) }
   voices.clear()
   window.dispatchEvent(new Event('kobra:sound-silence'))
@@ -272,19 +280,29 @@ function canAttemptOperationalSound() {
 export function canPlayOperationalSound() {
   return canAttemptOperationalSound() && !document.hidden
 }
-let operationalPlayer: ((sound: SoundName, velocity: number) => boolean) | null = null
-export function playOperationalSound(sound: SoundName, velocity: number) {
-  if (!canAttemptOperationalSound()) return false
-  return operationalPlayer?.(sound, velocity) ?? false
+export async function playOperationalSound(sound: SoundName, velocity: number, eligible = () => true) {
+  if (!eligible() || !canAttemptOperationalSound() || !notificationAudio) return false
+  return notificationAudio.play(sound, readVolume() * Math.max(0, Math.min(1, velocity)), () => eligible() && canAttemptOperationalSound())
 }
-function play(patch: { play: (name: string, opts?: object) => { stop: (release?: number) => void } }, cue: Cue) {
-  if (readPreference(STORAGE_KEY) === '1' || readVolume() === 0) return
-  const voice = patch.play(cue.sound, {
-    detune: (cue.detune ?? 0) + jitter(JITTER[cue.sound]),
-
-    velocity: (cue.velocity ?? 1) * (0.9 + Math.random() * 0.1),
-  })
-  voices.set(voice, setTimeout(() => voices.delete(voice), 5000))
+function unlockAudio() {
+  if (!canAttemptOperationalSound() || document.hidden || !navigator.userActivation?.isActive) return
+  notificationAudio?.unlock()
+  try {
+    const context = getAudioContext()
+    if (context.state !== 'running') void context.resume().catch(() => undefined)
+  } catch { /* Another trusted interaction can retry; never queue a notification. */ }
+}
+function play(cue: Cue): boolean {
+  if (!canAttemptOperationalSound() || audioContext?.state !== 'running') return false
+  try {
+    const voice = soundPatch.play(cue.sound, {
+      volume: readVolume(),
+      detune: (cue.detune ?? 0) + jitter(JITTER[cue.sound]),
+      velocity: (cue.velocity ?? 1) * (0.9 + Math.random() * 0.1),
+    })
+    voices.set(voice, setTimeout(() => voices.delete(voice), 5000))
+    return true
+  } catch { return false }
 }
 
 const TOGGLE_SLOTS = new Set([
@@ -381,6 +399,7 @@ function soundFor(target: Element, keyed = false): Cue | null {
     if (el.matches(':disabled, [aria-disabled="true"], [data-disabled]')) {
       return { sound: 'blocked' }
     }
+    if (el.dataset.sound === 'none') return null
     const cue = classify(el)
     if (cue) return cue
     el = el.parentElement?.closest<HTMLElement>(INTERACTIVE) ?? null
@@ -408,7 +427,6 @@ function sliderRange(el: HTMLElement) {
 }
 
 function SoundEffectListener() {
-  const patch = usePatch(PATCH)
   const muted = useSoundMuted()
   const volume = useSoundVolume()
   useEffect(() => { if (muted || volume === 0) silence() }, [muted, volume])
@@ -417,12 +435,12 @@ function SoundEffectListener() {
   useEffect(() => {
     const cameBack = wasMuted.current && !muted
     wasMuted.current = muted
-    if (cameBack) play(patch, { sound: 'swoosh' })
-  }, [muted, patch])
+    if (cameBack) play({ sound: 'swoosh' })
+  }, [muted])
 
   useEffect(() => {
-    if (!patch.ready) return
-
+    const media = new NotificationAudio(getAudioContext)
+    notificationAudio = media
     const TICK_GAP_MS = 28
     const TICK_LAG_MS = 60
     const DRAG_SLOP_PX = 3
@@ -443,12 +461,12 @@ function SoundEffectListener() {
       nextTickAt += TICK_GAP_MS
       const cue = { sound: 'sliderTick', detune } as const
       if (wait <= 0) {
-        play(patch, cue)
+        play(cue)
         return true
       }
       const timer = setTimeout(() => {
         queued.delete(timer)
-        play(patch, cue)
+        play(cue)
       }, wait)
       queued.add(timer)
       return true
@@ -471,15 +489,16 @@ function SoundEffectListener() {
     }
 
     const onPointerDown = (event: PointerEvent) => {
-
+      if (event.isTrusted) unlockAudio()
       if (event.button !== 0 || !(event.target instanceof Element)) return
       const cue = soundFor(event.target)
       if (!cue) return
       if (cue.sound === 'tick') grab = { x: event.clientX, y: event.clientY, dragged: false }
-      play(patch, cue)
+      play(cue)
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isTrusted) unlockAudio()
       if (event.key !== 'Enter' && event.key !== ' ') return
       if (event.repeat || !(event.target instanceof Element)) return
       const typing = event.target.matches(TEXT_ENTRY)
@@ -487,7 +506,7 @@ function SoundEffectListener() {
       const driving = event.key === 'Enter' && event.target.closest('.command-overlay')
       if (typing && !driving) return
       const cue = soundFor(event.target, true)
-      if (cue) play(patch, cue)
+      if (cue) play(cue)
     }
 
     const onPointerMove = (event: PointerEvent) => {
@@ -501,7 +520,7 @@ function SoundEffectListener() {
       grab = null
     }
 
-    const onContextMenu = () => play(patch, { sound: 'open' })
+    const onContextMenu = () => play({ sound: 'open' })
 
     // Pulse: let the official toast events use the same Kobra sound patch.
     const onToast = (event: Event) => {
@@ -511,7 +530,7 @@ function SoundEffectListener() {
       if (state === 'pending') return
       const sound: SoundName = state === 'success' ? 'success'
         : state === 'error' ? 'error' : state === 'warning' ? 'warning' : 'notification'
-      play(patch, { sound: detail?.sound ?? sound, velocity: Math.max(0, Math.min(1, detail?.velocity ?? 0.7)) })
+      play({ sound: detail?.sound ?? sound, velocity: Math.max(0, Math.min(1, detail?.velocity ?? 0.7)) })
     }
 
     const onInput = (event: Event) => {
@@ -520,7 +539,7 @@ function SoundEffectListener() {
       const el = event.target
       if (!(el instanceof HTMLInputElement) || !el.closest('[data-slot="input-otp"]')) return
       const deleting = (event as InputEvent).inputType?.startsWith('delete') ?? false
-      play(patch, { sound: 'key', detune: el.value.length * 45 - (deleting ? 260 : 0) })
+      play({ sound: 'key', detune: el.value.length * 45 - (deleting ? 260 : 0) })
     }
 
     const observer = new MutationObserver((records) => {
@@ -552,11 +571,11 @@ function SoundEffectListener() {
             break
           }
           case 'data-success': {
-            if (entered) play(patch, { sound: 'success' })
+            if (entered) play({ sound: 'success' })
             break
           }
           case 'aria-invalid': {
-            if (entered) play(patch, { sound: 'error' })
+            if (entered) play({ sound: 'error' })
             break
           }
           default:
@@ -572,6 +591,7 @@ function SoundEffectListener() {
       attributeFilter: ['aria-valuenow', 'aria-invalid', 'data-success'],
     })
 
+    document.addEventListener('click', unlockAudio, true)
     document.addEventListener('pointerdown', onPointerDown, true)
     document.addEventListener('pointermove', onPointerMove, true)
     document.addEventListener('pointerup', onPointerUp, true)
@@ -579,16 +599,14 @@ function SoundEffectListener() {
     document.addEventListener('keydown', onKeyDown, true)
     document.addEventListener('contextmenu', onContextMenu, true)
     document.addEventListener('input', onInput, true)
-    operationalPlayer = (sound, velocity) => {
-      play(patch, { sound, velocity })
-      return true
-    }
     window.addEventListener('kobra:toast', onToast)
     window.addEventListener('kobra:sound-silence', stopTicking)
     return () => {
-      operationalPlayer = null
+      if (notificationAudio === media) notificationAudio = null
+      media.dispose()
       observer.disconnect()
       stopTicking()
+      document.removeEventListener('click', unlockAudio, true)
       document.removeEventListener('pointerdown', onPointerDown, true)
       document.removeEventListener('pointermove', onPointerMove, true)
       document.removeEventListener('pointerup', onPointerUp, true)
@@ -600,7 +618,7 @@ function SoundEffectListener() {
       window.removeEventListener('kobra:sound-silence', stopTicking)
       silence()
     }
-  }, [patch])
+  }, [])
 
   return null
 }
@@ -650,6 +668,7 @@ function notify() {
 export function setSoundMuted(muted: boolean) {
   writePreference(STORAGE_KEY, muted ? '1' : '0')
   if (muted) silence()
+  else unlockAudio()
   notify()
 }
 
@@ -665,6 +684,7 @@ export function setSoundVolume(volume: number) {
   const next = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : DEFAULT_VOLUME
   if (next < readVolume()) silence()
   writePreference(VOLUME_KEY, String(next))
+  if (next > 0) unlockAudio()
   notify()
 }
 
@@ -677,14 +697,11 @@ export function useSoundVolume() {
 }
 
 export function SoundEffects({ children }: { children: React.ReactNode }) {
-  const muted = useSoundMuted()
-  const volume = useSoundVolume()
-
   return (
-    <SoundProvider enabled={!muted && volume > 0} volume={volume}>
+    <>
       <SoundEffectListener />
       {children}
-    </SoundProvider>
+    </>
   )
 }
 

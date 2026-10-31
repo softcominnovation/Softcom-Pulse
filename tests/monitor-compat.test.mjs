@@ -86,7 +86,7 @@ test("classic TV markup includes vector icons and volume even before scripts run
   for (const tv of [false, true]) {
     const model = fixture(); model.tv = tv;
     const html = renderCompatiblePage(model, "Pulse");
-    assert.match(html, /id="compat-viewport">\s*<div id="compat-shell">/);
+    assert.match(html, /id="compat-viewport">\s*<span id="compat-zoom-sensor" aria-hidden="true"><i id="compat-zoom-reference"><\/i><\/span>\s*<div id="compat-shell">/);
     assert.doesNotMatch(html, /▤|◇|∿|⚠|<use\b|@font-face/);
     assert.match(html, /class="panel-icon"[^>]*><svg\b/);
     assert.match(html, /class="kpi-heading"><h2>Hosts monitorados<\/h2><svg\b/);
@@ -94,6 +94,8 @@ test("classic TV markup includes vector icons and volume even before scripts run
     assert.match(html, /id="compat-volume-on"><svg\b[^>]*data-icon="volume"/);
     assert.match(html, /id="compat-volume-off" hidden><svg\b[^>]*data-icon="volumeOff"/);
     assert.match(html, /type="range" id="compat-volume"[^>]*min="0"[^>]*max="100"[^>]*disabled/);
+    assert.match(html, /id="compat-count" class="notification-count" aria-hidden="true" hidden/);
+    assert.match(html, /class="panel-content" tabindex="0" role="region" aria-label="Conteúdo de /);
     for (const svg of html.matchAll(/<svg\b[^>]*>/g)) {
       assert.match(svg[0], /xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
       assert.match(svg[0], /width="\d+" height="\d+" viewBox="0 0 24 24"/);

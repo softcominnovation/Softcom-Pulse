@@ -18,6 +18,8 @@ button:focus, select:focus, a:focus, [tabindex]:focus { outline: 2px solid #aaa;
 .control { white-space: nowrap; }
 .control .compat-icon + [data-control-label] { margin-left: 6px; vertical-align: middle; }
 .control:disabled { cursor: default; opacity: .55; }
+#compat-notifications { position: relative; }
+.notification-count { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 999px; background: #dc2626; color: #fff; font: bold 10px/18px Arial, Helvetica, sans-serif; text-align: center; box-shadow: 0 0 0 2px #080808; }
 .clock { text-align: right; margin-right: 5px; }
 .clock strong { font: bold 20px monospace; }
 .clock small { display: block; font-size: 9px; color: #aaa; margin-top: 3px; }
@@ -54,9 +56,11 @@ h1 { font-size: 20px; margin: 0; }
 .panel-icon { flex: none; margin-right: 9px; color: #aaa; line-height: 18px; }
 .service-separator { color: #fff; margin: 0 7px; }
 .panel-heading, .panel-foot { flex: none; }
-.panel-content { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: auto; padding: 0 15px 8px; }
-.panel-content > .table-scroll, .panel-content > .host-card-grid { flex: 1; min-height: 0; }
-.panel-content > .metric-grid, .panel-content > .signal-jobs, .panel-content > .availability-grid { flex: none; }
+.panel-content { display: block; flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 15px 8px; }
+.panel-content:focus { outline-offset: -2px; }
+.panel-content::-webkit-scrollbar, .table-scroll::-webkit-scrollbar, .host-card-grid::-webkit-scrollbar, .availability-grid::-webkit-scrollbar { width: 9px; height: 9px; }
+.panel-content::-webkit-scrollbar-track, .table-scroll::-webkit-scrollbar-track, .host-card-grid::-webkit-scrollbar-track, .availability-grid::-webkit-scrollbar-track { background: #202020; border-radius: 5px; }
+.panel-content::-webkit-scrollbar-thumb, .table-scroll::-webkit-scrollbar-thumb, .host-card-grid::-webkit-scrollbar-thumb, .availability-grid::-webkit-scrollbar-thumb { background: #777; border: 2px solid #202020; border-radius: 5px; }
 .panel-foot { display: flex; justify-content: space-between; border-top: 1px solid #303030; color: #aaa; font-size: 9px; padding: 8px 15px; margin-top: 2px; }
 .panel-empty { min-height: 75px; padding: 16px 0; color: #aaa; }
 .muted, .reading > span:first-child { color: #aaa; }
@@ -149,6 +153,9 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
 .light .availability-card, .light .signal-jobs > div { background: #f5f5f5; color: #171717; border-color: #ccc; }
 .light .control { background: #f5f5f5; color: #171717; border-color: #bbb; }
 .light .audio-controls { border-color: #bbb; }
+.light .notification-count { box-shadow: 0 0 0 2px #f0f0f0; }
+.light .panel-content::-webkit-scrollbar-track, .light .table-scroll::-webkit-scrollbar-track, .light .host-card-grid::-webkit-scrollbar-track, .light .availability-grid::-webkit-scrollbar-track { background: #eee; }
+.light .panel-content::-webkit-scrollbar-thumb, .light .table-scroll::-webkit-scrollbar-thumb, .light .host-card-grid::-webkit-scrollbar-thumb, .light .availability-grid::-webkit-scrollbar-thumb { background: #888; border-color: #eee; }
 .light .audio-status, .light .panel-icon, .light .kpi-heading .compat-icon { color: #555; }
 .light .dashboard-kpi .kpi-value { color: #171717; }
 .light .reading > span:first-child, .light .muted, .light .availability-description, .light .panel-foot, .light .dashboard-kpi p { color: #555; }
@@ -161,7 +168,11 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
 
 /* Enabled only by the classic /monitor controller. No-JS clients keep normal document flow. */
 html[data-viewport-fit], body[data-viewport-fit] { width: 100%; height: 100%; min-height: 0; overflow: hidden; }
+/* The root clips the document. A zoomed body must allow the expanded fixed canvas through. */
+body[data-viewport-fit] { overflow: visible; }
 body[data-viewport-fit] #compat-viewport { position: fixed; left: 0; top: 0; width: 100%; height: 100%; overflow: hidden; }
+#compat-zoom-sensor { position: absolute; left: 0; top: 0; width: 100px; height: 100px; margin: 0; padding: 0; border: 0; visibility: hidden; pointer-events: none; }
+#compat-zoom-reference { position: absolute; left: 0; top: 0; width: 100px; height: 100px; margin: 0; padding: 0; border: 0; zoom: 2; }
 body[data-viewport-fit] #compat-shell { display: flex; flex-direction: column; }
 body[data-viewport-fit] .pulse-topbar { display: flex; flex: none; }
 body[data-viewport-fit] .pulse-brand { width: 250px; }
@@ -181,6 +192,8 @@ body[data-viewport-fit] .dashboard-kpi { display: table-cell; width: auto; margi
 body[data-viewport-fit] .compat-row { display: flex; align-items: stretch; flex: none; width: 100%; padding: 5px; border-spacing: 0; }
 body[data-viewport-fit] .compat-cell { display: flex; flex-direction: column; flex: 0 0 auto; height: auto; min-height: 0; margin: 0; padding: 0 5px; }
 body[data-viewport-fit] .compat-cell > .dashboard-panel { flex: 1 1 0; height: auto; min-height: 0; }
+/* One vertical scroll owner per fitted table/inventory panel; children keep their natural height. */
+body[data-viewport-fit] .panel-content > .table-scroll, body[data-viewport-fit] .panel-content > .host-card-grid { max-height: none !important; overflow: visible; }
 body[data-viewport-fit] .content-sized .compat-cell { display: block; }
 body[data-viewport-fit] .card-wrap { width: 238px; }
 body[data-viewport-fit] .split-row .card-wrap { width: 25%; }

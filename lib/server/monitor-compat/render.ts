@@ -30,7 +30,7 @@ function earliestExpiry(...values: (string | null | undefined)[]) {
 function expiry(value: string | null | undefined) { return value && Number.isFinite(Date.parse(value)) ? ` data-valid-until="${h(value)}"` : ""; }
 function badge(label: string, state = "unknown", validUntil?: string | null) { return `<span class="status-pill tone-${tone(state)}" data-live-status${expiry(validUntil)}><i class="status-dot"></i>${h(label)}</span>`; }
 function heading(title: string, state = "", icon: MonitorIcon = "server") { return `<div class="panel-heading"><span class="panel-icon" aria-hidden="true">${monitorIcon(icon)}</span><h2>${h(title)}</h2>${state ? `<span class="service-separator" aria-hidden="true">•</span>${state}` : ""}</div>`; }
-function panel(title: string, body: string, foot = "", state = "", icon: MonitorIcon = "server") { return `<section class="dashboard-panel">${heading(title, state, icon)}<div class="panel-content">${body}</div>${foot ? `<footer class="panel-foot">${foot}</footer>` : ""}</section>`; }
+function panel(title: string, body: string, foot = "", state = "", icon: MonitorIcon = "server") { return `<section class="dashboard-panel">${heading(title, state, icon)}<div class="panel-content" tabindex="0" role="region" aria-label="Conteúdo de ${h(title)}">${body}</div>${foot ? `<footer class="panel-foot">${foot}</footer>` : ""}</section>`; }
 function controlContent(icon: MonitorIcon, label: string) { return `${monitorIcon(icon)}<span data-control-label>${h(label)}</span>`; }
 function empty(text: string) { return `<p class="panel-empty">${h(text)}</p>`; }
 function reading(label: string, metric: Metric | undefined, stale: boolean, now: number, series = "cpu") {
@@ -239,6 +239,7 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
 </head>
 <body class="${model.tv ? "tv-mode" : ""}">
 <div id="compat-viewport">
+<span id="compat-zoom-sensor" aria-hidden="true"><i id="compat-zoom-reference"></i></span>
 <div id="compat-shell">
   <a class="skip-link" href="#main">Ir para o conteúdo</a>
   <header class="pulse-topbar">
@@ -256,7 +257,7 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
         <small id="compat-audio-status" class="audio-status" role="status">Áudio carregando</small>
         <noscript><small>Ative JavaScript para controlar o som.</small></noscript>
       </span>
-      <button class="control" id="compat-notifications" type="button" aria-label="Notificações">${monitorIcon("bell")} <span id="compat-count">—</span></button>
+      <button class="control" id="compat-notifications" type="button" aria-label="Notificações">${monitorIcon("bell")}<span id="compat-count" class="notification-count" aria-hidden="true" hidden></span></button>
     </div>
   </header>
   <main id="main">

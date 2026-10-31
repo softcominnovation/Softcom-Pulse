@@ -11,7 +11,7 @@
   var rotating = state.autoStart && state.screens.length > 1, offset = Date.parse(state.serverTime) - Date.now();
   var restoreFocus = null, oldOverflow = '', queryGeneration = 0, rotationDueAt = 0, failureCount = 0;
   var displayedScreenId = state.screenId;
-  var activeScale = 1, fitting = false;
+  var activeScale = 1, fitting = false, lastViewportKey = '';
   var layoutOverride = /(?:^|[?&])layout=/.test(window.location.search);
   if (!/(?:^|[?&])theme=/.test(window.location.search)) {
     try { var theme = localStorage.getItem('softcom-pulse-theme'); if (theme === 'dark' || theme === 'light') state.theme = theme; } catch (_error) { /* Keep the explicit/default theme. */ }
@@ -112,17 +112,13 @@
       while (parent && parent !== content) { if (parent.getAttribute && parent.getAttribute('data-block-id')) return parent.getAttribute('data-block-id') + ':' + element.getAttribute('aria-label'); parent = parent.parentNode; }
       return null;
     }
-    each(content.querySelectorAll('.table-scroll, .host-card-grid, .availability-grid'), function (element) {
+    each(content.querySelectorAll('.panel-content, .table-scroll, .host-card-grid, .availability-grid'), function (element) {
       var key = regionKey(element);
       if (key && element.offsetHeight) scroll[key] = { top: element.scrollTop, left: element.scrollLeft, focus: document.activeElement === element };
     });
     content.innerHTML = result.html;
     content.setAttribute('data-connection', content.querySelector('.is-stale') ? 'stale' : 'ready');
     if (focusDetail) each(content.querySelectorAll('[data-open-detail]'), function (element) { if (element.getAttribute('data-open-detail') === focusDetail) element.focus(); });
-    each(content.querySelectorAll('.table-scroll, .host-card-grid, .availability-grid'), function (element) {
-      var previous = scroll[regionKey(element)];
-      if (previous && element.offsetHeight) { element.scrollTop = previous.top; element.scrollLeft = previous.left; if (previous.focus) element.focus(); }
-    });
     state = result.state;
     displayedScreenId = state.screenId;
     if (state.screens.length < 2) rotating = false;
@@ -136,6 +132,10 @@
     updateControls();
     expireEvidence();
     fit();
+    each(content.querySelectorAll('.panel-content, .table-scroll, .host-card-grid, .availability-grid'), function (element) {
+      var previous = scroll[regionKey(element)];
+      if (previous && element.offsetHeight) { element.scrollTop = previous.top; element.scrollLeft = previous.left; if (previous.focus) element.focus(); }
+    });
   }
   function changeView() {
     queryGeneration++; pending = null;
@@ -175,16 +175,62 @@
     controlLabel('compat-theme', state.theme === 'light' ? 'Tema claro' : 'Tema escuro');
     byId('compat-theme').setAttribute('aria-pressed', state.theme === 'light' ? 'true' : 'false');
   }
+  function elementZoom(element) {
+    var style = window.getComputedStyle ? window.getComputedStyle(element) : element.currentStyle;
+    var raw = style && style.zoom, value = parseFloat(raw);
+    if (String(raw).indexOf('%') >= 0) value /= 100;
+    return isFinite(value) && value > 0 ? value : 1;
+  }
+  function effectiveZoom(element) {
+    var value = 1;
+    while (element && element.nodeType === 1) { value *= elementZoom(element); element = element.parentNode; }
+    return value;
+  }
+  function viewportRect(element, metrics) {
+    var rect = element.getBoundingClientRect();
+    // Older Chromium divides the rectangle by effective CSS zoom; newer engines include it.
+    var zoom = metrics.legacyRects ? effectiveZoom(element) : 1;
+    return { left: rect.left * zoom, top: rect.top * zoom, right: rect.right * zoom, bottom: rect.bottom * zoom };
+  }
+  function viewportMetrics() {
+    var root = document.documentElement, visual = window.visualViewport, sensor = byId('compat-zoom-sensor');
+    var metrics = { width: window.innerWidth || root.clientWidth, height: window.innerHeight || root.clientHeight, left: 0, top: 0, zoomX: 1, zoomY: 1, contentZoom: elementZoom(byId('compat-shell')), visualScale: 1, pixelRatio: window.devicePixelRatio || 1, legacyRects: false };
+    if (visual && visual.width > 0 && visual.height > 0) {
+      // Zooming out may expose MORE CSS pixels than innerWidth/innerHeight.
+      metrics.width = visual.width; metrics.height = visual.height;
+      metrics.left = visual.offsetLeft || 0; metrics.top = visual.offsetTop || 0; metrics.visualScale = visual.scale || 1;
+    }
+    if (sensor && sensor.offsetWidth && sensor.offsetHeight) {
+      var rect = sensor.getBoundingClientRect();
+      var reference = byId('compat-zoom-reference'), cssZoom = 1;
+      if (reference && elementZoom(reference) > 1 && rect.right > rect.left) {
+        var nested = reference.getBoundingClientRect();
+        metrics.legacyRects = (nested.right - nested.left) / (rect.right - rect.left) < 1.5;
+        if (metrics.legacyRects) cssZoom = effectiveZoom(sensor);
+      }
+      var x = (rect.right - rect.left) * cssZoom / sensor.offsetWidth, y = (rect.bottom - rect.top) * cssZoom / sensor.offsetHeight;
+      if (isFinite(x) && x > 0) metrics.zoomX = x;
+      if (isFinite(y) && y > 0) metrics.zoomY = y;
+    }
+    return metrics;
+  }
+  function viewportKey(metrics) {
+    function rounded(value) { return Math.round(value * 10000) / 10000; }
+    return [rounded(metrics.width), rounded(metrics.height), rounded(metrics.left), rounded(metrics.top), rounded(metrics.zoomX), rounded(metrics.zoomY), rounded(metrics.contentZoom), rounded(metrics.visualScale), metrics.pixelRatio, metrics.legacyRects ? 1 : 0].join(':');
+  }
+  function checkViewport() {
+    if (!stopped && !fitting && !document.hidden && viewportKey(viewportMetrics()) !== lastViewportKey) fit();
+  }
   function fit() {
     if (fitting || stopped) return;
     var root = document.documentElement, shell = byId('compat-shell'), viewport = byId('compat-viewport');
     var blocks = content.querySelector('.dashboard-blocks');
     if (!viewport || !blocks || !('transform' in shell.style || 'webkitTransform' in shell.style)) return;
-    var rows, flexible, minimum, width, height, top;
+    var rows, flexible, minimum, width, height, top, metrics;
     function measure(scale) {
       activeScale = scale;
-      shell.style.zoom = '';
-      shell.style.width = (width / scale) + 'px'; shell.style.height = (height / scale) + 'px';
+      shell.style.width = (width / (metrics.zoomX * metrics.contentZoom * scale)) + 'px';
+      shell.style.height = (height / (metrics.zoomY * metrics.contentZoom * scale)) + 'px';
       shell.style.transformOrigin = shell.style.webkitTransformOrigin = '0 0';
       shell.style.transform = shell.style.webkitTransform = 'scale(' + scale + ')';
       flexible = []; minimum = 0;
@@ -198,7 +244,7 @@
       });
       each(rows, function (row) { if (row.className.indexOf('content-sized') >= 0) minimum += row.offsetHeight; });
       var footer = content.querySelector('.dashboard-footer');
-      var bottom = footer ? footer.getBoundingClientRect().bottom : blocks.getBoundingClientRect().bottom;
+      var bottom = viewportRect(footer || blocks, metrics).bottom;
       return blocks.clientHeight >= minimum + 1 && shell.scrollWidth <= shell.clientWidth + 1 && bottom <= top + height + 1;
     }
     function restoreFlow() {
@@ -213,19 +259,17 @@
     fitting = true;
     try {
       root.setAttribute('data-viewport-fit', 'true'); document.body.setAttribute('data-viewport-fit', 'true');
-      width = window.innerWidth || root.clientWidth; height = window.innerHeight || root.clientHeight;
-      var visual = window.visualViewport, left = 0; top = 0;
-      if (visual && visual.width > 0 && visual.height > 0) {
-        width = Math.min(width, visual.width); height = Math.min(height, visual.height);
-        left = visual.offsetLeft || 0; top = visual.offsetTop || 0;
-      }
+      metrics = viewportMetrics(); width = metrics.width; height = metrics.height; top = metrics.top;
       if (!(width > 0 && height > 0)) return;
-      viewport.style.width = width + 'px'; viewport.style.height = height + 'px';
-      viewport.style.left = left + 'px'; viewport.style.top = top + 'px';
+      viewport.style.width = (width / metrics.zoomX) + 'px'; viewport.style.height = (height / metrics.zoomY) + 'px';
+      viewport.style.left = '0px'; viewport.style.top = '0px';
+      var rect = viewportRect(viewport, metrics);
+      viewport.style.left = ((metrics.left - rect.left) / metrics.zoomX) + 'px';
+      viewport.style.top = ((top - rect.top) / metrics.zoomY) + 'px';
       rows = blocks.querySelectorAll('.compat-row');
       var preferred = state.tv || document.fullscreenElement || document.webkitFullscreenElement ? state.scale / 100 : 1;
       // Keep the saved desktop columns even when the WebView exposes a small CSS viewport.
-      var maximum = Math.min(preferred, width / 1200);
+      var maximum = Math.min(preferred, width / (1200 * metrics.zoomX * metrics.contentZoom));
       var scale = maximum;
       if (!measure(scale)) {
         var low = maximum, high = maximum, attempts = 0, fits = false;
@@ -243,15 +287,18 @@
       viewport.scrollTop = 0; viewport.scrollLeft = 0;
       viewport.setAttribute('data-fit-scale', String(activeScale));
       viewport.setAttribute('data-fit-width', String(width)); viewport.setAttribute('data-fit-height', String(height));
+      viewport.setAttribute('data-fit-zoom-x', String(metrics.zoomX * metrics.contentZoom));
+      viewport.setAttribute('data-fit-zoom-y', String(metrics.zoomY * metrics.contentZoom));
+      viewport.setAttribute('data-fit-rect-mode', metrics.legacyRects ? 'legacy' : 'viewport');
       viewport.setAttribute('data-fit-state', 'ready');
-    } finally { fitting = false; }
+    } finally { lastViewportKey = viewportKey(viewportMetrics()); fitting = false; }
   }
   function openModal(title, html, trigger) {
     restoreFocus = trigger || document.activeElement;
     text(byId('compat-modal-title'), title);
     byId('compat-modal-body').innerHTML = html;
     oldOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    if (!document.body.hasAttribute('data-viewport-fit')) document.body.style.overflow = 'hidden';
     modal.hidden = false;
     modal.querySelector('button').focus();
     expireEvidence();
@@ -317,6 +364,7 @@
     function pad(value) { return value < 10 ? '0' + value : String(value); }
     text(byId('compat-clock'), pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes()) + ':' + pad(date.getUTCSeconds()));
     expireEvidence();
+    if (lastViewportKey) checkViewport();
   }
   document.addEventListener('keydown', function (event) {
     if (!modal.hidden && (event.key === 'Escape' || event.keyCode === 27)) { event.preventDefault(); closeModal(); return; }
@@ -331,10 +379,19 @@
     var key = (event.key || '').toLowerCase(), action = key === 't' ? 'compat-tv' : key === 'f' ? 'compat-fullscreen' : key === 'r' ? 'compat-rotate' : null;
     if (action) { event.preventDefault(); byId(action).click(); }
   });
-  window.addEventListener('resize', fit);
-  window.addEventListener('orientationchange', fit);
+  window.addEventListener('resize', checkViewport);
+  window.addEventListener('orientationchange', checkViewport);
   window.addEventListener('load', fit);
-  if (window.visualViewport && window.visualViewport.addEventListener) window.visualViewport.addEventListener('resize', fit);
+  if (window.visualViewport && window.visualViewport.addEventListener) {
+    window.visualViewport.addEventListener('resize', checkViewport);
+    window.visualViewport.addEventListener('scroll', checkViewport);
+  }
+  if (window.MutationObserver) {
+    var zoomObserver = new window.MutationObserver(checkViewport);
+    each([document.documentElement, document.body, byId('compat-viewport'), byId('compat-shell')], function (element) {
+      if (element) zoomObserver.observe(element, { attributes: true, attributeFilter: ['style', 'class'] });
+    });
+  }
   document.addEventListener('fullscreenchange', function () { updateControls(); fit(); });
   document.addEventListener('webkitfullscreenchange', function () { updateControls(); fit(); });
   document.addEventListener('visibilitychange', function () { armRotation(); if (!document.hidden) { fit(); refresh(); } });
@@ -344,7 +401,9 @@
 
   var cursor = null, notificationBusy = false, notificationTimer, deliveryRevision = null, notificationGeneration = 0;
   function notificationsLabel(data) {
-    text(byId('compat-count'), data.counts.unreadCount);
+    var unread = Number(data.counts.unreadCount), count = byId('compat-count');
+    unread = isFinite(unread) && unread > 0 ? Math.floor(unread) : 0;
+    text(count, unread > 99 ? '99+' : unread); count.hidden = unread === 0;
     byId('compat-notifications').setAttribute('aria-label', 'Notificações: ' + data.counts.unreadCount + ' não lidas, ' + data.counts.activeCount + ' incidentes atuais');
     fit();
   }

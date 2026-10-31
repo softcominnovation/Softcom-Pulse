@@ -302,6 +302,67 @@ test("compatible monitor serves data without Next bundles, including opaque ifra
   } finally { await browser.close(); }
 });
 
+test("compatible monitor keeps unread badges and scrolls complete panel bodies without page overflow", { timeout: 60000 }, async () => {
+  const browser = await chromium.launch();
+  try {
+    await withServer({ PULSE_DEMO_MODE: "1", PULSE_E2E: "", PULSE_PUBLIC_HOSTS: "127.0.0.1", DATABASE_URL: "postgresql://unused:unused@127.0.0.1:1/unused", REDIS_URL: "redis://127.0.0.1:1" }, async base => {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 480 } });
+      try {
+        let unread = 4;
+        await page.route(url => url.pathname.startsWith("/api/public/monitoring/notifications"), route => route.fulfill({ json: {
+          counts: { unreadCount: unread, activeCount: 2 }, serverTime: new Date().toISOString(),
+          runtime: { deliveryRevision: 1, enabled: false }, syncCursor: "fixture", nextCursor: "fixture", events: [], changes: [], hasMore: false,
+        } }));
+        // Keep real public rendering, but provide enough read-only fixture rows to require scrolling.
+        const longInventory = html => html.replace(/(<div class="table-scroll"[^>]*aria-label="VMs dentro de ASGARD"[^>]*><table>[\s\S]*?<tbody>)([\s\S]*?)(<\/tbody>)/,
+          (_match, start, rows, end) => start + rows.repeat(12) + end);
+        await page.route(url => url.origin === base && (url.pathname === "/monitor" || url.pathname === "/monitor/compat"), async route => {
+          const response = await route.fetch();
+          if (new URL(route.request().url()).searchParams.get("fragment") === "1") {
+            const data = await response.json(); data.html = longInventory(data.html);
+            await route.fulfill({ response, json: data });
+          } else await route.fulfill({ response, body: longInventory(await response.text()) });
+        });
+        await page.goto(base + "/monitor?compat=1");
+        await page.locator('#compat-viewport[data-fit-state="ready"]').waitFor();
+        await page.locator("#compat-count:not([hidden])").waitFor();
+        assert.equal(await page.locator("#compat-count").textContent(), "4");
+        assert.equal(await page.locator("#compat-count").evaluate(element => getComputedStyle(element).backgroundColor), "rgb(220, 38, 38)");
+        assert.equal(await page.locator('#compat-notifications svg[data-icon="bell"]').isVisible(), true);
+        const positions = {};
+        for (const type of ["asgard_summary", "signal_flow"]) {
+          const selector = `.block-${type} > .dashboard-panel > .panel-content`, body = page.locator(selector);
+          assert.equal(await body.evaluate(element => element.scrollHeight > element.clientHeight + 1), true, type + ": panel must retain overflowing content");
+          await body.hover(); await page.mouse.wheel(0, 250);
+          await page.waitForFunction(selector => document.querySelector(selector).scrollTop > 0, selector);
+          await body.focus(); await page.keyboard.press("End");
+          await page.waitForFunction(selector => {
+            const body = document.querySelector(selector);
+            return Math.abs(body.scrollHeight - body.clientHeight - body.scrollTop) < 2;
+          }, selector);
+          const last = await body.locator("tbody tr").last().evaluate(element => {
+            const row = element.getBoundingClientRect(), body = element.closest(".panel-content").getBoundingClientRect();
+            return row.bottom <= body.bottom + 1 && row.top >= body.top - 1;
+          });
+          assert.equal(last, true, type + ": final row must be reachable");
+          positions[selector] = await body.evaluate(element => element.scrollTop);
+        }
+        const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/monitor/compat" && new URL(response.url()).searchParams.get("fragment") === "1");
+        await page.locator("#compat-refresh").click(); assert.equal((await refreshed).status(), 200);
+        await page.waitForFunction(() => document.getElementById("compat-content").getAttribute("data-connection") === "ready");
+        for (const [selector, position] of Object.entries(positions)) assert.ok(Math.abs(await page.locator(selector).evaluate(element => element.scrollTop) - position) < 2, selector + ": refresh must preserve scroll");
+        assert.equal(await page.evaluate(() => document.scrollingElement.scrollHeight <= innerHeight + 1 && document.scrollingElement.scrollWidth <= innerWidth + 1), true);
+        for (const count of [0, 150]) {
+          unread = count; await page.reload();
+          await page.waitForFunction(count => document.getElementById("compat-notifications").getAttribute("aria-label").includes(count + " não lidas"), count);
+          assert.equal(await page.locator("#compat-count").isVisible(), count > 0);
+          if (count > 99) assert.equal(await page.locator("#compat-count").textContent(), "99+");
+        }
+      } finally { await page.close(); }
+    });
+  } finally { await browser.close(); }
+});
+
 test("compatible controller preserves stale evidence and completes slow screen transitions", { timeout: 90000 }, async () => {
   const browser = await chromium.launch();
   try {
@@ -437,6 +498,65 @@ test("compatible monitor fills the iframe viewport across screens and small WebV
             if (size.width <= 960) assert.ok(geometry.scale < 1, label + ": small viewport needs automatic scale");
           }
         }
+        await frame.evaluate(() => { window.__pulseNativeRect = Element.prototype.getBoundingClientRect; });
+        for (const legacy of [false, true]) {
+          if (legacy) await frame.evaluate(() => {
+            // Emulate the CSS-zoom rectangle convention used by old Chromium, without
+            // changing how this browser actually renders. Native rectangles remain the oracle.
+            Element.prototype.getBoundingClientRect = function () {
+              let zoom = 1;
+              for (let node = this; node instanceof Element; node = node.parentElement) {
+                const raw = getComputedStyle(node).zoom;
+                let value = parseFloat(raw); if (String(raw).includes("%")) value /= 100;
+                if (Number.isFinite(value) && value > 0) zoom *= value;
+              }
+              const rect = window.__pulseNativeRect.call(this);
+              return new DOMRect(rect.x / zoom, rect.y / zoom, rect.width / zoom, rect.height / zoom);
+            };
+          });
+          const baseline = await frame.evaluate(() => ({ width: document.getElementById("compat-shell").offsetWidth, textHeight: window.__pulseNativeRect.call(document.querySelector(".panel-heading h2")).height }));
+          // CSS zoom does not have to fire resize. It must change density, not leave a smaller canvas.
+          for (const target of ["body", "root", "shell"]) {
+            for (const zoom of [0.7, 1.25, 1]) {
+              await frame.evaluate(({ target, zoom }) => {
+                document.body.style.zoom = "1"; document.documentElement.style.zoom = "1"; document.getElementById("compat-shell").style.zoom = "1";
+                const element = target === "body" ? document.body : target === "root" ? document.documentElement : document.getElementById("compat-shell");
+                element.style.zoom = String(zoom);
+              }, { target, zoom });
+              await frame.waitForFunction(zoom => {
+                const viewport = document.getElementById("compat-viewport"), shell = document.getElementById("compat-shell");
+                const rect = window.__pulseNativeRect.call(shell);
+                return Math.abs(Number(viewport.getAttribute("data-fit-zoom-x")) - zoom) < 0.01 && Math.abs(rect.width - window.innerWidth) < 2 && Math.abs(rect.height - window.innerHeight) < 2;
+              }, zoom);
+              const result = await frame.evaluate(() => {
+                const shell = document.getElementById("compat-shell"), rect = window.__pulseNativeRect.call(shell), footer = window.__pulseNativeRect.call(document.querySelector(".dashboard-footer"));
+                return { width: rect.width, height: rect.height, left: rect.left, top: rect.top, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, logicalWidth: shell.offsetWidth, textHeight: window.__pulseNativeRect.call(document.querySelector(".panel-heading h2")).height, footerBottom: footer.bottom };
+              });
+              const label = `${legacy ? "legacy" : "native"} ${target} zoom ${zoom}`;
+              assert.equal(await surface.locator("#compat-viewport").getAttribute("data-fit-rect-mode"), legacy ? "legacy" : "viewport", label);
+              assert.ok(Math.abs(result.left) < 2 && Math.abs(result.top) < 2, label + ": shifted canvas");
+              assert.ok(Math.abs(result.width - result.viewportWidth) < 2 && Math.abs(result.height - result.viewportHeight) < 2, label + ": empty screen margins");
+              assert.ok(result.footerBottom <= result.viewportHeight + 1 && result.footerBottom >= result.viewportHeight - 24, label + ": footer not fitted");
+              if (zoom === 0.7) {
+                assert.ok(result.logicalWidth > baseline.width * 1.1, label + ": zoom out must expose more logical space");
+                assert.ok(result.textHeight < baseline.textHeight * 0.9, label + ": zoom out must keep text smaller");
+              }
+              // Replacing a screen must retain the requested zoom and fill the same viewport.
+              const current = await surface.locator("#compat-screen").inputValue(), next = screens.find(id => id !== current);
+              const response = page.waitForResponse(response => new URL(response.url()).searchParams.get("screenId") === next);
+              await surface.locator("#compat-screen").selectOption(next); assert.equal((await response).status(), 200);
+              await frame.waitForFunction(() => document.getElementById("compat-content").getAttribute("data-connection") === "ready");
+              assert.equal(await frame.evaluate(() => document.getElementById("compat-shell").style.zoom), target === "shell" ? String(zoom) : "1");
+            }
+          }
+        }
+        await frame.evaluate(() => { Element.prototype.getBoundingClientRect = window.__pulseNativeRect; });
+        // Simulate a WebView exposing a larger visual viewport after zooming out, without resize.
+        await frame.evaluate(() => Object.defineProperty(window, "visualViewport", { configurable: true, value: { width: window.innerWidth / 0.7, height: window.innerHeight / 0.7, offsetLeft: 0, offsetTop: 0, scale: 0.7 } }));
+        await frame.waitForFunction(() => Math.abs(Number(document.getElementById("compat-viewport").getAttribute("data-fit-width")) - window.innerWidth / 0.7) < 1);
+        assert.ok(await frame.evaluate(() => document.getElementById("compat-shell").getBoundingClientRect().width > window.innerWidth * 1.1));
+        await frame.evaluate(() => Object.defineProperty(window, "visualViewport", { configurable: true, value: undefined }));
+        await frame.waitForFunction(() => Math.abs(document.getElementById("compat-shell").getBoundingClientRect().width - window.innerWidth) < 2);
         assert.deepEqual(errors, []);
       } finally { await context.close(); await new Promise(resolve => parent.close(resolve)); }
     });

@@ -18,7 +18,7 @@ export async function storageUiFixture(page: Page) {
   await page.route("**/api/settings/storages", route => route.fulfill({ json: { data: state.configs } }));
   await page.route("**/api/settings/storages/*", route => {
     const input = route.request().postDataJSON();
-    if (state.conflict) return route.fulfill({ status: 409, json: { error: { code: "revision_conflict" } } });
+    if (state.conflict || input.expectedRevision !== state.configs[0].revision) return route.fulfill({ status: 409, json: { error: { code: "revision_conflict" } } });
     Object.assign(state.configs[0], input, { revision: state.configs[0].revision + 1 });
     Object.assign(state.items[0], { ...input, revision: state.configs[0].revision, selectedInterface: state.items[0].interfaces.find(network => network.key === input.networkInterfaceKey) ?? null });
     state.writes.push(structuredClone(state.configs[0]));

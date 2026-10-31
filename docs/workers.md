@@ -2,6 +2,8 @@
 
 Storage é um ramo do **Collector Zabbix existente**, com descoberta por tag de host, coleta em lote, prazo próprio dentro do ciclo e publicação na geração Redis principal. Falha isolada mantém a última evidência como antiga sem invalidar ASGARD. Não há worker/processo adicional para Storage. Consulte [Monitoramento de Storage](storage.md).
 
+O limite opt-in `diskWarningPercent` também é avaliado nesse Collector, pelo adaptador de uso Storage e pelo motor `usage` já compartilhado com VMs. Usa a capacidade dos volumes selecionados, sem depender de vínculo ASGARD. A captura de configuração anterior à coleta é revalidada sob locks; alteração/desativação cancela somente o disco, na transação do cadastro. Histórico, política, som e leitura seguem a central existente.
+
 ## Visão geral
 
 O **Pulse** é uma aplicação **Next.js** composta por:
@@ -1143,3 +1145,7 @@ A regra mais importante pode ser resumida em:
 Quando o serviço fizer parte da grade **Disponibilidade de Serviços**, seu card deve seguir o padrão definido em:
 
 [Layout dos minicards](availability-cards.md)
+
+## Alertas de uso e pares dos minicards
+
+O [guia de alertas das VMs com Agent](vm-agent-alerts.md) documenta limites percentuais, armazenamento agregado selecionado, configuração compartilhada entre ASGARD e Signal, revisão das escritas e seleção CPU/RAM, CPU/Disco ou Disco/RAM. O Collector existente avalia os limites; disponibilidade, processos, layouts salvos e o áudio mantêm seus contratos.

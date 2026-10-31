@@ -1,7 +1,8 @@
 import "server-only";
 import { Prisma } from "../../../generated/prisma/client.ts";
 import { ZodError } from "zod";
-import { storageConfigSchema, storageKeySchema, storageWriteSchema, type StorageConfig } from "../../config/storages.ts";
+import { storageConfigSchema, storageKeySchema, storagePreferencesSchema, storageWriteSchema, type StorageConfig } from "../../config/storages.ts";
+import { filesystemCapacity } from "../../monitoring/filesystem-capacity.ts";
 import { getPrisma } from "../prisma.ts";
 import { BffError } from "../bff.ts";
 import { readSnapshotBatch, snapshotData, snapshotKeys, snapshotTiming } from "../cache/snapshots.ts";
@@ -26,9 +27,14 @@ export function saveStorageConfig(key: string, body: unknown) {
   return database(() => getPrisma().$transaction(async tx => {
     const current = await tx.storageConfig.findUnique({ where: { storageKey: key } });
     if ((current?.revision ?? 0) !== input.expectedRevision) throw new BffError(409, "revision_conflict");
+    const { expectedRevision, diskWarningPercent, ...rest } = input;
+    void expectedRevision;
+    const preferences = storagePreferencesSchema.parse({ ...rest, diskWarningPercent: diskWarningPercent === undefined ? current?.diskWarningPercent ?? null : diskWarningPercent });
     const selectionChanged = JSON.stringify(current?.filesystemKeys ?? null) !== JSON.stringify(input.filesystemKeys) || (current?.networkInterfaceKey ?? null) !== input.networkInterfaceKey;
+    const capacityChanged = JSON.stringify([...(current?.filesystemKeys as string[] ?? [])].sort()) !== JSON.stringify([...(input.filesystemKeys ?? [])].sort()) || current?.independentVolumesConfirmed !== input.independentVolumesConfirmed;
+    const verifyCapacity = preferences.diskWarningPercent !== null && (current?.diskWarningPercent == null || capacityChanged);
     let source: StorageTechnical | undefined;
-    if (!current || selectionChanged && (input.filesystemKeys !== null || input.networkInterfaceKey !== null)) {
+    if (!current || verifyCapacity || selectionChanged && (input.filesystemKeys !== null || input.networkInterfaceKey !== null)) {
       const batch = await readSnapshotBatch([snapshotKeys.storages]).catch(() => { throw new BffError(409, "storage_inventory_unavailable"); });
       const snapshot = snapshotData(batch, snapshotKeys.storages, storageSnapshotSchema.nullable(), null);
       if (!snapshot || snapshot.status !== "ok" || batch.sync?.status !== "ok" || !snapshot.lastSuccessfulAt || Date.now() - Date.parse(snapshot.lastSuccessfulAt) >= snapshotTiming().staleAfter) throw new BffError(409, "storage_inventory_unavailable");
@@ -36,9 +42,11 @@ export function saveStorageConfig(key: string, body: unknown) {
       if (!source) throw new BffError(current ? 409 : 404, "storage_not_found");
       if (identityKey(source.hostid) !== key || !source.classification.validUntil || Date.parse(source.classification.validUntil) <= Date.now()) throw new BffError(409, "storage_identity_unverified");
       if (input.filesystemKeys?.some(key => !source!.volumes.some(volume => volume.key === key)) || input.networkInterfaceKey && !source.interfaces.some(item => item.key === input.networkInterfaceKey)) throw new BffError(409, "storage_selection_unverified");
+      if (verifyCapacity) {
+        const capacity = filesystemCapacity(source.volumes, preferences), metric = capacity.usagePercent;
+        if (!source.monitoringEnabled || capacity.coverage !== "complete" || metric?.quality !== "fresh" || !metric.validUntil || Date.parse(metric.validUntil) <= Date.now()) throw new BffError(409, "storage_capacity_unavailable");
+      }
     }
-    const { expectedRevision, ...preferences } = input;
-    void expectedRevision;
     const data = { ...preferences, filesystemKeys: input.filesystemKeys ?? Prisma.DbNull };
     if (current) {
       const updated = await tx.storageConfig.updateMany({ where: { storageKey: key, revision: input.expectedRevision }, data: { ...data, revision: { increment: 1 } } });

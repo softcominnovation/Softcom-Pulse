@@ -5,16 +5,16 @@ import { notificationTransaction } from "./database.ts";
 
 export type NotificationTarget = {
   ref: string; id: string; kind: AvailabilityCardKind; label: string; critical: boolean; enabled: boolean;
-  epoch: string; identity: Record<string, string | null>;
+  epoch: string; identity: Record<string, unknown>;
 };
 const targetSql = `SELECT t.*,s.epoch FROM (
   SELECT 'resource:'||id AS ref,id,'resource' AS kind,COALESCE(display_name,'Recurso monitorado') AS label,critical,enabled,
-    jsonb_build_object('hostKey',zabbix_host_key,'resourceType',resource_type,'selectorType',selector_type,'selectorValue',selector_value) AS identity FROM monitored_resource_config
+    jsonb_build_object('hostKey',zabbix_host_key,'resourceType',resource_type,'selectorType',selector_type,'selectorValue',selector_value,'agentMonitoring',agent_monitoring) AS identity FROM monitored_resource_config
   UNION ALL SELECT 'external_service:'||id,id,'external_service',display_name,critical,enabled,'{}'::jsonb FROM external_service
   UNION ALL SELECT 'standalone_vps:'||id,id,'standalone_vps',name,critical,enabled AND NOT monitor_paused AND base_url IS NOT NULL,'{}'::jsonb FROM standalone_vps
   UNION ALL SELECT 'signal_target:'||id,id,'signal_target',display_name,critical,enabled,'{}'::jsonb FROM signal_target
   UNION ALL SELECT 'signal_service:'||s.id,s.id,'signal_service',s.display_name,s.critical,s.enabled AND p.enabled,jsonb_build_object('targetId',s.target_id,'servicePrefix',s.service_prefix) FROM signal_service s JOIN signal_target p ON p.id=s.target_id
-  UNION ALL SELECT 'storage:'||id,id,'storage',COALESCE(display_name,'Storage'),critical,true,jsonb_build_object('hostId',zabbix_host_id,'storageKey',storage_key) FROM storage_config
+  UNION ALL SELECT 'storage:'||id,id,'storage',COALESCE(display_name,original_name),critical,true,jsonb_build_object('hostId',zabbix_host_id,'storageKey',storage_key,'diskWarningPercent',disk_warning_percent,'filesystemKeys',filesystem_keys,'independentVolumesConfirmed',independent_volumes_confirmed) FROM storage_config
 ) t JOIN notification_target_state s ON s.target_ref=t.ref AND s.condition_key='$lifecycle'`;
 export async function notificationTargets(client?: PoolClient, ref?: string): Promise<NotificationTarget[]> {
   if (!client) return notificationTransaction(tx => notificationTargets(tx, ref), true);

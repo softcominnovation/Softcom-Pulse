@@ -1,3 +1,4 @@
+import { cardMetricsSchema, optionalAgentMonitoringSchema } from "./agent-monitoring.ts";
 import { z } from "zod";
 import { compileSelector } from "../monitoring/selectors.ts";
 
@@ -13,6 +14,7 @@ export const hostPresentationSchema = z.strictObject({
   ...commonPresentation,
   /** CPU/RAM on Disponibilidade + Infra host cards. Default = same source as the Asgard VM list. */
   metricsSource: cardMetricsSourceSchema.default("hypervisor"),
+  cardMetrics: cardMetricsSchema.optional(),
 });
 export const containerPresentationSchema = z.strictObject({
   ...commonPresentation, showHealth: z.boolean().default(false), showHealthTimeline: z.boolean().default(false),
@@ -32,6 +34,7 @@ const resourceFields = {
   description: optionalText(240), serviceType: optionalText(40),
   dashboardEnabled: z.boolean().default(false), critical: z.boolean().default(false),
   displayOrder: z.number().int().min(0).max(2147483647).default(0),
+  agentMonitoring: optionalAgentMonitoringSchema,
   presentation: z.record(z.string(), z.unknown()).default({}), enabled: z.boolean().default(true),
 };
 export const resourceInputSchema = z.strictObject(resourceFields).transform((value, ctx) => {
@@ -41,6 +44,7 @@ export const resourceInputSchema = z.strictObject(resourceFields).transform((val
     ctx.addIssue({ code: "custom", path: ["selectorType"], message: "Host selectors must be null" });
   }
   if (value.resourceType === "docker_container") {
+    if (Object.keys(value.agentMonitoring).length) ctx.addIssue({ code: "custom", path: ["agentMonitoring"], message: "Agent monitoring requires a VM host" });
     if (!value.selectorType || !value.selectorValue) ctx.addIssue({ code: "custom", path: ["selectorValue"], message: "Container selector is required" });
     else try { compileSelector(value.selectorType, value.selectorValue); }
     catch { ctx.addIssue({ code: "custom", path: ["selectorValue"], message: "Invalid or unsupported selector" }); }
@@ -48,6 +52,7 @@ export const resourceInputSchema = z.strictObject(resourceFields).transform((val
   return { ...value, presentation: (presentation.success ? presentation.data : hostPresentationSchema.parse({})) as ResourcePresentation };
 });
 export const resourcePatchSchema = z.strictObject({
+  expectedRevision: z.number().int().positive().optional(),
   resourceType: resourceFields.resourceType.optional(), source: resourceFields.source.removeDefault().optional(),
   zabbixHostKey: hostKeySchema.optional(), selectorType: resourceFields.selectorType.removeDefault().optional(),
   selectorValue: resourceFields.selectorValue.removeDefault().optional(), displayName: resourceFields.displayName.removeDefault().optional(),
@@ -56,5 +61,5 @@ export const resourcePatchSchema = z.strictObject({
   presentation: resourceFields.presentation.removeDefault().optional(), enabled: z.boolean().optional(),
 }).refine(value => Object.keys(value).length > 0);
 export type ResourceInput = z.infer<typeof resourceInputSchema>;
-export type ResourceConfig = ResourceInput & { id: string; createdAt: string; updatedAt: string };
-export const resourceConfigSchema = z.object({ ...resourceFields, id: uuidSchema, createdAt: z.iso.datetime({ offset: true }), updatedAt: z.iso.datetime({ offset: true }) }).transform(({ id, createdAt, updatedAt, ...input }) => ({ ...resourceInputSchema.parse(input), id, createdAt, updatedAt }));
+export type ResourceConfig = Omit<ResourceInput, "agentMonitoring"> & { agentMonitoring?: ResourceInput["agentMonitoring"]; revision?: number; id: string; createdAt: string; updatedAt: string };
+export const resourceConfigSchema = z.object({ ...resourceFields, id: uuidSchema, revision: z.number().int().positive().default(1), createdAt: z.iso.datetime({ offset: true }), updatedAt: z.iso.datetime({ offset: true }) }).transform(({ id, revision, createdAt, updatedAt, ...input }) => ({ ...resourceInputSchema.parse(input), id, revision, createdAt, updatedAt } as ResourceConfig));

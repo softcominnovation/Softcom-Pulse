@@ -1,3 +1,4 @@
+import { withAgentCards } from "./agent-presentation.ts";
 import "server-only";
 import { z } from "zod";
 import { blockCatalog, effectiveOptions } from "../../config/presentation.ts";
@@ -18,7 +19,7 @@ import { queryHistory } from "../zabbix/history.ts";
 import { isVmTemplate, operationalHost, operationalProblems } from "./virtual-machines.ts";
 import { readDisplayNames } from "./display-names.ts";
 import { visibleMetric } from "../../services/presentation.ts";
-import { hostMetricsPreference, mergeCardCpuRam, resolveCardCpuRam } from "../../monitoring/card-metrics.ts";
+import { hostMetricsPreference, resolveAvailabilityCardMetrics } from "../../monitoring/card-metrics.ts";
 import { listProbeCardsByIds, readProbeOverview } from "../probe/overview.ts";
 import { listHighlightedStandaloneVps, listStandaloneVpsByIds } from "../vps/repository.ts";
 import { listHighlightedSignalTargets, listSignalFlowTarget, listSignalServiceCards, listSignalTargetsByIds } from "../signal/repository.ts";
@@ -37,25 +38,23 @@ export function configuredResource(config: ResourceConfig, inventory: { hosts: H
 export function cardResource(resource: ConfiguredResource, hosts: Host[] = []): ConfiguredResource {
   const p = resource.config.presentation;
   const visibleMetrics = (metrics: Metrics): Metrics => Object.fromEntries(Object.entries(metrics).filter(([key]) => {
-    if (key.startsWith("cpu")) return p.showCpu;
-    if (key.startsWith("memory")) return p.showMemory;
-    if (key.startsWith("disk")) return p.showDisk;
+    if (key.startsWith("cpu")) return p.showCpu || p.cardMetrics?.includes("cpu");
+    if (key.startsWith("memory")) return p.showMemory || p.cardMetrics?.includes("memory");
+    if (key.startsWith("disk")) return p.showDisk || p.cardMetrics?.includes("disk");
     if (key.startsWith("network")) return p.showNetwork;
     if (key === "uptimeSeconds") return p.showUptime;
     return false;
   }));
   const target = resource.resource;
-  const preferred = target && !("reference" in target)
-    ? resolveCardCpuRam(target, hosts, hostMetricsPreference(p)).metrics
-    : {};
-  const metrics = visibleMetrics(mergeCardCpuRam(resource.metrics, preferred));
-  if (!target) return { ...resource, metrics };
-  if ("reference" in target) return { ...resource, metrics, resource: {
+  const prepared = resolveAvailabilityCardMetrics(resource, hosts);
+  const metrics = visibleMetrics(prepared.metrics), cardDiskLabel = prepared.cardDiskLabel;
+  if (!target) return { ...resource, metrics, cardDiskLabel };
+  if ("reference" in target) return { ...resource, metrics, cardDiskLabel, resource: {
     ...target, metrics, status: p.showStatus ? target.status : "unknown", health: "showHealth" in p && p.showHealth ? target.health : "unknown",
   } };
-  return { ...resource, metrics, resource: { ...target, metrics, availability: p.showStatus ? target.availability : "unknown",
+  return { ...resource, metrics, cardDiskLabel, resource: { ...target, metrics, availability: p.showStatus ? target.availability : "unknown",
     storages: p.showDisk ? target.storages.map(item => ({ ...item, metrics: visibleMetrics(item.metrics) })) : [],
-    filesystems: p.showDisk ? target.filesystems.map(item => ({ ...item, metrics: visibleMetrics(item.metrics) })) : [],
+    filesystems: p.showDisk || p.cardMetrics?.includes("disk") ? target.filesystems.map(item => ({ ...item, metrics: visibleMetrics(item.metrics) })) : [],
     interfaces: p.showNetwork ? target.interfaces.map(item => ({ ...item, metrics: visibleMetrics(item.metrics) })) : [],
     vms: [],
   } };
@@ -69,7 +68,7 @@ export async function readHosts() {
   const overview = snapshotData(batch, snapshotKeys.overview, overviewSnapshotSchema.nullable(), null);
   const effectiveKey = overview?.asgardSummary.host?.hostKey;
   const names = await readDisplayNames(result.data);
-  return { ...result, data: result.data.map(names.host), presentationStatus: names.status, asgardHostKey: result.data.find(host => host.role === "hypervisor" && host.hostKey === effectiveKey)?.hostKey ?? null };
+  return { ...result, data: (await withAgentCards(result.data)).map(names.host), presentationStatus: names.status, asgardHostKey: result.data.find(host => host.role === "hypervisor" && host.hostKey === effectiveKey)?.hostKey ?? null };
 }
 export async function readHost(hostKey: string) {
   const key = snapshotKeys.host(hostKey);
@@ -79,7 +78,8 @@ export async function readHost(hostKey: string) {
   const host = detailed ?? hosts.find(item => item.hostKey === hostKey);
   if (!host) throw new BffError(404, "host_not_found");
   const names = await readDisplayNames(hosts);
-  return { ...readResult(names.host(freshness(operationalHost(host), readResult(null, batch, [key, snapshotKeys.hosts]).stale)), batch, [key, snapshotKeys.hosts]), presentationStatus: names.status };
+  const enriched = (await withAgentCards(hosts)).find(item => item.hostKey === hostKey) ?? host;
+  return { ...readResult(names.host(freshness(operationalHost({ ...host, agentCard: enriched.agentCard }), readResult(null, batch, [key, snapshotKeys.hosts]).stale)), batch, [key, snapshotKeys.hosts]), presentationStatus: names.status };
 }
 export async function readContainers(hostKey?: string) {
   const { hosts, containers, batch, keys } = await readInventory(hostKey ? [hostKey] : "all");

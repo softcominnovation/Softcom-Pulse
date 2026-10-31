@@ -38,14 +38,23 @@ function sortByCpuAndMemory(vms: VirtualMachine[], direction: "asc" | "desc", st
   });
 }
 
+export function filterVms(
+  vms: VirtualMachine[],
+  options: { query: string; state: VmStateFilter },
+  stale: boolean,
+  now: number,
+) {
+  const query = options.query.trim();
+  return vms.filter(vm => matchesQuery(vm, query) && (!options.state || effectiveState(vm, stale, now) === options.state));
+}
+
 export function filterAndSortVms(
   vms: VirtualMachine[],
   options: { query: string; state: VmStateFilter; sortBy: VmSortBy; sortDirection: "asc" | "desc" },
   stale: boolean,
   now: number,
 ) {
-  const query = options.query.trim();
-  const filtered = vms.filter(vm => matchesQuery(vm, query) && (!options.state || effectiveState(vm, stale, now) === options.state));
+  const filtered = filterVms(vms, options, stale, now);
   if (options.sortBy === "cpu_memory") return sortByCpuAndMemory(filtered, options.sortDirection, stale, now);
   return sortInventory(filtered, { sortBy: options.sortBy, sortDirection: options.sortDirection }, stale, now);
 }

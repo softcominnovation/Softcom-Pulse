@@ -48,14 +48,14 @@ function ResourcesContent({ selection }: { selection: Record<string, string | st
   const now = useContext(EvidenceTimeContext), canEdit = useCanEdit();
   const configs = useAdminRead("/settings/resources", parseResources), hosts = useHosts(), containers = useContainers();
   const hostsData = hosts.data, hostsFailed = hosts.failed, containersData = containers.data, containersFailed = containers.failed;
-  const [form, setForm] = useState<{ initial: ResourceInput; existing?: ResourceConfig; key: number } | null>(null);
+  const [form, setForm] = useState<{ initial: ResourceInput | ResourceConfig; existing?: ResourceConfig; key: number } | null>(null);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<KindFilter>("all");
   const [state, setState] = useState<StateFilter>("");
   const editorRef = useRef<HTMLDivElement>(null), listRef = useRef<HTMLHeadingElement>(null);
   const [sequence, setSequence] = useState(0);
   const current = (result: typeof hostsData | typeof containersData, failed: boolean) => !!result && !failed && !result.stale && result.availability === "ready";
-  const select = (initial: ResourceInput, existing?: ResourceConfig) => { setSequence(sequence + 1); setForm({ initial, existing, key: sequence }); setTimeout(() => editorRef.current?.querySelector<HTMLInputElement>("input")?.focus(), 0); };
+  const select = (initial: ResourceInput | ResourceConfig, existing?: ResourceConfig) => { setSequence(sequence + 1); setForm({ initial, existing, key: sequence }); setTimeout(() => editorRef.current?.querySelector<HTMLInputElement>("input")?.focus(), 0); };
   const close = () => { setForm(null); listRef.current?.focus(); };
   const targetReady = (target: InventoryTarget) => {
     const isContainer = isContainerTarget(target);
@@ -101,7 +101,7 @@ function ResourcesContent({ selection }: { selection: Record<string, string | st
       {configs.failed && <ReadError refresh={configs.refresh}>Não foi possível ler as configurações salvas.</ReadError>}
       {configs.loading && !configs.data && <p className="panel-empty">Carregando configurações…</p>}
       {configs.data?.length === 0 && <p className="panel-empty">Nenhum destaque configurado. Selecione um recurso no inventário acima.</p>}
-      <ul className="admin-saved-list">{configs.data?.map(config => <li key={config.id}><div><strong>{config.displayName ?? config.selectorValue ?? config.zabbixHostKey}</strong><p>{config.zabbixHostKey} · {config.resourceType === "host" ? "Host" : "Container"} · {config.enabled ? config.dashboardEnabled ? "Em destaque" : "Sem destaque" : "Desabilitado"}{config.critical ? " · Crítico" : ""}</p><ResourceResolution config={config} hosts={hosts.data?.data ?? []} containers={containers.data?.data ?? []} stale={!current(config.resourceType === "host" ? hosts.data : containers.data, config.resourceType === "host" ? hosts.failed : containers.failed)} /></div>{canEdit && <div className="admin-actions"><Button onClick={() => select(config, config)}>Editar</Button><ConfirmationDialog trigger={<Button>Remover</Button>} title="Remover configuração de visualização?" description="A configuração e os blocos individuais vinculados serão retirados das telas do Pulse. O host ou container no Zabbix será preservado." confirmLabel="Remover configuração" destructive onConfirm={async () => { await api.delete(`/monitoring/services/${config.id}`); toast.success("Configuração removida."); if (form?.existing?.id === config.id) close(); configs.refresh(); listRef.current?.focus(); }} /></div>}</li>)}</ul>
+      <ul className="admin-saved-list">{configs.data?.map(config => <li key={config.id}><div><strong>{config.displayName ?? config.selectorValue ?? config.zabbixHostKey}</strong><p>{config.zabbixHostKey} · {config.resourceType === "host" ? "Host" : "Container"} · {config.enabled ? config.dashboardEnabled ? "Em destaque" : "Sem destaque" : "Desabilitado"}{config.critical ? " · Crítico" : ""}</p><ResourceResolution config={config} hosts={hosts.data?.data ?? []} containers={containers.data?.data ?? []} stale={!current(config.resourceType === "host" ? hosts.data : containers.data, config.resourceType === "host" ? hosts.failed : containers.failed)} /></div>{canEdit && <div className="admin-actions"><Button onClick={() => select(config, config)}>Editar</Button><ConfirmationDialog trigger={<Button>Remover</Button>} title="Remover configuração de visualização?" description="A configuração e os blocos individuais vinculados serão retirados das telas do Pulse. O host ou container no Zabbix será preservado." confirmLabel="Remover configuração" destructive onConfirm={async () => { await api.delete(`/monitoring/services/${config.id}`, { data: { expectedRevision: config.revision ?? 1 } }); toast.success("Configuração removida."); if (form?.existing?.id === config.id) close(); configs.refresh(); listRef.current?.focus(); }} /></div>}</li>)}</ul>
     </section>
     <ScopeSection />
   </div></EvidenceClock>;

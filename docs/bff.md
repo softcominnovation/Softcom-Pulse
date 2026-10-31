@@ -1,18 +1,24 @@
 # Contratos do BFF e configuração
 
-## Monitor compatível
-
-`GET /monitor/compat` entrega HTML público renderizado no servidor; `?fragment=1` entrega `{html,state}` para atualização por XMLHttpRequest. A página reaproveita os handlers de apresentação/overview públicos, sem HTTP interno, sempre com identidade anônima e validação do `Host` original. Não há escrita, migração ou novo worker. Respostas permitidas são `no-store`, com CORS `*` sem credenciais para iframe isolado; erros de Host permanecem fechados. A seleção automática de `/monitor`, os parâmetros e os limites estão em [Compatibilidade de TVs](monitor-compatibility.md).
-
-O rewrite preserva a origem com `skipProxyUrlNormalize` e a URL original, evitando a conversão loopback para outro hostname. Iframes podem entrar diretamente no clássico; `compat=0` força React. `GET /monitor/compat/audio/:sound` fornece apenas os quatro WAVs Kobra existentes sob o mesmo gate público, sem mudar CORS de arquivos de áudio usados por outras rotas.
-
 ## Central de notificações
 
 As rotas `/api/monitoring/notifications` oferecem histórico, incidentes, detalhe, mudanças por cursor e leitura compartilhada no PostgreSQL. Consultas públicas usam `/api/public/monitoring/notifications`, com o gate de Host existente. `POST .../read` e `/api/settings/notifications` exigem editor; não há escrita pública nem consulta Zabbix nesses GETs. Política tem revisão própria, e PUT por alvo preserva as outras exceções. O corpo da política geral aceita até 512 KiB; as demais rotas continuam limitadas a 64 KiB. Contratos completos, paginação, 409 e projeção pública em [Notificações de serviços](notifications.md).
 
+`GET /api/monitoring/notifications/history` (também público) filtra por `from`/`to` em YYYY-MM-DD no fuso de Fortaleza. Início omitido assume hoje; final omitido consulta apenas o dia inicial. Datas futuras/invertidas retornam 400. O filtro usa o índice de created_at e conserva a paginação; Não lidas, incidentes e contagens globais mantêm seus contratos.
+
 As cinco tabelas `notification_*` são persistência operacional deliberada, separada da configuração humana e das séries externas. Elas guardam transições, checkpoints mínimos e leitura global; Redis não determina o histórico. `standalone_vps.critical` é a única propriedade nova nos cadastros de domínio.
 
+## Métricas dos minicards de recursos
+
+O overview e a prévia de Recursos compartilham `resolveAvailabilityCardMetrics`: CPU/RAM seguem a preferência existente; disco de configuração Agent usa exclusivamente os volumes e o vínculo dessa configuração. Sem configuração de monitoramento, a raiz `/` observada pode ser exibida como raiz, sem inferir agregado nem ativar alertas. Seleção/vínculo indisponível não recorre a outro volume. Campos escolhidos em `presentation.cardMetrics` permanecem no DTO mesmo com flags de detalhe desmarcadas.
+
+`ConfiguredResource.cardDiskLabel` é uma string opcional de apresentação para a dica de disco: raiz, quantidade de volumes monitorados ou capacidade indisponível. Não persiste no banco nem acrescenta rota. A projeção pública conserva essa indicação e o valor já resolvido, removendo `agentMonitoring` como antes; o cliente não recalcula nem escolhe fallback depois dessa remoção. Contrato visual em [Minicards](availability-cards.md).
+
+Escritas de `presentation.cardMetrics` no CRUD de recursos e no editor Agent sincronizam `showCpu`/`showMemory`/`showDisk` com o par. PATCH de editor antigo que modifica flags enquanto repete o par oculto inalterado usa a alteração das flags como intenção e atualiza o par; uma mudança explícita do par alinha as flags. Uma ou nenhuma leitura legada remove o par contraditório e permanece compatível. A mesclagem preserva opções não relacionadas, limites, seleção de volumes, criticidade e revisão. Não há migração global que adivinhe a intenção de cadastros antigos contraditórios; uma correção pontual depende da escolha informada pelo responsável.
+
 ## Extensão Storage
+
+O editor aceita `diskWarningPercent` opcional, inteiro 1–100 ou null para desativar. Omissão preserva o limite salvo. Ativar exige `filesystemKeys` explícitos, capacidade atual completa e independência confirmada para múltiplos volumes; sem leitura retorna `409 storage_capacity_unavailable`. O limite não integra `StorageView` nem DTO público. Edição preserva revisão/409 e cancela somente a regra de disco na mesma transação. Detalhes em [Storage](storage.md#alerta-de-ocupação-do-disco).
 
 `GET /api/monitoring/storages` devolve `ReadResult<StorageInventory>` com items/órfãos e estado do ramo. `GET .../:storageKey` devolve o painel da máquina. Ambos leem Redis/preferências em lote, sem Zabbix. `GET /api/settings/storages` e `PUT .../:storageKey` são exclusivos de editor; PUT usa expectedRevision (0 na criação), deriva identidade no servidor e valida novas seleções pela descoberta atual. Defaults/reset conservam UUID. Contratos e falhas em [Storage](storage.md).
 
@@ -66,7 +72,7 @@ Gravação no BFF autenticado exige `editor: true` em `GET /api/auth/session`. O
 
 Prefixo `/api/public`: só `GET`, sem sessão. O hostname do header `Host`, sem porta, precisa estar em `PULSE_PUBLIC_HOSTS`. Fora da lista ou lista vazia: 403 `host_not_allowed`. Não lê `X-Forwarded-Host`. O JSON é o de quem está logado e não é editor. `Cache-Control: no-store`. As telas em `/monitor` usam esse prefixo. `/exibicao` redireciona para `/monitor`. Em VPS (lista, detalhe e cards no overview), o campo `ip` sai vazio; a UI pública mostra **Rede interna** no lugar, sem sugerir indisponibilidade.
 
-Para exibição em iframe com origem isolada (`sandbox="allow-scripts"`, requisições com `Origin: null`), GETs públicos anônimos de hosts permitidos retornam `Access-Control-Allow-Origin: *`, inclusive nas respostas de erro. Não há `Access-Control-Allow-Credentials`, liberação de escrita ou preflight para Authorization. Respostas com header Authorization e rotas privadas conservam sua política sem CORS. O gate `PULSE_PUBLIC_HOSTS` verifica o host do Pulse, não o site que contém o iframe; a sanitização de dados e os contratos públicos existentes continuam aplicados.
+Para exibição em iframe com origem isolada (`sandbox="allow-scripts"`, requisições com `Origin: null`), GETs públicos anônimos de hosts permitidos retornam `Access-Control-Allow-Origin: *`, inclusive nas respostas de erro. Não há `Access-Control-Allow-Credentials`, liberação de escrita ou preflight para Authorization. Respostas com header Authorization e rotas privadas conservam sua política sem CORS. O gate `PULSE_PUBLIC_HOSTS` verifica o host do Pulse, não o site que contém o iframe; redatores e contratos públicos existentes continuam aplicados.
 
 Nas páginas públicas, o cliente Axios usa o adaptador Fetch, `withCredentials: false` (credentials omit) e `withXSRFToken: false`: não lê `document.cookie` nem envia cookies. O Bearer opcional de uma sessão autenticada disponível continua sendo usado para os links de gerenciamento já autorizados na navegação normal. A leitura anônima não espera login, cookies ou armazenamento local. Detalhes de incorporação e limites em [Interface](ui.md#exibição-em-iframe).
 
@@ -260,3 +266,11 @@ Retenção: SNAPSHOT_TTL_SECONDS default 300s. Freshness do ciclo: SNAPSHOT_STAL
 Erros têm `{error: {code}}`, sem stack, URL, SQL ou payload de origem. Validação Zod acrescenta `fields: [{path, message}]` com caminho e mensagem genérica, sem valores recebidos. 400: entrada, query, seletor ou referência inválida; 401: sessão; 404: recurso/tela; 409: revisão/unicidade ou descoberta indisponível para nova identidade; 503: dependência/configuração/snapshot indisponível. JSON exige Content-Type application/json e no máximo 64 KiB. Defeito inesperado retorna 500 internal_error.
 
 Testes cobrem schema, NULL/zero, defaults/PATCH, regex patológica, migrations reais, unicidade concorrente, revisão, exclusão e referências, seleção por tela, ausência/falha/stale/generation, autenticação e pacote standalone. Integração usa banco PostgreSQL temporário e Redis DB 15 vazio com trava; runtime usa outro banco temporário e DB 14 vazio somente para leitura. Não usam telemetria permanente nem conta corporativa real.
+
+## Alertas de uso e pares dos minicards
+
+O [guia de alertas das VMs com Agent](vm-agent-alerts.md) documenta limites percentuais, armazenamento agregado selecionado, configuração compartilhada entre ASGARD e Signal, revisão das escritas e seleção CPU/RAM, CPU/Disco ou Disco/RAM. O Collector existente avalia os limites; disponibilidade, processos, layouts salvos e o áudio mantêm seus contratos.
+
+## Adaptadores de apresentação do monitor compatível
+
+`GET /monitor/compat` e `?fragment=1` usam os leitores públicos atuais dentro do processo, sem credenciais. `GET /monitor/compat/notifications/[[...segments]]` conserva histórico, cursores, incidentes e eventos de uso atuais, acrescentando o texto de apresentação por `notificationText`. `GET /monitor/compat/audio/:sound` serve apenas os quatro WAVs operacionais existentes. Todos mantêm o gate de Host e o acesso anônimo sem credenciais; não há escrita, worker ou migration adicional. Consulte [Compatibilidade do monitor](monitor-compatibility.md).

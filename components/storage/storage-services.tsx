@@ -8,6 +8,7 @@ import type { StorageView } from "@/lib/storage/contracts";
 import { useStorages } from "./data";
 import { StoragePanel } from "./storage-panel";
 import { StorageEditor } from "./storage-form";
+import { StorageNotificationSettings } from "./storage-notifications";
 const noStorages: StorageView[] = [];
 
 export function StorageServices() {
@@ -20,7 +21,7 @@ export function StorageServices() {
     const key = new URLSearchParams(window.location.search).get("storage");
     if (!located.current && key && items.some(item => item.storageKey === key)) { document.getElementById(`storage-${key}`)?.scrollIntoView({ block: "center" }); located.current = true; }
   }, [items]);
-  const action = (item: StorageView) => editor ? <Button size="sm" aria-label={`Configurar Storage ${item.displayName}`} onClick={() => setEditing(item)}><IconSettings aria-hidden="true" />{item.configId ? "Editar configuração" : "Configurar Storage"}</Button> : null;
+  const action = (item: StorageView) => editor ? <div className="admin-actions"><Button size="sm" aria-label={`Configurar Storage ${item.displayName}`} onClick={() => setEditing(item)}><IconSettings aria-hidden="true" />{item.configId ? "Editar configuração" : "Configurar Storage"}</Button>{item.configId && <StorageNotificationSettings item={item} onSaved={poll.refresh} />}</div> : null;
   return <section id="storages" className="dashboard-panel storage-services-panel" aria-labelledby="storages-heading"><div className="panel-heading storage-services-heading"><IconDatabase aria-hidden="true" /><h2 id="storages-heading">Storages</h2>{items.length > 1 && <input aria-label="Buscar Storage" className="rounded-md border border-input bg-background px-3 py-2" placeholder="Buscar Storage…" value={query} onChange={event => setQuery(event.target.value)} />}</div>
     <div className="storage-services-content">
     {failed && <div className="admin-notice" role="alert"><p>A descoberta de Storages está indisponível ou ainda não foi publicada. Últimas leituras, quando existentes, permanecem identificadas.</p><Button onClick={poll.refresh}>Tentar novamente</Button></div>}

@@ -1,4 +1,7 @@
 "use client";
+import { AgentMonitoringDialog } from "@/components/admin/agent-monitoring";
+import { CardReadings } from "@/components/dashboard/card-readings";
+import { cardMetricsSchema } from "@/lib/config/agent-monitoring";
 import { TargetNotificationSettings } from "@/components/notifications/settings";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -11,7 +14,7 @@ import { api } from "@/lib/client/api";
 import { requestCanceled } from "@/lib/client/request-canceled";
 import { signalInfraRoles, signalTargetWriteSchema } from "@/lib/config/signal-targets";
 import { hostSchema } from "@/lib/monitoring/contracts";
-import { number, timestamp } from "@/lib/dashboard/format";
+import { timestamp } from "@/lib/dashboard/format";
 import { ProbeStrip } from "@/components/dashboard/probe-strip";
 import { ConfirmationDialog } from "@/components/confirmation-dialog";
 import { Button } from "@/components/ui/button";
@@ -24,6 +27,7 @@ import { SignalClusterServices, type ClusterService } from "@/components/service
 import "./signal-services.css";
 
 const linkSchema = z.object({
+  agentHostKey: z.string().nullable().optional(), cardMetrics: cardMetricsSchema.optional(), diskUsagePercent: z.number().nullable().optional(),
   id: z.string(), role: z.string(), label: z.string().nullable(), hostKey: z.string(),
   vmKey: z.string().nullable(), parentHostKey: z.string().nullable(), inventoryStatus: z.string(),
   inventoryName: z.string().nullable().optional(), inventoryAvailability: z.string().nullable().optional(),
@@ -44,8 +48,9 @@ const targetSchema = z.object({
   uptime30d: z.object({ available: z.number(), total: z.number() }).nullable().optional(),
   checkedAt: z.string().nullable(), links: z.array(linkSchema),
   services: z.array(z.object({
+    cpu: z.number().nullable().optional(), memory: z.number().nullable().optional(), disk: z.number().nullable().optional(),
     id: z.string(), displayName: z.string(), servicePrefix: z.string(), enabled: z.boolean(), dashboardEnabled: z.boolean(),
-    panelEnabled: z.boolean(), flowKpi: z.enum(["database", "redis"]).nullable(), critical: z.boolean(), displayOrder: z.number(), revision: z.number(),
+    cardMetrics: cardMetricsSchema.optional(), panelEnabled: z.boolean(), flowKpi: z.enum(["database", "redis"]).nullable(), critical: z.boolean(), displayOrder: z.number(), revision: z.number(),
     kpiLabel: z.string(), tone: z.string(), vmName: z.string().nullable(), hostKey: z.string().nullable(), reason: z.string(),
   })).optional(),
 });
@@ -196,6 +201,7 @@ export function SignalServicesPanel() {
         </div>
         {editor && target && <div className="admin-actions app-monitor-actions signal-service-actions">
           <Button type="button" size="icon" aria-label="Editar" title="Editar" onClick={() => setEditing(true)}><Pencil aria-hidden="true" /></Button>
+          <TargetNotificationSettings className="m-0 signal-notification-action" targetRef={`signal_target:${target.id}`} displayName={target.displayName} />
           {target.enabled
             ? <ConfirmationDialog trigger={<Button type="button" size="icon" aria-label="Pausar" title="Pausar"><Pause aria-hidden="true" /></Button>} title="Pausar Signal?" description="O worker deixa de consultar este alvo na próxima rodada." confirmLabel="Pausar" onConfirm={() => setRunning(false)} />
             : <ConfirmationDialog trigger={<Button type="button" size="icon" aria-label="Retomar" title="Retomar"><Play aria-hidden="true" /></Button>} title="Retomar Signal?" description="O worker volta a consultar este alvo." confirmLabel="Retomar" onConfirm={() => setRunning(true)} />}
@@ -269,6 +275,7 @@ export function SignalServicesPanel() {
             const vm = agentVms.find(item => item.parentHostKey === (link.parentHostKey ?? link.hostKey) && item.vmKey === link.vmKey);
             return <li key={link.id} className="signal-linked-card-wrap">
               <LinkedVmCard link={link} fallbackName={vm?.name} />
+              <AgentMonitoringDialog hostKey={link.agentHostKey ?? vm?.linuxHostKey} />
               {editor && <ConfirmationDialog
                 trigger={<Button type="button" size="icon" variant="destructive" className="signal-linked-unlink" aria-label={`Desvincular ${link.label || link.vmKey || link.hostKey}`} title="Desvincular"><Unlink aria-hidden="true" /></Button>}
                 title="Desvincular VM?"
@@ -329,10 +336,7 @@ function LinkedVmCard({ link, fallbackName }: { link: LinkItem; fallbackName?: s
     <span className={`availability-state tone-${status.tone}`}><i className="status-dot" />{status.label}</span>
     <strong className="availability-name">{name}</strong>
     <span className="availability-description">{role}</span>
-    <span className="availability-readings">
-      <span className="availability-reading"><span>CPU<strong>{ready && cpu != null ? `${number(cpu, 1)}%` : "—"}</strong></span><span className="availability-meter" aria-hidden="true"><i style={{ width: ready && cpu != null ? `${Math.max(0, Math.min(100, cpu))}%` : "0%" }} /></span></span>
-      <span className="availability-reading"><span>RAM<strong>{ready && ram != null ? `${number(ram, 1)}%` : "—"}</strong></span><span className="availability-meter memory" aria-hidden="true"><i style={{ width: ready && ram != null ? `${Math.max(0, Math.min(100, ram))}%` : "0%" }} /></span></span>
-    </span>
+    <CardReadings pair={link.cardMetrics ?? ["cpu", "memory"]} values={{ cpu: ready ? cpu ?? null : null, memory: ready ? ram ?? null : null, disk: ready ? link.diskUsagePercent ?? null : null }} />
     <span className="availability-footer"><span>VM</span><strong>{footerRight}</strong></span>
   </article>;
 }
@@ -463,6 +467,5 @@ function SignalEditForm({ existing, onSaved, onCancel }: {
       <Button type="submit" variant="primary" disabled={mutation.busy}>{mutation.busy ? "Salvando…" : "Salvar"}</Button>
       <Button type="button" onClick={onCancel}>Cancelar</Button>
     </div>
-    <TargetNotificationSettings targetRef={existing ? `signal_target:${existing.id}` : undefined} />
   </form>;
 }

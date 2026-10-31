@@ -4,7 +4,7 @@ import { displayName } from "@/lib/monitoring/display-names";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import { ArrowLeft, Server } from "lucide-react";
 import { asgardUrl, detailQuerySchema, selectHypervisor } from "@/lib/infrastructure/navigation";
 import { EvidenceClock, ReadNotice, useHosts, useProblems } from "@/components/infrastructure/data";
@@ -13,6 +13,9 @@ import { HistoryPanel, RangeControls } from "@/components/infrastructure/history
 import { HistoryCache } from "@/components/infrastructure/use-history";
 import { ProblemsPanel } from "@/components/infrastructure/problems-panel";
 import { VmDetails } from "@/components/infrastructure/vm-details";
+import { EvidenceTimeContext } from "@/components/dashboard/metrics";
+import { filterVms, type VmStateFilter } from "@/lib/infrastructure/vm-list";
+import type { Host } from "@/lib/monitoring/contracts";
 
 export function AsgardDetails({ query }: { query: Record<string, string | string[] | undefined> }) {
   const parsed = detailQuerySchema.safeParse(query);
@@ -45,9 +48,27 @@ function AsgardContent({ selection }: { selection: { hostKey?: string; vm?: stri
         <div className="asgard-host-history"><HistoryPanel resource={{ type: "host", hostKey: host.hostKey, reference: null }} range={selection.range} name={displayName(host)} host={host} origin="Hipervisor · Zabbix" controls={controls} /></div>
       </div></>}
       {vm && <VmDetails key={`${host.hostKey}:${vm.vmKey}`} vm={vm} agent={agent} parentName={displayName(host)} range={selection.range} stale={stale} controls={controls} />}
-      <section className="dashboard-panel vm-detail-panel"><div className="panel-heading"><Server aria-hidden="true" /><h2>VMs dentro de {displayName(host)}</h2></div><p className="history-origin">Selecione uma VM pelo nome para consultar seu histórico. Role a tabela para alcançar todas as colunas.</p><VmTable vms={host.vms} hosts={result?.data} stale={stale} detailed selected={vm?.vmKey} range={selection.range} /><p className="panel-foot">Disco provisionado, filesystem e ocupação de pools são medidas distintas. Histórico consultado somente para os recursos exibidos.</p></section>
+      <AsgardVmList key={host.hostKey} host={host} hosts={result?.data} stale={stale} selected={vm?.vmKey} range={selection.range} />
       {!selection.vm && <><div className="detail-two-columns"><section className="dashboard-panel"><div className="panel-heading"><Server aria-hidden="true" /><h2>{displayName(host)} · outras métricas atuais</h2></div><MetricList metrics={host.metrics} stale={stale} /></section><DevicePanel title="Rede por interface" devices={host.interfaces} stale={stale} network /></div><ProblemsPanel poll={problems} hostKeys={[host.hostKey]} /></>}
       {vm && <ProblemsPanel poll={problems} hostKeys={agent ? [agent.hostKey] : []} vm={vm} />}
     </>}
   </div>;
+}
+
+function AsgardVmList({ host, hosts, stale, selected, range }: { host: Host; hosts?: Host[]; stale: boolean; selected?: string; range: "1h" | "24h" | "7d" }) {
+  const now = useContext(EvidenceTimeContext), id = useId();
+  const [query, setQuery] = useState(""), [state, setState] = useState<VmStateFilter>("");
+  const visible = filterVms(host.vms, { query, state }, stale, now);
+  const filtered = !!query.trim() || !!state;
+  return <section className="dashboard-panel vm-detail-panel">
+    <div className="panel-heading"><Server aria-hidden="true" /><h2>VMs dentro de {displayName(host)}</h2></div>
+    <p className="history-origin">Selecione uma VM pelo nome para consultar seu histórico. Role a tabela para alcançar todas as colunas.</p>
+    <div className="vm-list-toolbar" role="search" aria-label="Filtros das VMs deste hipervisor">
+      <label className="resource-select-label" htmlFor={`${id}-search`}>Buscar VM<input id={`${id}-search`} type="search" placeholder="Nome no Zabbix ou no Pulse" autoComplete="off" value={query} onChange={event => setQuery(event.target.value)} /></label>
+      <label className="resource-select-label" htmlFor={`${id}-state`}>Estado<select id={`${id}-state`} value={state} onChange={event => setState(event.target.value as VmStateFilter)}><option value="">Todos</option><option value="running">Em execução</option><option value="paused">Pausada</option><option value="stopped">Parada</option><option value="unknown">Sem estado atual</option></select></label>
+      {filtered && <p className="vm-list-toolbar-count" role="status">{visible.length} de {host.vms.length} VMs</p>}
+    </div>
+    {visible.length || !filtered ? <VmTable vms={visible} hosts={hosts} stale={stale} detailed selected={selected} range={range} /> : <p className="panel-empty" role="status">Nenhuma VM corresponde aos filtros.</p>}
+    <p className="panel-foot">Disco provisionado, filesystem e ocupação de pools são medidas distintas. Histórico consultado somente para os recursos exibidos.</p>
+  </section>;
 }

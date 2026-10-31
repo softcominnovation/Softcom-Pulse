@@ -42,6 +42,7 @@ for (const mode of ["cross-origin", "blocked-storage"]) {
     const frame = page.frameLocator('iframe[title="Pulse"]');
     await expect(frame.locator(".dashboard-blocks")).toBeVisible();
     await expect(frame.getByText("Carregando as telas configuradas…", { exact: true })).toHaveCount(0);
+    await expect(frame.getByRole("button", { name: "Sair do modo TV", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(frame.getByRole("button", { name: /^Notificações:/ })).toBeVisible();
     expect(errors).toEqual([]);
     expect(privateRequests).toEqual([]);

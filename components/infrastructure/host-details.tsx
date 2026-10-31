@@ -1,4 +1,5 @@
 "use client";
+import { AgentMonitoringDialog } from "@/components/admin/agent-monitoring";
 
 import { displayName } from "@/lib/monitoring/display-names";
 
@@ -27,6 +28,7 @@ function HostContent({ hostKey, range }: { hostKey: string; range: "1h" | "24h" 
     {!host && poll.failed && <p className="panel-empty">Host não encontrado ou indisponível no escopo atual.</p>}
     {host && (host.role !== "linux" ? <div className="detail-not-found"><p>Este recurso não é um host Linux com perspectiva Agent.</p>{host.role === "hypervisor" && <PlaceLink href={asgardUrl(host.hostKey, undefined, range)} hideWhenClosed>Abrir detalhe do hipervisor</PlaceLink>}</div> : <>
       <HostKpis host={host} stale={stale} />
+      <AgentMonitoringDialog hostKey={host.hostKey} />
       <HistoryPanel resource={{ type: "host", hostKey, reference: null }} range={range} name={displayName(host)} host={host} origin="Linux · Agent · métricas internas" controls={<RangeControls range={range} onChange={value => { const href = place(hostUrl(hostKey, value)); if (href) router.push(href, { scroll: false }); }} />} />
       <div className="detail-two-columns"><DevicePanel title="Filesystems" devices={host.filesystems} stale={stale} /><DevicePanel title="Rede por interface" devices={host.interfaces} stale={stale} network /></div>
       <section className="dashboard-panel"><div className="panel-heading"><Server aria-hidden="true" /><h2>Métricas atuais do Agent</h2></div><MetricList metrics={host.metrics} stale={stale} /></section><HostContainers hostKey={hostKey} /><ProblemsPanel poll={problems} hostKeys={[hostKey]} />

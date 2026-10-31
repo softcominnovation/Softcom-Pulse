@@ -1,3 +1,5 @@
+import { recordAgentUsage } from "../notifications/agent-usage.ts";
+import { recordStorageUsage } from "../notifications/storage-usage.ts";
 import "server-only";
 import { captureNotificationTargets } from "../notifications/http.ts";
 import { recordZabbixNotifications } from "../notifications/zabbix.ts";
@@ -128,6 +130,8 @@ export async function collectSnapshots(options: {
     const checkedAt = options.now ?? Date.now();
     await recordZabbixNotifications({ targets: [...notificationTargets.values()], configs, inventory, hosts: scope.hosts,
       problems: rawProblems, triggers: triggerRows, storage: storageSnapshotSchema.parse(entries[snapshotKeys.storages]), checkedAt, rpc, signal });
+    await recordAgentUsage({ targets: [...notificationTargets.values()], configs, hosts: inventory.hosts, disabledHosts: scope.hosts.filter(h => h.status === "1").map(h => h.host), checkedAt, scopeRevision: settings.scope?.revision ?? 0, signal });
+    await recordStorageUsage([...notificationTargets.values()], storageSnapshotSchema.parse(entries[snapshotKeys.storages]), checkedAt, signal);
     const services = await getPrisma().signalService.findMany({ include: { target: { include: { links: true } } } });
     const fresh = (until: string | null | undefined) => !!until && Date.parse(until) > checkedAt;
     await recordSignalServiceNotifications({
@@ -137,7 +141,9 @@ export async function collectSnapshots(options: {
       hosts: inventory.hosts.map(host => ({
         hostKey: host.hostKey, role: host.role, disabled: scope.hosts.find(item => item.host === host.hostKey)?.status === "1", readable: true,
       })),
-      vms: inventory.hosts.flatMap(host => host.vms.map(vm => ({ parentHostKey: vm.parentHostKey, vmKey: vm.vmKey, linuxHostKey: vm.linuxHostKey }))),
+      vms: inventory.hosts.flatMap(host => host.vms.map(vm => ({
+        parentHostKey: vm.parentHostKey, vmKey: vm.vmKey, linuxHostKey: vm.linuxHostKey, state: vm.state, stateFresh: fresh(vm.evidence.validUntil),
+      }))),
       containers: inventory.containers.map(container => ({
         hostKey: container.hostKey, name: container.name, status: container.status, statusFresh: fresh(container.evidence.validUntil),
         health: container.health, healthFresh: fresh(container.healthValidUntil),

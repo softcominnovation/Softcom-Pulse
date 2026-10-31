@@ -141,12 +141,14 @@ Preservar chamadas Sonner existentes quando a tarefa não pede migração. Não 
 5. Não disparar alarmes em loop a partir do polling. Alarmes operacionais futuros precisam de contrato próprio: este listener fornece efeitos de UI.
 6. Se uma funcionalidade realmente precisar de efeito novo/opt-out, ampliar explicitamente o contrato compartilhado e atualizar este documento; esses recursos não existem apenas por atribuir um nome arbitrário no JSX.
 
-## 7. Monitor compatível de TV
-
-O caminho clássico de `/monitor` não carrega os providers React. `public/monitor-compat-audio.js` fornece somente o áudio operacional das notificações com os quatro WAVs Kobra existentes, mantendo `kobra-sound-muted`, `kobra-sound-volume`, volume zero, cooldown e chaves públicas de deduplicação. Usa Web Audio com um novo AudioBufferSourceNode por chegada; não adiciona outro player à página moderna nem emite sons por atualização de métricas. Os controles clássicos usam esse mesmo adaptador.
-
-A primeira interação confiável prepara o contexto e os buffers. Reprodução depende da permissão de áudio do navegador/WebView; o adapter não promete contornar autoplay. Storage bloqueado conserva preferências em memória, e Web Locks são opcionais. Snapshot inicial/ressincronização são silenciosos, não há repetição nem som adiado ao recuperar foco. Ausência de áudio não bloqueia os cards. Implementação, restrições e homologação em [Monitor compatível](monitor-compatibility.md).
-
-Os arquivos são lidos por `GET /monitor/compat/audio/:sound`, com allowlist dos quatro nomes e Host público permitido. Esse caminho atende CORS de origem opaca sem ampliar a política dos WAVs gerais. Os controles de mute e volume permanecem disponíveis no header do modo TV.
-
 Revisão por leitura de `sound.tsx`, `kobra-controls.tsx`, `toast.tsx`, providers e implementação instalada de `@web-kits/audio`. Não foi realizada uma nova sessão de teste auditivo ou alteração de preferências reais nesta documentação.
+
+## Alertas percentuais das VMs
+
+O evento operacional `usage` usa severidade/som `warning` após confirmação do limite. Sua recuperação segue `success` quando permitida; o som de recuperação continua desligado no padrão. Não há efeito novo por medidor ou polling. Mantêm-se o player de AudioBufferSourceNode, áudio em segundo plano, cooldown, mute e interrupção em volume zero. Configuração e prazos: [Alertas de VMs](vm-agent-alerts.md).
+
+O [alerta de disco do Storage](storage.md#alerta-de-ocupação-do-disco) reutiliza exatamente esse contrato `usage`/warning, com política e exceção do cadastro Storage. Não criar player, repetição ou som direto no formulário/card. Os testes nativos com janelas visíveis executam em sequência, pois o foco do Windows é compartilhado entre navegadores.
+
+## Apresentação clássica de `/monitor`
+
+A [camada compatível para TVs](monitor-compatibility.md) mantém mute, volume e teste no HTML inicial, inclusive em TV. Seu adaptador ES5 utiliza os mesmos quatro WAVs operacionais, preferências, cooldown e deduplicação; não substitui o áudio moderno. Eventos de uso e mensagens de limite vêm dos contratos atuais. Armazenamento/áudio indisponível não impede os cards; autoplay e permissões continuam sendo responsabilidade do navegador e hospedeiro.

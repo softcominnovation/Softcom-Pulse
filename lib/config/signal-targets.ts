@@ -1,3 +1,4 @@
+import { cardMetricsSchema } from "./agent-monitoring.ts";
 import { z } from "zod";
 import { hostKeySchema } from "./resources.ts";
 import { vmKeySchema } from "./vms.ts";
@@ -138,6 +139,7 @@ export const signalServiceWriteSchema = z.strictObject({
   expectedTargetRevision: z.number().int().positive(),
   displayName: label(120),
   servicePrefix: servicePrefixField,
+  cardMetrics: cardMetricsSchema.default(["cpu", "memory"]),
   enabled: z.boolean().default(true),
   dashboardEnabled: z.boolean().default(false),
   panelEnabled: z.boolean().default(true),
@@ -150,6 +152,7 @@ export const signalServicePatchSchema = z.strictObject({
   expectedRevision: z.number().int().positive(),
   displayName: label(120).optional(),
   servicePrefix: servicePrefixField.optional(),
+  cardMetrics: cardMetricsSchema.optional(),
   enabled: z.boolean().optional(),
   dashboardEnabled: z.boolean().optional(),
   panelEnabled: z.boolean().optional(),

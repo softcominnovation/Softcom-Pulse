@@ -31,17 +31,20 @@ function hasOldEvidence(value: unknown, now: number): boolean {
   if ("validUntil" in value && typeof value.validUntil === "string" && Date.parse(value.validUntil) < now) return true;
   return Object.values(value).some(child => typeof child === "object" && hasOldEvidence(child, now));
 }
-export function Dashboard() {
+export function Dashboard({ initialTvMode }: { initialTvMode?: boolean } = {}) {
   const [store] = useState(createPlayerStore), player = useStore(store);
   const [now, setNow] = useState(0);
+  useEffect(() => {
+    if (initialTvMode !== undefined) useUiStore.getState().setTvMode(initialTvMode);
+  }, [initialTvMode]);
   const loadConfiguration = useCallback(async (signal: AbortSignal) => {
     const response = await api.get("/settings/presentation", { signal });
     const document = presentationDocumentSchema.parse(response.data.data);
     if (signal.aborted) return document;
-    if (!store.getState().document) useUiStore.getState().setTvMode(document.defaultTvMode);
+    if (!store.getState().document && initialTvMode === undefined) useUiStore.getState().setTvMode(document.defaultTvMode);
     store.getState().configure(document);
     return document;
-  }, [store]);
+  }, [store, initialTvMode]);
   useEffect(() => {
     if (player.document) useUiStore.getState().setDisplayScalePercent(player.document.displayScalePercent);
   }, [player.document]);

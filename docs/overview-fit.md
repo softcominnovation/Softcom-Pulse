@@ -1,7 +1,5 @@
 # Encaixe da rota principal
 
-O caminho clássico de `/monitor` tem um [encaixe automático próprio](monitor-compatibility.md#encaixe-automático-na-área-visível): mede o viewport e o zoom CSS do próprio documento, distribui a altura entre fileiras e reduz a escala local quando necessário. Não conta como zoom escolhido o fator computado nativo que a WebView 83 informa na raiz sem declaração CSS. Mudanças de zoom do Pulse recalculam a área lógica, inclusive sem evento resize; o iframe precisa continuar ocupando a área disponível na página pai. O guia documenta o diagnóstico real e o utilitário manual que aplica a densidade ao contexto correto. As regras abaixo continuam descrevendo a página React e a prévia; não foram alteradas por essa adaptação compatível.
-
 ## Composições com Storage
 
 `storage_summary` usa `storageLayout` e `StorageComposition`, compartilhados pela raiz e pela prévia. O caminho anterior permanece sem Storage habilitado. Indicadores têm faixa própria; demais blocos entram em fileiras de 12 colunas, por UUID, ordem e larguras. Repetições não disputam áreas CSS por tipo.
@@ -55,3 +53,7 @@ Um bloco, card ou painel feito para a visão geral da rota `/` segue esta lista.
 8. Rotas que não são a visão geral da raiz continuam com rolagem de página. Não copiar `100dvh` e `overflow: hidden` para o detalhe, a administração ou a infraestrutura.
 
 A prévia em configurações avisa quando a composição precisa de rolagem na altura da janela. Esse aviso é o sinal de que o bloco passou do espaço da visão geral.
+
+## Apresentação pública compatível
+
+O renderer clássico de `/monitor` usa uma [composição CSS própria](monitor-compatibility.md#composição-e-rolagem), limitada àquele documento, sem alterar o encaixe React descrito acima. Não transporta o algoritmo antigo de sensores/transformação. Compensa apenas zoom CSS explicitamente definido na raiz do iframe, expandindo o viewport lógico e mantendo a composição flex; não deduz zoom por densidade da tela. Mantém regiões roláveis e pode rolar a composição quando os mínimos não cabem, preservando os dados e a legenda.

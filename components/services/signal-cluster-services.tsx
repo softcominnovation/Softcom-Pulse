@@ -1,24 +1,30 @@
 "use client";
+import { AgentMonitoringDialog } from "@/components/admin/agent-monitoring";
+import { CardReadings } from "@/components/dashboard/card-readings";
+import { cardMetricsSchema } from "@/lib/config/agent-monitoring";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/client/api";
 import { serviceCandidateKind, suggestServicePrefix } from "@/lib/signal/service-prefix";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmationDialog } from "@/components/confirmation-dialog";
 import { TargetNotificationSettings } from "@/components/notifications/settings";
 import { Check, Field, errorText, useMutation } from "@/components/admin/shared";
 import { requestCanceled } from "@/lib/client/request-canceled";
 
 export type ClusterService = {
+  cpu?: number | null; memory?: number | null; disk?: number | null;
+  cardMetrics?: ("cpu" | "memory" | "disk")[];
   id: string; displayName: string; servicePrefix: string; enabled: boolean; dashboardEnabled: boolean;
   panelEnabled: boolean; flowKpi: "database" | "redis" | null; critical: boolean; displayOrder: number; revision: number;
   kpiLabel: string; tone: string; vmName: string | null; hostKey: string | null; reason: string;
 };
 
-const empty = { displayName: "", servicePrefix: "", enabled: true, dashboardEnabled: false, panelEnabled: true, flowKpi: "" as "" | "database" | "redis", critical: false, displayOrder: 0 };
+const empty = { cardMetrics: "cpu,memory", displayName: "", servicePrefix: "", enabled: true, dashboardEnabled: false, panelEnabled: true, flowKpi: "" as "" | "database" | "redis", critical: false, displayOrder: 0 };
 type Candidate = { hostKey: string; name: string; suggestedPrefix: string };
 
 function registeredCopy(prefix: string, services: ClusterService[]) {
@@ -33,6 +39,9 @@ export function SignalClusterServices({ targetId, revision, services, editor, on
   const focus = params.get("signalService");
   const mutation = useMutation();
   const [draft, setDraft] = useState(empty);
+  const [creating, setCreating] = useState(false), [createError, setCreateError] = useState("");
+  const createTrigger = useRef<HTMLButtonElement>(null);
+  const createHeading = useRef<HTMLHeadingElement>(null), createFormId = useId();
   const [notice, setNotice] = useState("");
   const [catalog, setCatalog] = useState<Candidate[]>([]);
   const [catalogNote, setCatalogNote] = useState("");
@@ -63,17 +72,20 @@ export function SignalClusterServices({ targetId, revision, services, editor, on
   }, [editor, targetId]);
 
   async function create() {
-    setNotice("");
-    const duplicate = registeredCopy(draft.servicePrefix.trim(), services);
-    if (duplicate) { setNotice(duplicate); return; }
+    if (mutation.busy) return;
+    setCreateError("");
+    const servicePrefix = suggestServicePrefix(draft.servicePrefix.trim());
+    const duplicate = registeredCopy(servicePrefix, services);
+    if (duplicate) { setCreateError(duplicate); return; }
     try {
       await mutation.run(signal => api.post(`/monitoring/signal-targets/${targetId}/services`, {
-        expectedTargetRevision: revision, ...draft, flowKpi: draft.flowKpi || null,
+        expectedTargetRevision: revision, ...draft, servicePrefix, cardMetrics: cardMetricsSchema.parse(draft.cardMetrics.split(",")), flowKpi: draft.flowKpi || null,
       }, { signal }));
       toast.success("Serviço do cluster adicionado.");
       setDraft(empty);
+      setCreating(false);
       onSaved();
-    } catch (failure) { setNotice(errorText(failure)); }
+    } catch (failure) { setCreateError(errorText(failure)); }
   }
   async function save(service: ClusterService, patch: Partial<ClusterService> & { flowKpi?: "database" | "redis" | null }) {
     await mutation.run(signal => api.patch(`/monitoring/signal-targets/${targetId}/services/${service.id}`, {
@@ -97,16 +109,18 @@ export function SignalClusterServices({ targetId, revision, services, editor, on
   });
   const visible = editor ? services : services.filter(service => service.enabled && service.panelEnabled);
   return <section className="signal-vm-links" aria-label="Serviços do cluster">
-    <div className="panel-heading signal-linked-heading"><h3>Serviços do cluster</h3></div>
+    <div className="panel-heading signal-linked-heading"><h3 ref={createHeading} tabIndex={-1}>Serviços do cluster</h3>{editor && <Button ref={createTrigger} type="button" size="sm" variant="outline" data-sound="open" aria-haspopup="dialog" aria-expanded={creating} disabled={mutation.busy || services.length >= 20} onClick={() => setCreating(true)}><Plus aria-hidden="true" />Adicionar serviço</Button>}</div>
     <p className="admin-muted">Postgres, Redis e outros containers das VMs vinculadas. O vínculo é o nome do serviço, não o id da task. Sem enumeração completa do Docker, um container que some fica como Sem leitura, não como Fora.</p>
     {visible.length ? <ul className="signal-linked-grid">{visible.map(service => <li key={service.id} id={`signal-service-${service.id}`} className="signal-linked-card-wrap">
       <article className="availability-card signal-cluster-card" aria-current={focus === service.id ? "true" : undefined}>
         <span className={`availability-state tone-${service.tone}`}><i className="status-dot" />{service.kpiLabel}</span>
         <strong className="availability-name">{service.displayName}</strong>
         <span className="availability-description">{service.servicePrefix}</span>
+        <CardReadings pair={service.cardMetrics ?? ["cpu", "memory"]} values={{ cpu: service.cpu ?? null, memory: service.memory ?? null, disk: service.disk ?? null }} diskLabel="Disco da VM" />
         <span className="availability-footer"><span>{service.vmName ?? service.hostKey ?? "Sem container único"}</span><strong>{service.flowKpi === "database" ? "Banco" : service.flowKpi === "redis" ? "Redis" : "Fora dos KPIs"}</strong></span>
       </article>
       {editor && <div className="admin-actions">
+        <Field label="Métricas do minicard" hint="Disco da VM é a ocupação da máquina hospedeira, não do volume exclusivo do serviço."><select value={(service.cardMetrics ?? ["cpu", "memory"]).join(",")} onChange={event => void save(service, { cardMetrics: cardMetricsSchema.parse(event.target.value.split(",")) })}><option value="cpu,memory">CPU e RAM</option><option value="cpu,disk">CPU e Disco da VM</option><option value="disk,memory">Disco da VM e RAM</option></select></Field>
         <Check label="Crítico"><input type="checkbox" checked={service.critical} onChange={event => void save(service, { critical: event.target.checked })} /></Check>
         <Check label="Card"><input type="checkbox" checked={service.dashboardEnabled} onChange={event => void save(service, { dashboardEnabled: event.target.checked })} /></Check>
         <Check label="Painel"><input type="checkbox" checked={service.panelEnabled} onChange={event => void save(service, { panelEnabled: event.target.checked })} /></Check>
@@ -121,7 +135,7 @@ export function SignalClusterServices({ targetId, revision, services, editor, on
         <Field label="Bloco"><select value={service.flowKpi ?? ""} onChange={event => void save(service, { flowKpi: event.target.value === "database" || event.target.value === "redis" ? event.target.value : null })}>
           <option value="">Não mostrar</option><option value="database">Banco</option><option value="redis">Redis</option>
         </select></Field>
-        <TargetNotificationSettings targetRef={`signal_service:${service.id}`} />
+        <AgentMonitoringDialog hostKey={service.hostKey} /><TargetNotificationSettings targetRef={`signal_service:${service.id}`} presentation="dialog" displayName={service.displayName} />
         <ConfirmationDialog
           trigger={<Button type="button" size="icon" variant="destructive" aria-label={`Remover ${service.displayName}`}><Trash2 aria-hidden="true" /></Button>}
           title="Remover serviço do cluster?"
@@ -132,7 +146,11 @@ export function SignalClusterServices({ targetId, revision, services, editor, on
         />
       </div>}
     </li>)}</ul> : <p className="panel-empty">{editor ? "Nenhum serviço configurado. Os três KPIs do bloco continuam como estão." : "Nenhum serviço de dados configurado."}</p>}
-    {editor && <div className="admin-form">
+    {notice && <p role="alert" className="admin-error">{notice}</p>}
+    {editor && services.length >= 20 && <p className="admin-muted">Limite de 20 serviços do cluster atingido.</p>}
+    {editor && <Dialog open={creating} onOpenChange={value => { if (!mutation.busy) setCreating(value); }}><DialogContent className="w-[44rem] max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)]" onCloseAutoFocus={event => { event.preventDefault(); (createTrigger.current?.disabled ? createHeading.current : createTrigger.current)?.focus(); }}>
+      <DialogHeader><DialogTitle>Adicionar serviço do cluster</DialogTitle><DialogDescription>Cadastre um serviço das VMs vinculadas ao Signal.</DialogDescription></DialogHeader>
+      <DialogBody><form id={createFormId} className="admin-form" onSubmit={event => { event.preventDefault(); void create(); }}><fieldset className="space-y-4" disabled={mutation.busy}><div className="admin-fields">
       <Field label="Bloco do Signal" hint="Banco lista os Postgres. Redis lista os Redis. Sem bloco, a lista mostra os dois."><select value={draft.flowKpi} onChange={event => {
         const flowKpi = event.target.value as typeof draft.flowKpi;
         setDraft(value => {
@@ -149,7 +167,7 @@ export function SignalClusterServices({ targetId, revision, services, editor, on
         if (!prefix) return;
         const kind = serviceCandidateKind(prefix);
         setDraft(value => ({ ...value, servicePrefix: prefix, flowKpi: value.flowKpi || kind || "" }));
-        setNotice("");
+        setCreateError("");
       }}>
         <option value="">{options.length ? "Escolha um container" : "Nenhum container disponível"}</option>
         {options.map(option => {
@@ -158,12 +176,14 @@ export function SignalClusterServices({ targetId, revision, services, editor, on
           return <option key={option.suggestedPrefix} value={option.suggestedPrefix}>{draft.flowKpi ? option.suggestedPrefix : `${role} · ${option.suggestedPrefix}`}</option>;
         })}
       </select></Field>
+      <Field label="Métricas do novo minicard" hint="Disco da VM usa a seleção de volumes configurada em Alertas e exibição da VM."><select value={draft.cardMetrics} onChange={event => setDraft(value => ({ ...value, cardMetrics: event.target.value }))}><option value="cpu,memory">CPU e RAM</option><option value="cpu,disk">CPU e Disco da VM</option><option value="disk,memory">Disco da VM e RAM</option></select></Field>
+      </div>
       <Check label="Crítico, para notificar"><input type="checkbox" checked={draft.critical} onChange={event => setDraft(value => ({ ...value, critical: event.target.checked }))} /></Check>
       <Check label="Card na Disponibilidade"><input type="checkbox" checked={draft.dashboardEnabled} onChange={event => setDraft(value => ({ ...value, dashboardEnabled: event.target.checked }))} /></Check>
-      {notice && <p role="alert" className="admin-error">{notice}</p>}
-      <div className="admin-actions">
-        <Button type="button" variant="primary" disabled={mutation.busy || services.length >= 20} onClick={() => void create()}><Plus aria-hidden="true" />Adicionar</Button>
-      </div>
-    </div>}
+    </fieldset></form></DialogBody>
+    <DialogFooter><div className="w-full space-y-3">{createError && <p role="alert" className="admin-error">{createError}</p>}<div className="admin-actions justify-end">
+        <Button type="button" variant="outline" data-sound="close" disabled={mutation.busy} onClick={() => setCreating(false)}>Cancelar</Button>
+        <Button type="submit" form={createFormId} variant="primary" disabled={mutation.busy || services.length >= 20}><Plus aria-hidden="true" />Adicionar</Button>
+      </div></div></DialogFooter></DialogContent></Dialog>}
   </section>;
 }

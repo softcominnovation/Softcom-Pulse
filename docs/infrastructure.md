@@ -19,6 +19,8 @@ Parâmetros inválidos/duplicados e recursos fora do escopo produzem mensagens e
 
 Uma VM sem Agent tem detalhes e histórico do hipervisor. “Detalhes do Agent” existe somente quando `linuxHostKey` está associado. A expansão **Perspectiva do Agent desta VM** mostra dados internos em seção identificada; não mistura CPU/RAM das duas origens. Serviços e containers por VM continuam reservados à próxima entrega; não há botão inativo.
 
+O bloco **VMs dentro de ASGARD** também oferece **Buscar VM** pelo nome técnico ou nome definido no Pulse e filtro de **Estado**, com **Todos** como padrão. Os filtros combinam entre si e mantêm a ordem recebida, a seleção e o histórico atuais. **Sem estado atual** inclui evidência vencida ou indisponível. Filtrar não consulta o histórico das linhas nem altera as configurações do dashboard.
+
 ## Leitura e histórico
 
 A tabela detalhada mantém a célula Agent compacta: um medidor do uso atual do filesystem raiz `/` e a quantidade de filesystems descobertos. Não soma capacidades nem empilha volumes; sem raiz, informa a ausência em vez de usar outro filesystem silenciosamente. Todos os volumes e capacidades continuam acessíveis no link/expansão Agent. O medidor não representa histórico e não inicia consulta por linha. Os dados permanecem textuais quando desatualizados, sem barra de uso atual.
@@ -69,3 +71,7 @@ Arquivos: `components/infrastructure/`, `lib/infrastructure/`, `components/dashb
 `npm test` cobre navegação codificada, seleção não ambígua, unidades/dispositivos, null/zero e prioridade de séries. `npm run test:integration` cobre o bloco disponível, identidade efetiva do hipervisor e exclusão de templates sem alterar capacidade bruta. `npm run test:ui` exercita seleção, cache/orçamento de requests, Agent sob demanda, respostas atrasadas, falhas/retry, parâmetros inválidos, desaparecimento, acesso direto/nova aba, gráficos, toque, teclado e zoom.
 
 A matriz inclui 320×568, 360×800, 390×844, 768×1024, 1024×768, 1366×768, 1920×1080, 2560×1440, 3440×1440 e 844×390. Testes de navegador usam dados controlados e serviços temporários isolados; não substituem a conferência operacional do ambiente. Retenção e métricas disponíveis dependem do Zabbix, sem promessa de sete dias completos.
+
+## Alertas de uso e pares dos minicards
+
+O [guia de alertas das VMs com Agent](vm-agent-alerts.md) documenta limites percentuais, armazenamento agregado selecionado, configuração compartilhada entre ASGARD e Signal, revisão das escritas e seleção CPU/RAM, CPU/Disco ou Disco/RAM. O Collector existente avalia os limites; disponibilidade, processos, layouts salvos e o áudio mantêm seus contratos.

@@ -8,7 +8,7 @@ import { getAuthController, useAuthStore } from "@/store/auth.store";
 import { toast, dismissToast } from "@/components/ui/toast";
 import { playOperationalSound, type SoundName } from "@/components/ui/sound";
 import { arrivingSound, hiddenSoundMaxAgeMs, NotificationDelivery } from "@/lib/notifications/delivery";
-import { notificationMessages, type NotificationSnapshot, type NotificationChanges, type NotificationCounts } from "@/lib/notifications/contracts";
+import { notificationText, type NotificationSnapshot, type NotificationChanges, type NotificationCounts } from "@/lib/notifications/contracts";
 import { setOperationalToastPlace } from "@/lib/notifications/toast-place";
 import { setTabProblemIcon, tabProblemVisible } from "@/lib/notifications/tab-icon";
 
@@ -143,7 +143,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         const event = batch.events[0];
         visibleEvents = batch.events.map(item => ({ id: item.id, incidentId: item.incidentId, recovery: item.eventType === "recovery" }));
         toast({ id: toastId, operational: true, lifetime: policy.toastLifetimeMs,
-          message: batch.events.length > 1 ? `${batch.events.length} ocorrências em ${batch.targetCount} ${batch.targetCount === 1 ? "serviço" : "serviços"} · ${event.displayName}` : `${event.displayName} · ${notificationMessages[event.messageCode]}`,
+          message: batch.events.length > 1 ? `${batch.events.length} ocorrências em ${batch.targetCount} ${batch.targetCount === 1 ? "serviço" : "serviços"} · ${event.displayName}` : `${event.displayName} · ${notificationText(event)}`,
           state: event.eventType === "recovery" ? "success" : event.severity === "critical" ? "error" : event.severity === "warning" ? "warning" : "info",
           sound: false, velocity: event.severity === "critical" ? 0.65 : 0.45,
           action: { label: "Ver central", run: () => setOpen(true) },

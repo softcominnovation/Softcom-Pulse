@@ -2,14 +2,30 @@
 
 A central do cabeçalho reúne histórico, não lidas e incidentes atuais. Avisos temporários usam o toast Kobra sobre a página, sem reservar espaço dos cards. O bloco legado comentado permanece preservado. Consulte também [Design system](design-system.md), [Sons](interface-sounds.md), [BFF](bff.md) e [Workers](workers.md).
 
+## Período do histórico
+
+Somente a aba **Histórico** oferece o componente **Período do histórico**. A data inicial é obrigatória e começa no dia atual; a final é opcional. Sem data final, consulta-se apenas o dia inicial. **Filtrar período** aplica a seleção, e **Hoje** restaura o padrão. Nenhuma das datas pode estar no futuro, e a final não pode ser anterior à inicial. Erros aparecem junto aos campos, sem disparar consulta inválida.
+
+O período usa **America/Fortaleza (UTC−3)** e a data de registro da notificação (`created_at`), como o horário exibido na lista. O último dia é incluído por completo. Quando o filtro padrão permanece ativo, o dia é atualizado na virada; intervalos escolhidos manualmente permanecem aplicados durante a sincronização.
+
+A seleção é filtrada no PostgreSQL, com comparações sobre `created_at` e o índice de histórico existente, antes de paginar. **Carregar mais** conserva o mesmo intervalo; mudar as datas reinicia a paginação. Não há migration, consulta ao Zabbix ou worker novo.
+
+**Não lidas** e **Incidentes atuais** conservam registros antigos e não recebem filtro de data. O detalhe do incidente conserva seu histórico completo. Contagens do sininho e leitura compartilhada continuam globais; escolher um período não apaga nem marca registros como lidos.
+
 ## Uso e configuração
 
 A política geral fica em **Configurações → Notificações de serviços**. Recursos, aplicações HTTP, VPS, Signal, serviços do cluster Signal e Storage possuem exceções no respectivo editor, depois que o cadastro existe. Salvar notificações é uma ação própria; não salva nem descarta o rascunho do cadastro. Criticidade continua sendo propriedade do serviço; as exceções de notificações não a alteram. O serviço do cluster (`signal_service`) notifica status e health do container pelo prefixo estável. A troca da task não cancela o incidente. Sem cobertura Docker integral, a ausência do container não abre indisponibilidade.
 
+**Notificações deste serviço** abre um modal Kobra com o nome do serviço, largura adaptável e rolagem interna. Em Storage e no alvo Signal, o botão fica junto das ações do próprio bloco, separado de Editar configuração; os serviços do cluster mantêm um botão em cada card. Os demais editores também usam diálogo, sem expandir a política dentro do formulário. A configuração geral permanece na sua seção em Configurações.
+
+Os campos usam duas colunas quando há espaço; abrir o editor não aumenta a altura do card. Fechar e reabrir preserva o rascunho durante a permanência na página, sem salvamento automático. Escape e fechar retornam o foco ao botão de origem. As preferências são carregadas apenas após a primeira abertura; conflitos conservam as alterações. Salvar a exceção não envia o formulário do cadastro nem descarta seu rascunho.
+
+No Storage, o mesmo modal oferece as abas **Alerta de disco** (ativação e limite percentual) e **Entrega e sons** (política por serviço). Cada aba tem salvamento independente e preserva seu rascunho ao alternar, fechar ou salvar a outra. Os volumes permanecem em **Editar configuração** e são os mesmos dos cards. O limite usa o cadastro/revisão Storage existente; a política usa sua própria revisão. Consulte [Storage](storage.md#alerta-de-ocupação-do-disco).
+
 | Opção | Padrão |
 |---|---|
 | Elegibilidade | Serviços críticos |
-| Eventos | Indisponibilidade, problema e recuperação; atenção desativada |
+| Eventos | Indisponibilidade, problema, uso de recursos e recuperação; atenção desativada |
 | Problemas Zabbix | Severidade mínima 4 |
 | Áudio | Indisponibilidade/problema críticos; recuperação silenciosa |
 | Posição do aviso | Centro do header; também canto inferior direito e canto superior direito |
@@ -23,7 +39,7 @@ Histórico e leitura são globais no PostgreSQL. Marcar como lida em uma tela at
 
 ## Registro e entrega
 
-Os monitores existentes avaliam disponibilidade, estado, health e problemas confirmados. Não há novos limiares de CPU, RAM ou disco. HTTP usa duas amostras válidas consecutivas; evidência explícita Zabbix pode confirmar imediatamente. Amostra antiga, desconhecida ou ausente não significa recuperação. Falha na API Zabbix não torna todos os serviços indisponíveis.
+Os monitores existentes avaliam disponibilidade, estado, health e problemas confirmados. Os limites opt-in de uso das VMs e de disco do Storage usam a confirmação própria descrita abaixo. HTTP usa duas amostras válidas consecutivas; evidência explícita Zabbix pode confirmar imediatamente. Amostra antiga, desconhecida ou ausente não significa recuperação. Falha na API Zabbix não torna todos os serviços indisponíveis.
 
 O primeiro estado de cada família estabelece referência silenciosa. Reinício, reconexão e retorno de uma aba ao primeiro plano sincronizam sem reproduzir avisos históricos. Desabilitar alertas preserva incidentes reais; pausar/remover o monitor ou trocar sua identidade cancela os incidentes anteriores sem anunciar recuperação. Uma nova identidade começa silenciosamente. Remover um cadastro preserva seu histórico e retira o link de navegação.
 
@@ -74,7 +90,8 @@ A manutenção usa o Collector existente, com lotes limitados. Incidentes ativos
 
 | Método e rota | Finalidade |
 |---|---|
-| `GET /api/monitoring/notifications` | Histórico, filtros, contagens, atividade das origens e cursor |
+| `GET /api/monitoring/notifications` | Eventos/Não lidas, filtros, contagens, atividade das origens e cursor |
+| `GET /api/monitoring/notifications/history` | Histórico por datas; `from` assume hoje e `to` omitido consulta apenas `from` |
 | `GET /api/monitoring/notifications/changes` | Alterações após um cursor, em janela consistente |
 | `GET /api/monitoring/notifications/incidents` | Lista de incidentes |
 | `GET /api/monitoring/notifications/:eventId` | Detalhe do evento e do incidente |
@@ -84,6 +101,14 @@ A manutenção usa o Collector existente, com lotes limitados. Incidentes ativos
 | `PUT /api/settings/notifications` | Política geral com revisão esperada |
 | `PUT /api/settings/notifications/targets/:targetRef` | Exceção de serviço com revisão esperada |
 
-As cinco consultas também existem sob `/api/public/monitoring/notifications`, sujeitas ao host público permitido. Não há escrita pública. Políticas e escrita exigem editor. Listas retornam até 100 entradas; feed, até 200 alterações por página. Corpo da política geral: até 512 KiB; demais escritas: 64 KiB. Conflito de revisão ou cursor expirado retorna 409.
+As seis consultas também existem sob `/api/public/monitoring/notifications`, sujeitas ao host público permitido. Não há escrita pública. Políticas e escrita exigem editor. Listas retornam até 100 entradas; feed, até 200 alterações por página. Corpo da política geral: até 512 KiB; demais escritas: 64 KiB. Conflito de revisão ou cursor expirado retorna 409.
+
+`GET .../history` aceita `from` e `to` em `YYYY-MM-DD`, severidade, alvo, limite e cursor. Datas inválidas/futuras e intervalos invertidos retornam 400. O cursor de paginação é vinculado ao intervalo e não pode ser reutilizado com outras datas ou na listagem sem período. O cursor de sincronização continua global para as operações já existentes.
 
 DTOs usam IDs opacos e mensagens permitidas. Não expõem credenciais, payloads HTTP, nomes brutos de problemas, hostid, chaves internas de condição ou identidade de quem marcou como lida. Links de detalhe são internos e respeitam modo público/privado.
+
+## Uso das VMs com Agent
+
+O evento `usage` registra CPU, RAM e ocupação dos volumes monitorados, com limite e valor do instante do aviso. Regras são opt-in por VM/Agent; não são ativadas pela migration nem pelo default do evento na política. Uso alto é warning, sem transformar a VM em indisponível. Confirmação por amostras, recuperação com margem e configuração compartilhada estão no [guia de alertas das VMs](vm-agent-alerts.md). A recuperação e o áudio usam as mesmas políticas e o player aprovado deste documento.
+
+Storage também permite `usage` de disco pelo próprio editor, independente de associação VM/Agent. Usa os volumes/capacidade do card, duas novas amostras em pelo menos 30s e recuperação com margem. A mensagem identifica **Disco do Storage**; nome, valor e limite do evento permanecem históricos. Alterar/desativar limite ou trocar volumes cancela somente a condição de disco. Veja [Storage](storage.md#alerta-de-ocupação-do-disco).

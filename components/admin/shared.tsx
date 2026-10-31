@@ -5,11 +5,16 @@ import { isAxiosError } from "axios";
 import { api } from "@/lib/client/api";
 import { requestCanceled } from "@/lib/client/request-canceled";
 import { Button } from "@/components/ui/button";
+import { agentCapacityRequiredMessage } from "@/lib/config/agent-monitoring";
 
 export function errorText(error: unknown) {
   const code = isAxiosError(error) ? error.response?.data?.error?.code : "";
   const messages: Record<string, string> = {
+    agent_monitoring_unavailable: "Aguarde uma leitura atual e um vínculo único entre a VM e o Agent para ativar regras ou alterar volumes.",
+    agent_context_changed: "O vínculo da VM ou os volumes mudaram. Reabra o editor e revise a associação e a seleção.",
+    capacity_required: agentCapacityRequiredMessage,
     storage_inventory_unavailable: "Aguarde uma descoberta atual de Storage para criar a configuração ou alterar os volumes e a interface.",
+    storage_capacity_unavailable: "Aguarde uma leitura atual e completa dos volumes selecionados para ativar o alerta de disco.",
     storage_identity_unverified: "A identidade do Storage não pôde ser comprovada. Atualize a descoberta.",
     storage_selection_unverified: "Um volume ou interface não pertence à descoberta atual deste Storage. Seu rascunho foi preservado.",
     storage_not_found: "Este Storage não está na descoberta atual. Configurações existentes foram preservadas.",

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { parseAvailabilityCardRef, formatAvailabilityCardRef } from "../config/availability-card-refs.ts";
 
-export const notificationEventTypes = ["unavailable", "problem", "attention", "recovery"] as const;
+export const notificationEventTypes = ["unavailable", "problem", "attention", "recovery", "usage"] as const;
 export type NotificationEventType = typeof notificationEventTypes[number];
 export type NotificationSeverity = "info" | "warning" | "critical";
 export type NotificationSound = "notification" | "warning" | "error" | "success";
@@ -20,6 +20,7 @@ export const notificationTargetRefSchema = z.string().max(60).refine(value => {
 const eventFlags = z.strictObject({
   unavailable: z.boolean().default(true),
   problem: z.boolean().default(true),
+  usage: z.boolean().default(true),
   attention: z.boolean().default(false),
   recovery: z.boolean().default(true),
 });
@@ -28,7 +29,7 @@ export const notificationOverrideSchema = z.strictObject({
   sound: z.enum(["inherit", "on", "off"]).default("inherit"),
   events: z.strictObject({
     unavailable: z.boolean().optional(), problem: z.boolean().optional(),
-    attention: z.boolean().optional(), recovery: z.boolean().optional(),
+    usage: z.boolean().optional(), attention: z.boolean().optional(), recovery: z.boolean().optional(),
   }).optional(),
 });
 export const notificationSettingsSchema = z.strictObject({
@@ -37,6 +38,7 @@ export const notificationSettingsSchema = z.strictObject({
   events: eventFlags.prefault({}),
   minimumProblemSeverity: z.number().int().min(0).max(5).default(4),
   sounds: z.strictObject({
+    usage: z.boolean().default(true),
     enabled: z.boolean().default(true),
     targetScope: z.enum(["critical", "all"]).default("critical"),
     unavailable: z.boolean().default(true),

@@ -189,3 +189,5 @@
   .dashboard.balanced .availability-panel .panel-heading { padding-top: 6px; padding-bottom: 6px; }
   .dashboard.balanced .availability-panel .panel-foot { padding-top: 4px; padding-bottom: 4px; line-height: 12px; }
 }
+
+.availability-meter.disk i { background: var(--pulse-amber); }

@@ -29,7 +29,7 @@ export async function adminFixture(page: Page) {
     if (route.request().method() !== "POST") return route.fulfill({ json: envelope(service.services) });
     record(route.request()); if (state.wait) await state.wait;
     if (state.resourceConflict) return route.fulfill({ status: 409, json: { error: { code: "resource_conflict" } } });
-    const body = { ...route.request().postDataJSON() }; delete body.context;
+    const body = { ...route.request().postDataJSON() }; delete body.context; delete body.expectedRevision;
     const input = resourceInputSchema.parse(body), config = { ...input, id: id(sequence++), createdAt: at, updatedAt: at }; state.resources.push(config);
     return route.fulfill({ status: 201, json: { data: config } });
   });
@@ -38,8 +38,8 @@ export async function adminFixture(page: Page) {
     if (!["DELETE", "PATCH"].includes(request.method())) return route.fallback();
     record(request); if (state.wait) await state.wait;
     if (request.method() === "DELETE") { state.resources = state.resources.filter(item => item.id !== key); return route.fulfill({ status: 204 }); }
-    const body = { ...request.postDataJSON() }; delete body.context;
-    const saved = { ...config, ...resourceInputSchema.parse(body) };
+    const body = { ...request.postDataJSON() }; delete body.context; delete body.expectedRevision;
+    const saved = { ...config, ...resourceInputSchema.parse({ ...body, agentMonitoring: config.agentMonitoring ?? {} }), revision: (config.revision ?? 1) + 1 };
     state.resources = state.resources.map(item => item.id === key ? saved : item); return route.fulfill({ json: { data: saved } });
   });
   await page.route("**/api/monitoring/templates*", route => route.fulfill(state.templatesFail ? { status: 503, json: { error: { code: "cache_unavailable" } } } : { json: envelope(state.templates) }));

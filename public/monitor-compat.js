@@ -10,7 +10,6 @@
   var rotating = state.autoStart && state.screens.length > 1, offset = Date.parse(state.serverTime) - Date.now();
   var restoreFocus = null, oldOverflow = '', queryGeneration = 0, rotationDueAt = 0, failureCount = 0;
   var displayedScreenId = state.screenId;
-  var activeScale = 1, fitting = false, lastViewportKey = '';
   var layoutOverride = /(?:^|[?&])layout=/.test(window.location.search);
   if (!/(?:^|[?&])theme=/.test(window.location.search)) {
     try { var theme = localStorage.getItem('softcom-pulse-theme'); if (theme === 'dark' || theme === 'light') state.theme = theme; } catch (_error) { void _error; /* Keep the explicit/default theme. */ }
@@ -68,7 +67,7 @@
     }
     return selected;
   }
-  function warning(message) { text(status, message); status.hidden = !message; fit(); }
+  function warning(message) { text(status, message); status.hidden = !message; applyDensity(); }
   function markStale() {
     pending = null;
     content.setAttribute('data-connection', 'stale');
@@ -107,11 +106,12 @@
     var focusDetail = document.activeElement && document.activeElement.getAttribute('data-open-detail');
     var scroll = {};
     function regionKey(element) {
+      if (element.className === 'dashboard-blocks') return 'composition:' + displayedScreenId;
       var parent = element;
       while (parent && parent !== content) { if (parent.getAttribute && parent.getAttribute('data-block-id')) return parent.getAttribute('data-block-id') + ':' + element.getAttribute('aria-label'); parent = parent.parentNode; }
       return null;
     }
-    each(content.querySelectorAll('.panel-content, .table-scroll, .host-card-grid, .availability-grid'), function (element) {
+    each(content.querySelectorAll('.dashboard-blocks, .panel-content, .table-scroll, .host-card-grid, .availability-grid'), function (element) {
       var key = regionKey(element);
       if (key && element.offsetHeight) scroll[key] = { top: element.scrollTop, left: element.scrollLeft, focus: document.activeElement === element };
     });
@@ -130,8 +130,8 @@
     byId('compat-screen').value = state.screenId;
     updateControls();
     expireEvidence();
-    fit();
-    each(content.querySelectorAll('.panel-content, .table-scroll, .host-card-grid, .availability-grid'), function (element) {
+    applyDensity();
+    each(content.querySelectorAll('.dashboard-blocks, .panel-content, .table-scroll, .host-card-grid, .availability-grid'), function (element) {
       var previous = scroll[regionKey(element)];
       if (previous && element.offsetHeight) { element.scrollTop = previous.top; element.scrollLeft = previous.left; if (previous.focus) element.focus(); }
     });
@@ -139,7 +139,7 @@
   function changeView() {
     queryGeneration++; pending = null;
     if (activeRequest) { activeRequest.abort(); activeRequest = null; }
-    updateControls(); fit(); refresh();
+    updateControls(); applyDensity(); refresh();
   }
   function changeScreen(id) {
     if (id === state.screenId) return;
@@ -174,138 +174,44 @@
     controlLabel('compat-theme', state.theme === 'light' ? 'Tema claro' : 'Tema escuro');
     byId('compat-theme').setAttribute('aria-pressed', state.theme === 'light' ? 'true' : 'false');
   }
-  function elementZoom(element) {
-    // WebView 83 can report a native factor (observed as 1.5) as the root's
-    // computed zoom even with no CSS zoom declaration. It is already reflected
-    // in the iframe viewport and must not be multiplied into CSS geometry again.
-    if (element === document.documentElement) {
-      var declared = element.style.zoom, rootValue = parseFloat(declared);
-      if (String(declared).indexOf('%') >= 0) rootValue /= 100;
-      return isFinite(rootValue) && rootValue > 0 ? rootValue : 1;
+  // WebView 83 includes native density in computed root zoom. Only an explicit CSS declaration is user zoom.
+  var viewportKey = '';
+  function syncViewport() {
+    var root = document.documentElement, viewport = byId('compat-viewport');
+    var declared = root.style.zoom || '', zoom = parseFloat(declared);
+    if (declared.indexOf('%') !== -1) zoom /= 100;
+    if (!isFinite(zoom) || zoom <= 0) zoom = 1;
+    var width = window.innerWidth || root.clientWidth, height = window.innerHeight || root.clientHeight;
+    var key = width + ':' + height + ':' + zoom;
+    if (viewportKey === key) return;
+    viewportKey = key;
+    if (width >= 761 && height >= 480 && zoom !== 1) {
+      root.setAttribute('data-monitor-zoom', 'true');
+      viewport.style.width = width / zoom + 'px';
+      viewport.style.height = height / zoom + 'px';
+    } else {
+      root.removeAttribute('data-monitor-zoom');
+      viewport.style.width = ''; viewport.style.height = '';
     }
-    var style = window.getComputedStyle ? window.getComputedStyle(element) : element.currentStyle;
-    var raw = style && style.zoom, value = parseFloat(raw);
-    if (String(raw).indexOf('%') >= 0) value /= 100;
-    return isFinite(value) && value > 0 ? value : 1;
   }
-  function effectiveZoom(element) {
-    var value = 1;
-    while (element && element.nodeType === 1) { value *= elementZoom(element); element = element.parentNode; }
-    return value;
-  }
-  function viewportRect(element, metrics) {
-    var rect = element.getBoundingClientRect();
-    // Older Chromium divides the rectangle by effective CSS zoom; newer engines include it.
-    var zoom = metrics.legacyRects ? effectiveZoom(element) : 1;
-    return { left: rect.left * zoom, top: rect.top * zoom, right: rect.right * zoom, bottom: rect.bottom * zoom };
-  }
-  function viewportMetrics() {
-    var root = document.documentElement, visual = window.visualViewport, sensor = byId('compat-zoom-sensor');
-    var metrics = { width: window.innerWidth || root.clientWidth, height: window.innerHeight || root.clientHeight, left: 0, top: 0, zoomX: 1, zoomY: 1, contentZoom: elementZoom(byId('compat-shell')), visualScale: 1, pixelRatio: window.devicePixelRatio || 1, legacyRects: false };
-    if (visual && visual.width > 0 && visual.height > 0) {
-      // Zooming out may expose MORE CSS pixels than innerWidth/innerHeight.
-      metrics.width = visual.width; metrics.height = visual.height;
-      metrics.left = visual.offsetLeft || 0; metrics.top = visual.offsetTop || 0; metrics.visualScale = visual.scale || 1;
-    }
-    if (sensor && sensor.offsetWidth && sensor.offsetHeight) {
-      var rect = sensor.getBoundingClientRect();
-      var reference = byId('compat-zoom-reference'), cssZoom = 1;
-      if (reference && elementZoom(reference) > 1 && rect.right > rect.left) {
-        var nested = reference.getBoundingClientRect();
-        metrics.legacyRects = (nested.right - nested.left) / (rect.right - rect.left) < 1.5;
-        if (metrics.legacyRects) cssZoom = effectiveZoom(sensor);
-      }
-      var x = (rect.right - rect.left) * cssZoom / sensor.offsetWidth, y = (rect.bottom - rect.top) * cssZoom / sensor.offsetHeight;
-      if (isFinite(x) && x > 0) metrics.zoomX = x;
-      if (isFinite(y) && y > 0) metrics.zoomY = y;
-    }
-    return metrics;
-  }
-  function viewportKey(metrics) {
-    function rounded(value) { return Math.round(value * 10000) / 10000; }
-    return [rounded(metrics.width), rounded(metrics.height), rounded(metrics.left), rounded(metrics.top), rounded(metrics.zoomX), rounded(metrics.zoomY), rounded(metrics.contentZoom), rounded(metrics.visualScale), metrics.pixelRatio, metrics.legacyRects ? 1 : 0].join(':');
-  }
-  function checkViewport() {
-    if (!stopped && !fitting && !document.hidden && viewportKey(viewportMetrics()) !== lastViewportKey) fit();
-  }
-  function fit() {
-    if (fitting || stopped) return;
-    var root = document.documentElement, shell = byId('compat-shell'), viewport = byId('compat-viewport');
-    var blocks = content.querySelector('.dashboard-blocks');
-    if (!viewport || !blocks || !('transform' in shell.style || 'webkitTransform' in shell.style)) return;
-    var rows, flexible, minimum, width, height, top, metrics;
-    function measure(scale) {
-      activeScale = scale;
-      shell.style.width = (width / (metrics.zoomX * metrics.contentZoom * scale)) + 'px';
-      shell.style.height = (height / (metrics.zoomY * metrics.contentZoom * scale)) + 'px';
-      shell.style.transformOrigin = shell.style.webkitTransformOrigin = '0 0';
-      shell.style.transform = shell.style.webkitTransform = 'scale(' + scale + ')';
-      flexible = []; minimum = 0;
-      each(rows, function (row) {
-        row.style.height = '';
-        if (row.className.indexOf('content-sized') < 0) {
-          var size = parseInt(row.getAttribute('data-min-height'), 10) || 210;
-          flexible.push({ element: row, minimum: size }); minimum += size;
-          row.style.height = size + 'px';
-        }
-      });
-      each(rows, function (row) { if (row.className.indexOf('content-sized') >= 0) minimum += row.offsetHeight; });
-      var footer = content.querySelector('.dashboard-footer');
-      var bottom = viewportRect(footer || blocks, metrics).bottom;
-      return blocks.clientHeight >= minimum + 1 && shell.scrollWidth <= shell.clientWidth + 1 && bottom <= top + height + 1;
-    }
-    function restoreFlow() {
-      root.removeAttribute('data-viewport-fit'); document.body.removeAttribute('data-viewport-fit');
-      shell.style.width = ''; shell.style.height = '';
-      shell.style.transform = shell.style.webkitTransform = '';
-      shell.style.transformOrigin = shell.style.webkitTransformOrigin = '';
-      each(rows, function (row) { row.style.height = ''; });
-      viewport.style.width = ''; viewport.style.height = ''; viewport.style.left = ''; viewport.style.top = '';
-      viewport.setAttribute('data-fit-state', 'unavailable'); activeScale = 1;
-    }
-    fitting = true;
-    try {
-      root.setAttribute('data-viewport-fit', 'true'); document.body.setAttribute('data-viewport-fit', 'true');
-      metrics = viewportMetrics(); width = metrics.width; height = metrics.height; top = metrics.top;
-      if (!(width > 0 && height > 0)) return;
-      viewport.style.width = (width / metrics.zoomX) + 'px'; viewport.style.height = (height / metrics.zoomY) + 'px';
-      viewport.style.left = '0px'; viewport.style.top = '0px';
-      var rect = viewportRect(viewport, metrics);
-      viewport.style.left = ((metrics.left - rect.left) / metrics.zoomX) + 'px';
-      viewport.style.top = ((top - rect.top) / metrics.zoomY) + 'px';
-      rows = blocks.querySelectorAll('.compat-row');
-      var preferred = state.tv || document.fullscreenElement || document.webkitFullscreenElement ? state.scale / 100 : 1;
-      // Keep the saved desktop columns even when the WebView exposes a small CSS viewport.
-      var maximum = Math.min(preferred, width / (1200 * metrics.zoomX * metrics.contentZoom));
-      var scale = maximum;
-      if (!measure(scale)) {
-        var low = maximum, high = maximum, attempts = 0, fits = false;
-        // Find a fitting interval first, then the largest fitting scale. No fixed 70% preset.
-        do { low /= 2; attempts++; fits = measure(low); } while (!fits && attempts < 8);
-        if (!fits) { restoreFlow(); return; }
-        for (var step = 0; step < 10; step++) {
-          var candidate = (low + high) / 2;
-          if (measure(candidate)) low = candidate; else high = candidate;
-        }
-        scale = low; measure(scale);
-      }
-      var extra = flexible.length ? Math.max(0, (blocks.clientHeight - minimum - 1) / flexible.length) : 0;
-      each(flexible, function (row) { row.element.style.height = (row.minimum + extra) + 'px'; });
-      viewport.scrollTop = 0; viewport.scrollLeft = 0;
-      viewport.setAttribute('data-fit-scale', String(activeScale));
-      viewport.setAttribute('data-fit-width', String(width)); viewport.setAttribute('data-fit-height', String(height));
-      viewport.setAttribute('data-fit-zoom-x', String(metrics.zoomX * metrics.contentZoom));
-      viewport.setAttribute('data-fit-zoom-y', String(metrics.zoomY * metrics.contentZoom));
-      viewport.setAttribute('data-fit-rect-mode', metrics.legacyRects ? 'legacy' : 'viewport');
-      viewport.setAttribute('data-fit-state', 'ready');
-    } finally { lastViewportKey = viewportKey(viewportMetrics()); fitting = false; }
+  function applyDensity() {
+    syncViewport();
+    var fullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+    var ratio = state.tv || fullscreen ? state.scale / 100 : 1;
+    var fonts = [['.panel-heading h2', 13], ['.availability-name', 12], ['.availability-description', 10], ['.availability-footer', 9], ['.reading', 10], ['.reading strong', 11], ['.panel-foot', 9], ['.dashboard-kpi h2', 12], ['.dashboard-kpi .kpi-value', 28], ['table', 10], ['.presentation-toolbar h1', 20]];
+    var rules = '';
+    each(fonts, function (font) { rules += font[0] + '{font-size:' + Math.round(font[1] * ratio * 100) / 100 + 'px;}'; });
+    var style = byId('compat-density');
+    if (style && style.textContent !== rules) style.textContent = rules;
   }
   function openModal(title, html, trigger) {
-    restoreFocus = trigger || document.activeElement;
+    if (modal.hidden) {
+      restoreFocus = trigger || document.activeElement;
+      oldOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+    }
     text(byId('compat-modal-title'), title);
     byId('compat-modal-body').innerHTML = html;
-    oldOverflow = document.body.style.overflow;
-    if (!document.body.hasAttribute('data-viewport-fit')) document.body.style.overflow = 'hidden';
     modal.hidden = false;
     modal.querySelector('button').focus();
     expireEvidence();
@@ -371,7 +277,6 @@
     function pad(value) { return value < 10 ? '0' + value : String(value); }
     text(byId('compat-clock'), pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes()) + ':' + pad(date.getUTCSeconds()));
     expireEvidence();
-    if (lastViewportKey) checkViewport();
   }
   document.addEventListener('keydown', function (event) {
     if (!modal.hidden && (event.key === 'Escape' || event.keyCode === 27)) { event.preventDefault(); closeModal(); return; }
@@ -386,53 +291,123 @@
     var key = (event.key || '').toLowerCase(), action = key === 't' ? 'compat-tv' : key === 'f' ? 'compat-fullscreen' : key === 'r' ? 'compat-rotate' : null;
     if (action) { event.preventDefault(); byId(action).click(); }
   });
-  window.addEventListener('resize', checkViewport);
-  window.addEventListener('orientationchange', checkViewport);
-  window.addEventListener('load', fit);
-  if (window.visualViewport && window.visualViewport.addEventListener) {
-    window.visualViewport.addEventListener('resize', checkViewport);
-    window.visualViewport.addEventListener('scroll', checkViewport);
-  }
-  if (window.MutationObserver) {
-    var zoomObserver = new window.MutationObserver(checkViewport);
-    each([document.documentElement, document.body, byId('compat-viewport'), byId('compat-shell')], function (element) {
-      if (element) zoomObserver.observe(element, { attributes: true, attributeFilter: ['style', 'class'] });
-    });
-  }
-  document.addEventListener('fullscreenchange', function () { updateControls(); fit(); });
-  document.addEventListener('webkitfullscreenchange', function () { updateControls(); fit(); });
-  document.addEventListener('visibilitychange', function () { armRotation(); if (!document.hidden) { fit(); refresh(); } });
+  document.addEventListener('fullscreenchange', function () { updateControls(); applyDensity(); });
+  document.addEventListener('webkitfullscreenchange', function () { updateControls(); applyDensity(); });
+  document.addEventListener('visibilitychange', function () { armRotation(); if (!document.hidden) { applyDensity(); refresh(); } });
   window.addEventListener('online', function () { refresh(); });
   window.addEventListener('pagehide', function () { stopped = true; queryGeneration++; pending = null; notificationGeneration++; notificationBusy = false; clearTimeout(pollTimer); clearTimeout(rotationTimer); clearInterval(clockTimer); if (activeRequest) { activeRequest.abort(); activeRequest = null; } });
-  window.addEventListener('pageshow', function (event) { if (event.persisted) { stopped = false; cursor = null; clock(); fit(); clockTimer = setInterval(clock, 1000); refresh(); pollNotifications(); armRotation(); } });
+  window.addEventListener('pageshow', function (event) { if (event.persisted) { stopped = false; cursor = null; clock(); applyDensity(); clockTimer = setInterval(clock, 1000); refresh(); pollNotifications(); armRotation(); } });
 
   var cursor = null, notificationBusy = false, notificationTimer, deliveryRevision = null, notificationGeneration = 0;
+  var currentCounts = { unreadCount: 0, activeCount: 0 };
+  function paintTabIcon() {
+    var icon = byId('compat-tab-icon');
+    if (icon && state.tabIcons) icon.href = document.hidden && currentCounts.activeCount > 0 && currentCounts.unreadCount > 0 ? state.tabIcons.alert : state.tabIcons.normal;
+  }
   function notificationsLabel(data) {
+    currentCounts = data.counts; paintTabIcon();
     var unread = Number(data.counts.unreadCount), count = byId('compat-count');
     unread = isFinite(unread) && unread > 0 ? Math.floor(unread) : 0;
     text(count, unread > 99 ? '99+' : unread); count.hidden = unread === 0;
     byId('compat-notifications').setAttribute('aria-label', 'Notificações: ' + data.counts.unreadCount + ' não lidas, ' + data.counts.activeCount + ' incidentes atuais');
-    fit();
+    applyDensity();
+  }
+  var notificationView = 'unread', notificationSeverity = '', notificationFrom = '', notificationTo = '', listGeneration = 0;
+  function notificationToday() {
+    var date = new Date(Date.now() + offset - 3 * 3600000);
+    function pad(value) { return value < 10 ? '0' + value : String(value); }
+    return date.getUTCFullYear() + '-' + pad(date.getUTCMonth() + 1) + '-' + pad(date.getUTCDate());
+  }
+  function notificationDate(value) {
+    var date = new Date(Date.parse(value) - 3 * 3600000);
+    if (!isFinite(date.getTime())) return 'Sem horário disponível';
+    return date.getUTCDate() + '/' + (date.getUTCMonth() + 1) + '/' + date.getUTCFullYear() + ' ' + date.getUTCHours() + ':' + ('0' + date.getUTCMinutes()).slice(-2);
   }
   function notificationList() {
-    openModal('Notificações', '<p class="muted">Carregando notificações…</p>', byId('compat-notifications'));
-    request('/api/public/monitoring/notifications?limit=30', function (error, data) {
-      var body = byId('compat-modal-body');
-      if (modal.hidden || byId('compat-modal-title').textContent !== 'Notificações') return;
-      body.innerHTML = '';
-      if (error) { text(body, 'Não foi possível carregar as notificações.'); return; }
-      notificationsLabel(data);
-      var intro = document.createElement('p'); text(intro, 'Últimas 30 notificações. Histórico e leitura são compartilhados. Esta tela pública permite somente consulta.'); body.appendChild(intro);
-      each(data.events || [], function (entry) {
-        var article = document.createElement('article'), title = document.createElement('strong'), message = document.createElement('p'), meta = document.createElement('small');
-        article.className = 'notification-entry';
-        text(title, entry.displayName); text(message, state.messages[entry.messageCode] || 'Aviso de monitoramento');
-        var date = new Date(Date.parse(entry.createdAt) - 3 * 3600000);
-        text(meta, date.getUTCDate() + '/' + (date.getUTCMonth() + 1) + '/' + date.getUTCFullYear() + ' ' + date.getUTCHours() + ':' + ('0' + date.getUTCMinutes()).slice(-2) + (entry.readAt ? ' · Lida' : ' · Não lida'));
-        article.appendChild(title); article.appendChild(message); article.appendChild(meta); body.appendChild(article);
-      });
-      if (!data.events || !data.events.length) { var empty = document.createElement('p'); text(empty, 'Nenhuma notificação.'); body.appendChild(empty); }
+    if (!notificationFrom) notificationFrom = notificationToday();
+    openModal('Notificações', '<div class="notification-tabs" role="group" aria-label="Lista de notificações"></div><form class="notification-filters"><label>Severidade<select id="compat-severity"><option value="">Todas</option><option value="critical">Crítica</option><option value="warning">Atenção</option><option value="info">Informação</option></select></label><label id="compat-from-label">De<input id="compat-history-from" type="date" required></label><label id="compat-to-label">Até (opcional)<input id="compat-history-to" type="date"></label><button type="submit">Aplicar filtros</button></form><p id="compat-notification-error" class="notification-error" role="alert"></p><div id="compat-notification-list" aria-live="polite"></div><p class="muted">Histórico e leitura são compartilhados. Esta tela pública permite somente consulta.</p>', byId('compat-notifications'));
+    var body = byId('compat-modal-body'), tabs = body.querySelector('.notification-tabs');
+    each([['unread', 'Não lidas'], ['active', 'Incidentes atuais'], ['history', 'Histórico']], function (tab) {
+      var button = document.createElement('button'); button.type = 'button'; text(button, tab[1]);
+      button.setAttribute('aria-pressed', notificationView === tab[0] ? 'true' : 'false');
+      button.addEventListener('click', function () { notificationView = tab[0]; notificationList(); }); tabs.appendChild(button);
     });
+    byId('compat-severity').value = notificationSeverity;
+    byId('compat-history-from').value = notificationFrom; byId('compat-history-to').value = notificationTo;
+    byId('compat-history-from').max = notificationToday(); byId('compat-history-to').max = notificationToday();
+    byId('compat-from-label').hidden = notificationView !== 'history'; byId('compat-to-label').hidden = notificationView !== 'history';
+    byId('compat-history-from').required = notificationView === 'history';
+    body.querySelector('form').addEventListener('submit', function (event) {
+      event.preventDefault(); notificationSeverity = byId('compat-severity').value;
+      notificationFrom = byId('compat-history-from').value; notificationTo = byId('compat-history-to').value;
+      if (notificationView === 'history' && (!notificationFrom || notificationFrom > notificationToday() || notificationTo && (notificationTo > notificationToday() || notificationTo < notificationFrom))) {
+        text(byId('compat-notification-error'), 'Confira o intervalo: data inicial obrigatória, sem datas futuras e final igual ou posterior à inicial.'); return;
+      }
+      loadNotificationPage(null, false);
+    });
+    loadNotificationPage(null, false);
+  }
+  function loadNotificationPage(cursor, append) {
+    var generation = ++listGeneration, list = byId('compat-notification-list'), errorText = byId('compat-notification-error');
+    if (!list) return;
+    if (!append) text(list, 'Carregando notificações…');
+    text(errorText, '');
+    var path = '/monitor/compat/notifications' + (notificationView === 'active' ? '/incidents' : notificationView === 'history' ? '/history' : '');
+    var query = '?limit=30' + (notificationView === 'unread' ? '&read=unread' : '');
+    if (notificationView === 'history') query += '&from=' + encodeURIComponent(notificationFrom) + (notificationTo ? '&to=' + encodeURIComponent(notificationTo) : '');
+    if (notificationSeverity) query += '&severity=' + notificationSeverity;
+    if (cursor) query += '&cursor=' + encodeURIComponent(cursor);
+    request(path + query, function (error, data) {
+      if (generation !== listGeneration || modal.hidden || byId('compat-modal-title').textContent !== 'Notificações') return;
+      if (error) { if (!append) text(list, ''); text(errorText, 'Não foi possível carregar as notificações. Confira os filtros e tente novamente.'); return; }
+      notificationsLabel(data);
+      if (!append) text(list, '');
+      var entries = notificationView === 'active' ? data.incidents : data.events;
+      each(entries || [], function (entry) {
+        var article = document.createElement('article'), title = document.createElement('strong'), message = document.createElement('p'), meta = document.createElement('small');
+        article.className = 'notification-entry'; text(title, entry.displayName);
+        text(message, entry.message || state.messages[entry.messageCode] || 'Aviso de monitoramento');
+        text(meta, notificationDate(entry.createdAt || entry.openedAt) + (entry.readAt ? ' · Lida' : notificationView === 'active' ? ' · Incidente atual' : ' · Não lida'));
+        article.appendChild(title); article.appendChild(message); article.appendChild(meta); list.appendChild(article);
+        var incidentId = notificationView === 'active' ? entry.id : entry.incidentId;
+        if (incidentId) {
+          var detail = document.createElement('button'); detail.type = 'button'; text(detail, 'Ver incidente');
+          detail.addEventListener('click', function () { notificationIncident(incidentId); }); article.appendChild(detail);
+        }
+      });
+      if (!append && (!entries || !entries.length)) { var empty = document.createElement('p'); text(empty, 'Nenhuma notificação neste filtro.'); list.appendChild(empty); }
+      if (data.nextPageCursor) {
+        var more = document.createElement('button'); more.type = 'button'; text(more, 'Carregar mais notificações');
+        more.addEventListener('click', function () { more.parentNode.removeChild(more); loadNotificationPage(data.nextPageCursor, true); }); list.appendChild(more);
+      }
+    });
+  }
+  function notificationIncident(id) {
+    var generation = ++listGeneration;
+    text(byId('compat-modal-title'), 'Incidente');
+    var body = byId('compat-modal-body'); text(body, 'Carregando incidente…');
+    function load(cursor, append) {
+      request('/monitor/compat/notifications/incidents/' + encodeURIComponent(id) + '?limit=30' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''), function (error, data) {
+        if (generation !== listGeneration || modal.hidden) return;
+        if (error) { text(body, 'Não foi possível carregar o incidente.'); return; }
+        if (!append) {
+          text(body, '');
+          var title = document.createElement('h3'), message = document.createElement('p'), stateText = document.createElement('p');
+          text(title, data.incident.displayName); text(message, data.incident.message);
+          text(stateText, data.incident.status === 'active' ? 'Incidente atual' : data.incident.status === 'resolved' ? 'Resolvido' : 'Acompanhamento encerrado');
+          body.appendChild(title); body.appendChild(message); body.appendChild(stateText);
+          if (data.incident.metricContext) {
+            var context = document.createElement('p'); text(context, 'Valor histórico · ' + data.incident.metricContext.coverage); body.appendChild(context);
+          }
+        }
+        each(data.events || [], function (entry) { var event = document.createElement('p'); text(event, notificationDate(entry.createdAt) + ' · ' + entry.message + (entry.readAt ? ' · Lida' : ' · Não lida')); body.appendChild(event); });
+        if (data.nextPageCursor) {
+          var more = document.createElement('button'); more.type = 'button'; text(more, 'Mais eventos do incidente');
+          more.addEventListener('click', function () { more.parentNode.removeChild(more); load(data.nextPageCursor, true); }); body.appendChild(more);
+        }
+      });
+    }
+    load(null, false);
   }
   byId('compat-notifications').addEventListener('click', notificationList);
   var seen = {}, seenIds = [], toastTimer, visualTimer, lastVisual = 0, visibleEvents = [], visualGroups = [], visualRuntime = null;
@@ -448,7 +423,7 @@
     if (!fresh.length) { flushVisuals(); return; }
     fresh.sort(function (left, right) { var ranks = { critical: 3, warning: 2, info: 1 }; return ranks[right.severity] - ranks[left.severity]; });
     var toast = byId('compat-toast'), first = fresh[0];
-    var message = (fresh.length > 1 ? fresh.length + ' ocorrências · ' : '') + first.displayName + ' · ' + (state.messages[first.messageCode] || 'Aviso de monitoramento');
+    var message = (fresh.length > 1 ? fresh.length + ' ocorrências · ' : '') + first.displayName + ' · ' + (first.message || state.messages[first.messageCode] || 'Aviso de monitoramento');
     text(toast, message); text(byId('compat-announcement'), message);
     toast.className = 'compat-toast ' + (visualRuntime.toastPosition === 'top-end' || visualRuntime.toastPosition === 'header-center' ? visualRuntime.toastPosition : 'bottom-end');
     toast.hidden = false; lastVisual = now + visualRuntime.toastLifetimeMs; visibleEvents = fresh;
@@ -463,14 +438,14 @@
     var fresh = [], now = Date.now() + offset;
     each(events, function (event) {
       var at = Date.parse(event.createdAt), active = event.eventType === 'recovery' || event.incidentStatus === 'active';
-      if (!seen[event.id] && event.announce && event.toastEligible && !event.readAt && active && read.indexOf(event.id) < 0 && (event.eventType === 'recovery' || closed.indexOf(event.incidentId) < 0) && now >= at && now - at <= Math.max(runtime.maxDeliveryAgeMs, 180000)) fresh.push(event);
+      if (!seen[event.id] && event.announce && event.toastEligible && !event.readAt && active && read.indexOf(event.id) < 0 && now >= at && now - at <= Math.max(runtime.maxDeliveryAgeMs, 180000)) fresh.push(event);
       if (!seen[event.id]) { seen[event.id] = true; seenIds.push(event.id); }
     });
     if (seenIds.length > 5000) { each(seenIds.splice(0, seenIds.length - 2500), function (id) { delete seen[id]; }); }
     if (!runtime.enabled) { resetVisuals(); return; }
     fresh.sort(function (left, right) { var ranks = { critical: 3, warning: 2, info: 1 }; return ranks[right.severity] - ranks[left.severity]; });
     if (window.PulseCompatibleAudio) window.PulseCompatibleAudio.deliver(fresh, runtime.soundCooldownMs);
-    fresh = fresh.filter(function (event) { return now - Date.parse(event.createdAt) <= runtime.maxDeliveryAgeMs; });
+    fresh = fresh.filter(function (event) { return now - Date.parse(event.createdAt) <= runtime.maxDeliveryAgeMs && (event.eventType === 'recovery' || closed.indexOf(event.incidentId) < 0); });
     if (document.hidden) { resetVisuals(); return; }
     if (fresh.length) {
       var group = visualGroups[visualGroups.length - 1];
@@ -487,7 +462,7 @@
     var epoch = notificationGeneration;
     function done() { if (epoch !== notificationGeneration) return; notificationBusy = false; if (!stopped) notificationTimer = setTimeout(pollNotifications, 10000); }
     if (!cursor) {
-      request('/api/public/monitoring/notifications?limit=1', function (error, data) {
+      request('/monitor/compat/notifications?limit=1', function (error, data) {
         if (epoch !== notificationGeneration || stopped) return;
         if (!error && !stopped) { cursor = data.syncCursor; deliveryRevision = data.runtime.deliveryRevision; syncClock(data.serverTime); notificationsLabel(data); }
         done();
@@ -496,7 +471,7 @@
     }
     var changes = [], latest = null, counts = null;
     function next() {
-      request('/api/public/monitoring/notifications/changes?after=' + encodeURIComponent(cursor) + '&limit=200', function (error, data) {
+      request('/monitor/compat/notifications/changes?after=' + encodeURIComponent(cursor) + '&limit=200', function (error, data) {
         if (epoch !== notificationGeneration) return;
         if (error || stopped) { cursor = null; resetVisuals(); done(); return; }
         latest = data; cursor = data.nextCursor;
@@ -521,7 +496,7 @@
     }
     next();
   }
-  document.addEventListener('visibilitychange', function () { if (document.hidden) resetVisuals(); });
+  document.addEventListener('visibilitychange', function () { paintTabIcon(); if (document.hidden) resetVisuals(); });
   window.addEventListener('pagehide', function () { clearTimeout(notificationTimer); resetVisuals(); });
   byId('compat-toast').addEventListener('click', function () { hideToast(); flushVisuals(); notificationList(); });
   var audioInstalled = false, audioLoadTimer;
@@ -534,7 +509,7 @@
     byId('compat-mute').title = 'Não foi possível carregar o controle de áudio. Recarregue a página para tentar novamente.';
     byId('compat-volume-on').hidden = true; byId('compat-volume-off').hidden = false;
     text(byId('compat-audio-status'), 'Áudio indisponível'); byId('compat-audio-status').hidden = false;
-    fit();
+    applyDensity();
   }
   function installAudioControls() {
     var audio = window.PulseCompatibleAudio;
@@ -565,13 +540,19 @@
     function prepareAudio(event) { if (event.isTrusted) audio.prepare(); }
     document.addEventListener('click', prepareAudio, true); document.addEventListener('keydown', prepareAudio, true);
     window.addEventListener('storage', sync);
-    sync(); fit();
+    sync(); applyDensity();
   }
-  var audioScript = document.createElement('script'); audioScript.src = '/monitor-compat-audio.js';
+  var audioScript = document.createElement('script'); audioScript.src = state.audioAdapterUrl;
   audioScript.onload = installAudioControls; audioScript.onerror = audioUnavailable;
   audioLoadTimer = setTimeout(audioUnavailable, 8000);
   document.head.appendChild(audioScript);
-  updateControls(); clock(); fit(); armRotation();
+  updateControls(); clock(); applyDensity(); armRotation();
+  window.addEventListener('resize', syncViewport);
+  window.addEventListener('orientationchange', syncViewport);
+  if (window.MutationObserver) {
+    var viewportObserver = new window.MutationObserver(syncViewport);
+    viewportObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
+  }
   content.setAttribute('data-monitor-controller', 'ready');
   clockTimer = setInterval(clock, 1000);
   pollTimer = setTimeout(refresh, state.refreshAfterMs);

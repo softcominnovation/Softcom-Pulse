@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { ArrowUp, ArrowDown, Copy, Plus } from "lucide-react";
 import { api } from "@/lib/client/api";
-import { blockCatalog, blockTypes, defaultDisplayScalePercent, displayScaleOptions, effectiveOptions, initialPresentation, presentationDocumentSchema, presentationSettingsSchema, type BlockType, type PresentationBlock, type PresentationDocument, type PresentationSettings } from "@/lib/config/presentation";
+import { blockCatalog, blockTypes, defaultDisplayScalePercent, displayScaleOptions, effectiveOptions, initialPresentation, presentationDocumentSchema, presentationSettingsSchema, withReadingPlayback, type BlockType, type PresentationBlock, type PresentationDocument, type PresentationSettings } from "@/lib/config/presentation";
 import type { ResourceConfig } from "@/lib/config/resources";
 import { externalServicePublicSchema } from "@/lib/config/external-services";
 import { standaloneVpsCardSchema } from "@/lib/config/standalone-vps";
@@ -62,12 +62,12 @@ function PresentationForm({ saved, resources, hosts, reload, availabilityCatalog
   const reset = () => { form.reset(editable(confirmed)); setError(""); setReadingError(""); setPreviewId(null); };
   const saveReading = async () => {
     const { revision, ...base } = confirmed, draft = form.getValues();
-    const parsed = presentationSettingsSchema.safeParse({ ...base, displayScalePercent: draft.displayScalePercent, showStatusBanner: draft.showStatusBanner, idlePresentation: draft.idlePresentation });
+    const parsed = presentationSettingsSchema.safeParse(withReadingPlayback(base, draft));
     setReadingError("");
-    if (!parsed.success) { setReadingError("Escolha um tamanho válido e informe um tempo inteiro entre 1 e 120 minutos."); return; }
+    if (!parsed.success) { setReadingError(parsed.error.issues.some(issue => issue.path.includes("autoStart")) ? "A alternância automática exige duas telas habilitadas com blocos." : "Escolha um tamanho válido e informe um tempo inteiro entre 1 e 120 minutos."); return; }
     try {
       const result = await mutation.run(async signal => parseDocument((await api.put("/settings/presentation", { expectedRevision: revision, settings: parsed.data }, { signal })).data));
-      if (result) { setConfirmed(result); toast.success("Leitura do telão salva. As outras alterações continuam no rascunho."); }
+      if (result) { setConfirmed(result); toast.success("Modo TV, alternância e leitura do telão salvos. A composição das telas continua no rascunho."); }
     } catch (failure) { setReadingError(errorText(failure)); }
   };
   const submit = form.handleSubmit(async input => {
@@ -83,7 +83,7 @@ function PresentationForm({ saved, resources, hosts, reload, availabilityCatalog
         <Check label="Iniciar no modo TV"><input type="checkbox" {...form.register("defaultTvMode")} /></Check>
         <Check label="Iniciar alternância automaticamente"><input type="checkbox" {...form.register("rotation.autoStart")} /></Check>
       </div></fieldset>
-      <p className="admin-muted">O modo TV mantém a reprodução limpa. Configure abaixo a entrada por inatividade ou use os controles do dashboard.</p>
+      <p className="admin-muted">O modo TV entra ao abrir o dashboard. A alternância começa junto, se houver duas telas habilitadas. O botão abaixo grava estas opções.</p>
       <p>Ordem: {settings.screens.filter(screen => screen.enabled).map(screen => screen.name || "Tela sem nome").join(" → ") || "Nenhuma tela habilitada"}</p>
     </div></section>
     <section className="dashboard-panel admin-reading" aria-label="Leitura no telão"><div className="panel-heading"><h2>Leitura no telão</h2></div><div className="admin-form">
@@ -104,7 +104,7 @@ function PresentationForm({ saved, resources, hosts, reload, availabilityCatalog
       <FullscreenHelp />
       <p className="admin-muted">Use “Ver prévia” em uma tela para comparar tamanhos; opções maiores podem precisar de rolagem.</p>
       {readingError && <p role="alert" className="admin-error">{readingError}</p>}
-      <div className="admin-panel-save"><p className="admin-muted">Salvo no banco e compartilhado entre os dispositivos. Este botão salva somente as opções deste bloco.</p><Button type="button" variant="primary" disabled={mutation.busy} onClick={() => { void saveReading(); }}>Salvar leitura do telão</Button></div>
+      <div className="admin-panel-save"><p className="admin-muted">Salvo no banco e compartilhado entre os dispositivos. Este botão grava o modo TV, a alternância e a leitura do telão. A composição das telas continua em Salvar apresentação.</p><Button type="button" variant="primary" disabled={mutation.busy} onClick={() => { void saveReading(); }}>Salvar leitura do telão</Button></div>
     </div></section>
     {saved.schemaVersion === 1 && settings.screens.some(screen => screen.blocks.filter(block => block.enabled).length > 6) && <p className="admin-notice">Esta composição antiga continua sendo reproduzida integralmente. Distribua ou desabilite blocos até haver no máximo seis habilitados por tela para salvar a nova versão.</p>}
     <fieldset disabled={mutation.busy} className="admin-screens">{settings.screens.map((screen, screenIndex) => {

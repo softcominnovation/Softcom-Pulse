@@ -2,9 +2,10 @@ import type { Page } from "@playwright/test";
 import { defaultNotificationPolicy, notificationRuntime, notificationPolicySchema } from "../../lib/notifications/policy";
 import type { NotificationEventView, NotificationChangeView } from "../../lib/notifications/contracts";
 import { id } from "./dashboard";
+import { notificationDay } from "../../lib/notifications/history-range";
 
 export function notificationFixtureState() {
-  return { revision: 1, policy: defaultNotificationPolicy(), events: [] as NotificationEventView[], changes: [] as NotificationChangeView[], snapshots: 0, polls: 0, writes: 0, fail: false, conflict: false };
+  return { revision: 1, policy: defaultNotificationPolicy(), events: [] as NotificationEventView[], changes: [] as NotificationChangeView[], snapshots: 0, polls: 0, writes: 0, fail: false, conflict: false, historyPageSize: 30, listQueries: [] as { path: string; from: string | null; to: string | null; cursor: string | null; read: string | null }[], targets: [{ ref: `resource:${id(90)}`, label: "Storage de operações", critical: true, enabled: true }] };
 }
 export function addNotification(state: ReturnType<typeof notificationFixtureState>) {
   state.revision++;
@@ -22,7 +23,7 @@ export async function notificationFixture(page: Page, state = notificationFixtur
         const ref = decodeURIComponent(url.pathname.split("/targets/")[1] ?? "");
         state.policy = notificationPolicySchema.parse({ ...(ref ? { ...state.policy, overrides: { ...state.policy.overrides, [ref]: body.override } } : body.settings), schemaVersion: 1, revision: state.policy.revision + 1 });
       }
-      return route.fulfill({ json: { data: state.policy, orphanRefs: [], targets: [{ ref: `resource:${id(90)}`, label: "Storage de operações", critical: true, enabled: true }] } });
+      return route.fulfill({ json: { data: state.policy, orphanRefs: [], targets: state.targets } });
     }
     const counts = () => ({ unreadCount: state.events.filter(event => !event.readAt).length, activeCount: state.events.length });
     const runtime = () => ({ ...notificationRuntime(state.policy, "1"), toastLifetimeMs: 15000 });
@@ -38,7 +39,11 @@ export async function notificationFixture(page: Page, state = notificationFixtur
       return route.fulfill({ json: { changes: state.changes.filter(change => Number(change.revision) > Number(url.searchParams.get("after"))), nextCursor: String(state.revision), hasMore: false, windowEnd: String(state.revision), streamRevision: String(state.revision), counts: counts(), runtime: runtime(), serverTime: new Date().toISOString() } });
     }
     state.snapshots++;
-    return route.fulfill({ json: { events: state.events.filter(event => url.searchParams.get("read") !== "unread" || !event.readAt), incidents: [], counts: counts(), sources: [], syncCursor: String(state.revision), nextPageCursor: null, streamRevision: String(state.revision), serverTime: new Date().toISOString(), runtime: runtime() } });
+    const history = url.pathname.endsWith("/history"), from = url.searchParams.get("from"), to = url.searchParams.get("to");
+    state.listQueries.push({ path: url.pathname, from, to, cursor: url.searchParams.get("cursor"), read: url.searchParams.get("read") });
+    const events = state.events.filter(event => (url.searchParams.get("read") !== "unread" || !event.readAt) && (!url.searchParams.get("severity") || event.severity === url.searchParams.get("severity")) && (!history || notificationDay(event.createdAt) >= (from ?? notificationDay()) && notificationDay(event.createdAt) <= (to ?? from ?? notificationDay())));
+    const offset = history ? Number(url.searchParams.get("cursor") ?? 0) : 0;
+    return route.fulfill({ json: { events: history ? events.slice(offset, offset + state.historyPageSize) : events, incidents: [], counts: counts(), sources: [], syncCursor: String(state.revision), nextPageCursor: history && offset + state.historyPageSize < events.length ? String(offset + state.historyPageSize) : null, streamRevision: String(state.revision), serverTime: new Date().toISOString(), runtime: runtime() } });
   });
   return state;
 }

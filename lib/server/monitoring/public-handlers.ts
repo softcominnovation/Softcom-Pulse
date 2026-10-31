@@ -234,8 +234,14 @@ async function readPublic(request: Request, segments: string[]) {
 }
 
 export function publicGet(request: Request, segments: string[]) {
-  return publicResponse(request, () => readPublic(request, segments));
+  return publicResponse(request, async () => publicAgentData(await readPublic(request, segments)));
 }
 export function publicRouteGet(request: Request, context: { params: Promise<{ path: string[] }> }) {
   return context.params.then(params => publicGet(request, params.path));
+}
+
+function publicAgentData(value: unknown): unknown {
+ if (Array.isArray(value)) return value.map(publicAgentData);
+ if (!value || typeof value !== "object") return value;
+ return Object.fromEntries(Object.entries(value).filter(([key]) => key !== "agentMonitoring").map(([key,item]) => [key,publicAgentData(item)]));
 }

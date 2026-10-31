@@ -112,6 +112,24 @@ export const defaultDashboardBlocks = [
   { type: "problems", width: "wide" },
 ] as const;
 
+const rotationDraftSchema = z.strictObject({
+  autoStart: z.boolean(),
+  intervalSeconds: z.number().int().min(5).max(300),
+});
+
+/** Reading save also stores TV mode and rotation. An invalid interval stays as a draft and keeps the last saved rotation. */
+export function withReadingPlayback<T extends Pick<PresentationSettings, "displayScalePercent" | "showStatusBanner" | "idlePresentation" | "defaultTvMode" | "rotation">>(confirmed: T, draft: Partial<Pick<PresentationSettings, "displayScalePercent" | "showStatusBanner" | "idlePresentation" | "defaultTvMode" | "rotation">>): T {
+  const rotation = rotationDraftSchema.safeParse(draft.rotation);
+  return {
+    ...confirmed,
+    displayScalePercent: draft.displayScalePercent ?? confirmed.displayScalePercent,
+    showStatusBanner: draft.showStatusBanner ?? confirmed.showStatusBanner,
+    idlePresentation: draft.idlePresentation ?? confirmed.idlePresentation,
+    defaultTvMode: draft.defaultTvMode ?? confirmed.defaultTvMode,
+    rotation: rotation.success ? rotation.data : confirmed.rotation,
+  };
+}
+
 export function initialPresentation(newId: () => string): PresentationDocument {
   return { schemaVersion: 2, revision: 1, defaultTvMode: false, displayScalePercent: defaultDisplayScalePercent, showStatusBanner: false, idlePresentation: idlePresentationSchema.parse({}), rotation: { autoStart: false, intervalSeconds: 20 }, screens: [{
     id: newId(), name: "Visão geral", enabled: true, layout: "overview", overviewGrid: "default",

@@ -7,6 +7,10 @@ import { nativeBrowser } from '../fixtures/native-browser';
 
 test.skip(process.platform !== 'win32', 'Native window background regression runs on Windows; component tests cover portable audio behavior.');
 
+// These headed browsers share the Windows foreground window; parallel tests
+// would change each other's focus before an actual notification is delivered.
+test.describe.configure({ mode: 'serial' });
+
 // Focus emulation in headless Chromium cannot reproduce leaving a native browser tab.
 test.use({ headless: false, launchOptions: {
   args: ["--autoplay-policy=user-gesture-required"],

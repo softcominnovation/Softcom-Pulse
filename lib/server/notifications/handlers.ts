@@ -1,12 +1,13 @@
 import "server-only";
 import { BffError, protectedResponse, queryParams, jsonBody } from "../bff.ts";
 import { requireSession } from "../auth/index.ts";
-import { notificationListQuery, notificationChangesQuery } from "../../notifications/contracts.ts";
-import { listNotifications, notificationDetail, notificationChanges, markNotificationsRead } from "./read.ts";
+import { notificationListQuery, notificationChangesQuery, notificationHistoryQuery } from "../../notifications/contracts.ts";
+import { listNotifications, notificationHistory, notificationDetail, notificationChanges, markNotificationsRead } from "./read.ts";
 import { notificationSettings, saveNotificationSettings } from "./settings.ts";
 
 export async function readNotificationRoute(request: Request, segments: string[], scope: "public" | "private") {
   if (!segments.length) return listNotifications(queryParams(request, notificationListQuery), scope);
+  if (segments.length === 1 && segments[0] === "history") return notificationHistory(queryParams(request, notificationHistoryQuery), scope);
   if (segments.length === 1 && segments[0] === "changes") {
     const query = queryParams(request, notificationChangesQuery);
     return notificationChanges(query.after, query.limit, scope);

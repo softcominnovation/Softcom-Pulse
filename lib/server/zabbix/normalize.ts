@@ -1,8 +1,9 @@
+import { uniqueSources } from "./unique-sources.ts";
 import "server-only";
 import { hostSchema, containerSchema, problemSchema, type Container, type Problem, type Summary, type VirtualMachine } from "../../monitoring/contracts.ts";
 import { tag, type Item, type ZabbixHost, type ZabbixProblem } from "./types.ts";
 import { keyParts, metric, observationContext, observedText, opaqueReference } from "./observations.ts";
-import { mapMetrics, provisionedCpuMaster, stateBinding } from "./mapping.ts";
+import { deriveRatio, mapMetrics, provisionedCpuMaster, stateBinding } from "./mapping.ts";
 import { sourceKey, type SourceBindings, type Binding } from "./bindings.ts";
 import { correlatedHost, type MonitoringScope } from "./scope.ts";
 
@@ -26,13 +27,14 @@ export function normalizeInventory(rawHosts: ZabbixHost[], items: Item[], asgard
     if (!hypervisor && !mapped.metrics.memoryUsedBytes) {
       const total = mapped.metrics.memoryTotalBytes, availableItem = own.find(i => i.key_ === "vm.memory.size[available]" && i.units === "B");
       const available = metric(availableItem, "bytes", context);
-      if (total) mapped.metrics.memoryUsedBytes = { value: total.value !== null && available.value !== null && total.value >= available.value ? total.value - available.value : null, unit: "bytes", quality: total.quality === "fresh" && available.quality === "fresh" ? "fresh" : total.quality === "unsupported" || available.quality === "unsupported" ? "unsupported" : total.value === null || available.value === null ? "missing" : "stale", observedAt: total.observedAt && available.observedAt ? [total.observedAt, available.observedAt].sort()[0] : null, validUntil: total.validUntil && available.validUntil ? [total.validUntil, available.validUntil].sort()[0] : null };
+      if (total) mapped.metrics.memoryUsedBytes = { sampleObservedAt: total.observedAt && available.observedAt ? [total.observedAt, available.observedAt].sort().at(-1)! : undefined, value: total.value !== null && available.value !== null && total.value >= available.value ? total.value - available.value : null, unit: "bytes", quality: total.quality === "fresh" && available.quality === "fresh" ? "fresh" : total.quality === "unsupported" || available.quality === "unsupported" ? "unsupported" : total.value === null || available.value === null ? "missing" : "stale", observedAt: total.observedAt && available.observedAt ? [total.observedAt, available.observedAt].sort()[0] : null, validUntil: total.validUntil && available.validUntil ? [total.validUntil, available.validUntil].sort()[0] : null };
     }
+    deriveRatio(mapped.metrics, "memoryUsedBytes", "memoryTotalBytes", "memoryUsagePercent");
     const devices = (category: "filesystems" | "interfaces" | "storages") => {
       const selected = own.filter(i => category === "filesystems" ? /^vfs.fs.(dependent.size|size)\[/.test(i.key_) : category === "interfaces" ? /^net.if.(in|out)\[/.test(i.key_) : hypervisor && /^proxmox.node.(disk|maxdisk)\[/.test(i.key_) && keyParts(i.key_).args[0] === node);
       const groups = new Map<string, Item[]>();
       for (const item of selected) { const args = keyParts(item.key_).args; const name = args[category === "storages" ? 1 : 0]; if (name) groups.set(name, [...(groups.get(name) ?? []), item]); }
-      return [...groups].map(([name, group]) => { const key = opaqueReference("device", raw.host, category, name); const d = mapMetrics(group, context, category + "." + key + "."); mapped.bindings.push(...d.bindings); return { key, name, metrics: d.metrics }; });
+      return [...groups].map(([name, group]) => { const key = opaqueReference("device", raw.host, category, name); const d = mapMetrics(category === "filesystems" ? uniqueSources(group) : group, context, category + "." + key + "."); mapped.bindings.push(...d.bindings); return { key, name, ...(category === "filesystems" ? { filesystemType: tag(group[0].tags,"fstype") ?? null } : {}), metrics: d.metrics }; });
     };
     const filesystems = devices("filesystems"), interfaces = devices("interfaces"), storages = devices("storages");
     const root = filesystems.find(d => d.name === "/");

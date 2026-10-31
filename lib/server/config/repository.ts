@@ -2,7 +2,8 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { ZodError } from "zod";
 import type { Prisma, MonitoredResourceConfig, PulseSetting } from "../../../generated/prisma/client.ts";
-import { resourceInputSchema, resourcePatchSchema, type ResourceConfig } from "../../config/resources.ts";
+import { hostPresentationSchema, resourceInputSchema, resourcePatchSchema, type ResourceConfig } from "../../config/resources.ts";
+import { cardMetricPresentation, mergeCardMetricPresentation } from "../../config/agent-monitoring.ts";
 import { blockCatalog, effectiveOptions, initialPresentation, presentationDocumentSchema, presentationWriteSchema, type PresentationResult } from "../../config/presentation.ts";
 import { BffError } from "../bff.ts";
 import { getPrisma } from "../prisma.ts";
@@ -19,10 +20,10 @@ function presentationResult(row: PulseSetting): PresentationResult {
   return { data: parsed.data, updatedAt: row.updatedAt.toISOString() };
 }
 function resourceResult(row: MonitoredResourceConfig): ResourceConfig {
-  const { id, createdAt, updatedAt, ...input } = row;
+  const { id, revision, createdAt, updatedAt, ...input } = row;
   const parsed = resourceInputSchema.safeParse(input);
   if (!parsed.success) throw new BffError(503, "configuration_unavailable");
-  return { ...parsed.data, id, createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() };
+  return { ...parsed.data, id, revision, createdAt: createdAt.toISOString(), updatedAt: updatedAt.toISOString() };
 }
 function isZodError(error: unknown): error is ZodError {
   return error instanceof ZodError || (!!error && typeof error === "object" && (error as { name?: string }).name === "ZodError" && Array.isArray((error as { issues?: unknown }).issues));
@@ -85,6 +86,8 @@ export async function getResource(id: string) {
 }
 export async function createResource(body: unknown, context?: ResourceContext) {
   const input = resourceInputSchema.parse(body);
+  if (input.resourceType === "host" && input.presentation.cardMetrics) input.presentation = { ...input.presentation, ...cardMetricPresentation(input.presentation.cardMetrics) };
+  if (Object.keys(input.agentMonitoring).length) throw new BffError(400, "agent_monitoring_context_required");
   return transaction(async tx => {
     const created = await tx.monitoredResourceConfig.create({ data: input });
     await validateSelection(input, true, context);
@@ -92,17 +95,22 @@ export async function createResource(body: unknown, context?: ResourceContext) {
   });
 }
 export async function updateResource(id: string, body: unknown, context?: ResourceContext) {
-  const patch = resourcePatchSchema.parse(body);
+  const { expectedRevision, ...patch } = resourcePatchSchema.parse(body);
   return transaction(async tx => {
     const current = await tx.monitoredResourceConfig.findUniqueOrThrow({ where: { id } });
-    const fields = Object.fromEntries(Object.entries(current).filter(([key]) => !["id", "createdAt", "updatedAt"].includes(key)));
-    const input = resourceInputSchema.parse({ ...fields, ...patch });
+    if (expectedRevision !== undefined && current.revision !== expectedRevision) throw new BffError(409, "revision_conflict");
+    const fields = Object.fromEntries(Object.entries(current).filter(([key]) => !["id", "revision", "createdAt", "updatedAt"].includes(key)));
+    const identityChanged = (patch.resourceType !== undefined && patch.resourceType !== current.resourceType) || (patch.zabbixHostKey !== undefined && patch.zabbixHostKey !== current.zabbixHostKey);
+    const draft = resourceInputSchema.parse({ ...fields, ...patch, ...(identityChanged ? { agentMonitoring: {}, presentation: patch.presentation ?? {} } : { presentation: { ...(fields.presentation as Record<string, unknown>), ...patch.presentation } }) });
+    const input = draft.resourceType === "host" ? resourceInputSchema.parse({ ...draft, presentation: mergeCardMetricPresentation(hostPresentationSchema.parse(identityChanged ? {} : fields.presentation ?? {}), patch.presentation ?? {}) }) : draft;
     if (context || ["resourceType", "zabbixHostKey", "selectorType", "selectorValue"].some(key => key in patch && patch[key as keyof typeof patch] !== fields[key])) await validateSelection(input, true, context);
     return resourceResult(await tx.monitoredResourceConfig.update({ where: { id }, data: input }));
   });
 }
-export async function deleteResource(id: string) {
+export async function deleteResource(id: string, expectedRevision?: number) {
   return transaction(async tx => {
+    const current = await tx.monitoredResourceConfig.findUniqueOrThrow({ where: { id } });
+    if (expectedRevision !== undefined && current.revision !== expectedRevision) throw new BffError(409, "revision_conflict");
     await tx.monitoredResourceConfig.delete({ where: { id } });
     const { data } = presentationResult(await initialize(tx));
     let changed = false;

@@ -1,5 +1,25 @@
 # Monitoramento de VMs de Storage
 
+## Alerta de ocupação do disco
+
+Em **Serviços → Storages → Notificações deste serviço → Alerta de disco**, marque **Alertar ocupação do disco**, informe **Limite de disco (%)** (1–100) e clique em **Salvar alerta de disco**. A sugestão inicial é 70; só salvar ativa a regra. O limite significa percentual **ocupado**, usando a mesma capacidade ponderada dos cards. Salve primeiro o cadastro do Storage, caso ainda não exista.
+
+O alerta exige volumes explícitos. Ao marcar, o modal apresenta a seleção atual do card (raiz/único quando disponível) e a fixa ao salvar. Para escolher outros volumes ou confirmar independência de mais de um, use **Editar configuração**; depois revise o alerta. Uma montagem desaparecida não é substituída por outra. Ativação/novos volumes exigem descoberta e capacidade válidas; desativação e ajuste de limite existente, conservando seleção, funcionam durante falha de coleta.
+
+O Collector existente confirma após duas amostras novas e válidas separadas por pelo menos 30s. Recupera após o mesmo prazo abaixo de `limite − min(5, limite/2)`; para 70%, abaixo de 65%. Dado antigo/incompleto/ausente não abre nem recupera. O aviso é `usage`/Atenção, sem mudar a disponibilidade do Storage. Uma condição contínua gera um incidente, sem repetição a cada coleta ou após marcar como lido.
+
+Os 30s são um prazo mínimo: o intervalo/heartbeat dos itens Zabbix pode prolongar a confirmação. Reempacotar a mesma leitura em outro ciclo do Collector não conta como amostra nova.
+
+Confira **Storage crítico**, a política geral e **Notificações deste serviço → Entrega e sons → Uso acima do limite**. Histórico/leitura são compartilhados; som warning pelo player Kobra existente, respeitando mute, volume zero e cooldown. A configuração é independente das regras da VM/Agent em ASGARD; mantenha somente a desejada para evitar avisos de dois cadastros sobre o mesmo disco.
+
+O botão **Notificações deste serviço** fica no bloco da máquina, junto de **Editar configuração**, e abre seu próprio modal, dividido em **Alerta de disco** e **Entrega e sons**. Ativação/limite e preferências de entrega têm botões de salvamento próprios; alternar abas ou fechar não salva nem descarta rascunhos. **Editar configuração** mantém nome, apresentação, criticidade, volumes e rede, preservando o limite salvo. Restaurar padrões preserva criticidade, alerta ativo e os volumes desse alerta. Revisões continuam impedindo sobrescritas concorrentes.
+
+`diskWarningPercent` é privado do editor e persiste em `storage_config.disk_warning_percent` (nullable). Requisição legada que omite o campo preserva o valor existente; null explícito desativa. Mudar limite/seleção cancela somente `metric:disk`, preservando histórico, disponibilidade e problemas Zabbix. Capturas anteriores à edição não reativam a regra antiga. GET/PUT e revisão são os mesmos.
+
+A migration aditiva `20261029120000_storage_disk_alert` mantém cadastros anteriores com alerta desativado. Atualizar Web/Collector e aplicar migrations no procedimento autorizado; reiniciar o Collector existente e recarregar clientes ao disponibilizar em outro ambiente. Sem worker, rota, player ou consulta Zabbix por card adicionais. Consulte [Notificações](notifications.md).
+
+No desenvolvimento local, depois de aplicar a migration e gerar o Prisma Client, reinicie **a aplicação e o Collector**, pois os processos podem conservar o cliente/modelo anterior em memória. Recarregue o navegador. Não é necessário cadastrar novamente o Storage nem reiniciar os demais workers por esta funcionalidade. Se Web/Collector já carregaram o alerta de disco, os refinamentos de modais/abas exigem apenas o app atualizado e recarregar a página.
+
 Storage é um serviço descoberto pelo Collector Zabbix existente. A classificação exige uma tag do próprio host com o par **exato** `role=storage`, sensível a maiúsculas e espaços. Uma correspondência basta, mesmo após outra tag `role`. Hostname, endereço, VMID, tags de item e templates não classificam a máquina.
 
 ## Descoberta e identidade

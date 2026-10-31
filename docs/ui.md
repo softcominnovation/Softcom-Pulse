@@ -1,7 +1,5 @@
 # Interface do dashboard
 
-O `/monitor` possui uma [camada de compatibilidade para TVs](monitor-compatibility.md), selecionada por navegador, requisição de iframe ou por `?compat=1`. Ela entrega os cards e dados públicos já no HTML e usa CSS/JavaScript clássicos para atualização e controles. O acesso moderno direto permanece React; `?compat=0` permite comparar esse caminho também no iframe. A camada não amplia o acesso público nem altera cadastros; seus limites e a validação pendente no aparelho estão no guia.
-
 O sininho do cabeçalho abre a central de [notificações](notifications.md) em um Sheet Kobra. Histórico e leitura são compartilhados; apresentação pública permanece somente leitura. Avisos de eventos novos são temporários e sobrepostos, sem alterar a grade ou altura dos cards, inclusive em TV/fullscreen. Mute e volume zero silenciam também esses avisos. O bloco legado comentado e `showStatusBanner` permanecem preservados.
 
 Storage acrescenta um contêiner em **Serviços → Storages**, com título e um painel por máquina, minicard com CPU/disco ocupado (%) e rodapé RX/TX da interface configurada na Disponibilidade, além do bloco `storage_summary` configurável por máquina. Serviços, painel grande, modal e prévia reutilizam `StoragePanel`; o minicard usa a mesma regra de disponibilidade. Os cabeçalhos dos painéis seguem nome **•** disponibilidade com `ServiceTitle`, conforme o guia Kobra. Não injeta blocos em telas existentes. Com Storage, layouts usam empacotamento por UUID e fallback explícito de rolagem; sem Storage, o layout anterior permanece. Novos fluxos seguem Kobra e sons centralizados. Uso e limites em [Storage](storage.md) e [Encaixe](overview-fit.md).
@@ -55,11 +53,13 @@ Atalhos: **T** para TV, **F** para fullscreen, **R** para alternar/parar. **Ctrl
 
 Toque, rolagem ou foco no conteúdo pausam até Continuar. Aba oculta e diálogo aberto suspendem a contagem; ao voltarem, retomam com intervalo completo, salvo pausa de leitura/parada manual. A mudança de slide preserva o shell e fullscreen. Ao sair da rota, requests, temporizador e listeners são encerrados; TV e fullscreen são desfeitos.
 
-Defaults de TV/autoStart valem na abertura. Depois disso, preferências locais não escrevem no PostgreSQL. Nova revisão é aplicada no limite do slide ou na retomada da leitura; aviso informa revisão pendente. Fora da reprodução, uma seleção manual pausada oferece “Aplicar configuração atualizada”. Tela removida/desabilitada é substituída imediatamente pela primeira apta, com aviso. Uma alteração remota nunca reinicia uma reprodução parada localmente.
+Defaults de TV/autoStart valem na abertura. **`/monitor` inicia com Modo TV ligado**, mesmo quando o default compartilhado está desligado ou a configuração ainda não carregou. O botão **Sair do modo TV** e o atalho T continuam disponíveis; polling, chegada tardia da configuração e tentativas de recarga não desfazem a saída manual. Reabrir/recarregar a rota pública inicia em TV novamente. Isso não solicita fullscreen, não altera a configuração no banco e não liga TV nos detalhes públicos; a raiz autenticada continua seguindo `defaultTvMode`.
+
+Depois da abertura, preferências locais não escrevem no PostgreSQL. Nova revisão é aplicada no limite do slide ou na retomada da leitura; aviso informa revisão pendente. Fora da reprodução, uma seleção manual pausada oferece “Aplicar configuração atualizada”. Tela removida/desabilitada é substituída imediatamente pela primeira apta, com aviso. Uma alteração remota nunca reinicia uma reprodução parada localmente.
 
 ### Exibição em iframe
 
-O `/monitor` pode ser incorporado em outra origem, inclusive em iframe com origem isolada por `sandbox="allow-scripts"`. A incorporação mantém os layouts, a escala e os defaults de TV/alternância desta versão. As consultas públicas não dependem de cookies; suas permissões e o gate de host estão descritos no [BFF](bff.md).
+O `/monitor` pode ser incorporado em outra origem, inclusive em iframe com origem isolada por `sandbox="allow-scripts"`. O dashboard usa as mesmas telas, dimensões, escala, alternância e Modo TV da navegação direta. As consultas públicas não dependem de cookies; suas permissões e o gate de host estão descritos no [BFF](bff.md). Não é necessário liberar as rotas privadas para incorporar o painel.
 
 ```html
 <iframe
@@ -70,11 +70,11 @@ O `/monitor` pode ser incorporado em outra origem, inclusive em iframe com orige
 ></iframe>
 ```
 
-Usar a URL absoluta do ambiente desejado. Em outra máquina ou TV, `localhost` aponta para esse dispositivo, portanto usar a URL publicada do Pulse. Scripts precisam estar habilitados pelo iframe e pela página hospedeira. A permissão de fullscreen do iframe só é necessária se essa ação for utilizada.
+Usar a URL absoluta do ambiente desejado. Scripts precisam estar habilitados pelo iframe e pela página hospedeira. TV ajusta a interface e não solicita fullscreen automaticamente; a permissão de fullscreen do iframe só é necessária se essa ação for utilizada.
 
 Se `localStorage` estiver bloqueado, o inventário WhatsApp conserva seu estado em memória e não interrompe os providers globais nem o carregamento do monitoramento. Tema e áudio mantêm seus fallbacks existentes; preferências locais sem persistência são perdidas ao recarregar. Mute, volume zero e a exigência de interação do navegador para desbloquear áudio continuam valendo.
 
-Validar a origem isolada usando o build de produção (`npm run build` seguido de `npm start`), não `npm run dev`: Next dev possui bloqueios próprios de origem dos assets e ferramentas de navegação que consultam cookies. Os testes de interface em `tests/e2e/public-iframe.spec.ts` cobrem iframe entre origens, armazenamento bloqueado e proteção das rotas; o teste `public monitor supports isolated iframe origins and blocked storage in production`, em `tests/runtime/production.test.mjs`, cobre também a origem opaca e cookies indisponíveis contra o standalone, com dados de demonstração e preservação do default de TV desta versão. O teste no browser específico da TV continua sendo uma validação separada.
+Os testes de interface cobrem iframe entre origens e armazenamento bloqueado. O teste `public monitor supports isolated iframe origins and blocked storage in production`, em `tests/runtime/production.test.mjs`, verifica também a origem opaca e cookies indisponíveis contra o servidor standalone real. Esses cenários exigem build prévio; o servidor Next de desenvolvimento possui restrições próprias de origem dos assets e ferramentas de navegação que consultam cookies. A validação local não substitui o teste no navegador específico da TV.
 
 ## Entrada por inatividade
 
@@ -143,3 +143,17 @@ Atualização segue refreshAfterMs somente enquanto aberto e visível, sem sobre
 Diálogos Radix mantêm foco contido, Escape e retorno ao acionador; se a linha deixou de existir, o foco retorna à região estável da tabela. Cabeçalho/fechar permanecem fora do corpo rolável. O detalhe com gráfico pode ter 920px; o inventário de workloads, 1240px, ambos limitados ao espaço disponível por percentuais, inclusive com zoom CSS de 200%. São extensões de largura para dados reais; cores, bordas, tipografia, paddings e hierarquia usam o componente `Dialog` atual e seus estilos Kobra. Tabelas possuem rolagem interna e todas as ações continuam acessíveis no celular. A matriz de Serviços/modais foi verificada de 320px a 1920px, incluindo tablet, paisagem, toque e teclado; homologação física adicional permanece separada.
 
 Implementação em `components/services`, com estados/rótulos em `lib/services/presentation.ts`, wrapper em `lib/server/monitoring/vm-workloads.ts` e testes em `tests/e2e/services.spec.ts` e na integração de configuração. Nenhuma migration, alteração de credenciais ou escrita externa é necessária.
+
+## Alertas e exibição da VM
+
+O editor compartilhado em ASGARD/VMs e Signal configura limites do Agent, volumes monitorados e os dois medidores do minicard. Revisões impedem sobrescrever mudanças de outra tela. O [guia de alertas das VMs](vm-agent-alerts.md) detalha os controles, fontes, política, simulação demo e condições sem leitura.
+
+Em **Serviços → Signal → Serviços do cluster**, **Adicionar serviço** abre um diálogo Kobra, com campos em duas colunas quando há espaço e corpo rolável no celular. Adicionar/Cancelar permanecem no rodapé visível. Fechar preserva o rascunho; erro/conflito também; sucesso fecha, limpa e atualiza a lista. Catálogo, prefixo, métricas, criticidade, revisões e API continuam os mesmos. Os controles dos serviços já cadastrados permanecem nos respectivos cards.
+
+Storage e o alvo Signal possuem botão próprio para **Notificações deste serviço**, separado da configuração do cadastro. Exceções abrem em modal também nos demais editores; a política geral continua em Configurações. Não expandir a longa política dentro de outro formulário nem fazer o card crescer. Rascunhos das notificações ficam fora do portal e o foco retorna ao acionador ao fechar.
+
+O modal de notificações do Storage separa **Alerta de disco** de **Entrega e sons** em abas Kobra, evitando acumular os dois formulários na mesma rolagem. Ativação e limite ficam na primeira aba; nome, apresentação, criticidade, volumes e rede continuam em Editar configuração. Estado fora do portal preserva ambos os rascunhos; cada salvamento usa a revisão e o endpoint já existentes da sua configuração.
+
+## Apresentação compatível do monitor público
+
+A entrada `/monitor` também dispõe de HTML/CSS/scripts clássicos para TVs e iframes restritos. Seleção, funcionalidades atuais, composição nativa, rolagem, notificações e limites estão em [Compatibilidade do monitor](monitor-compatibility.md). O aplicativo React e suas telas administrativas permanecem com os componentes e regras atuais.

@@ -301,6 +301,8 @@ for (const [width,height] of [[320,568],[360,800],[390,844],[768,1024],[1024,768
     await page.getByLabel("Filtrar host").selectOption("linux-operacao");
     await expect(page.locator(".vm-summary")).toHaveCount(0);
     await page.getByRole("link",{name:"Linux operação",exact:true}).click();
+    await expect(page).toHaveURL(/\/hosts\/linux-operacao(?:\?|$)/);
+    await expect(page.getByRole("heading",{name:"Linux operação",exact:true,level:1})).toBeVisible();
     await expect(page.getByRole("region",{name:"Histórico de Linux operação"}).locator("canvas")).toHaveCount(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({path:`.cache/screenshots/phase06-agent-${width}.png`,fullPage:true});

@@ -164,38 +164,37 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
 .light .metric-meter { background: #ddd; }
 .light .service-separator { color: #171717; }
 @media (max-width: 1100px) { .brand-caption { display: none; } .presentation-toolbar, .presentation-toolbar h1, .presentation-controls { display: block; } .presentation-controls { text-align: left; margin-top: 9px; } .pulse-topbar { padding: 10px 15px; } .pulse-brand { width: 220px; } .pulse-brand strong { font-size: 20px; } }
-@media (max-width: 760px) { body:not([data-viewport-fit]) .compat-row, body:not([data-viewport-fit]) .compat-cell { display: block; width: 100% !important; height: auto !important; } .compat-row { padding: 0 5px; } .compat-cell { margin: 8px 0; } .card-wrap { width: 50%; } .dashboard-kpis { display: block; } .dashboard-kpi { display: inline-block; width: 48%; margin: 1%; } .pulse-topbar, .pulse-brand { display: block; width: 100%; } .top-actions { width: 100%; justify-content: flex-start; margin-top: 12px; } .clock { display: none; } main { padding: 5px; } .dashboard-footer { display: block; line-height: 18px; } .metric-grid { border-spacing: 5px 0; } .storage-extra { display: block; } .storage-extra > .reading { display: inline-block; width: 48%; } .compat-modal { padding: 7px; } .modal-panel { margin: 8px auto; } #compat-modal-body { padding: 10px; } }
+@media (max-width: 760px) { .compat-row, .compat-cell { display: block; width: 100% !important; height: auto !important; } .compat-row { padding: 0 5px; } .compat-cell { margin: 8px 0; } .card-wrap { width: 50%; } .dashboard-kpis { display: block; } .dashboard-kpi { display: inline-block; width: 48%; margin: 1%; } .pulse-topbar, .pulse-brand { display: block; width: 100%; } .top-actions { width: 100%; justify-content: flex-start; margin-top: 12px; } .clock { display: none; } main { padding: 5px; } .dashboard-footer { display: block; line-height: 18px; } .metric-grid { border-spacing: 5px 0; } .storage-extra { display: block; } .storage-extra > .reading { display: inline-block; width: 48%; } .compat-modal { padding: 7px; } .modal-panel { margin: 8px auto; } #compat-modal-body { padding: 10px; } }
 
-/* Enabled only by the classic /monitor controller. No-JS clients keep normal document flow. */
-html[data-viewport-fit], body[data-viewport-fit] { width: 100%; height: 100%; min-height: 0; overflow: hidden; }
-/* The root clips the document. A zoomed body must allow the expanded fixed canvas through. */
-body[data-viewport-fit] { overflow: visible; }
-body[data-viewport-fit] #compat-viewport { position: fixed; left: 0; top: 0; width: 100%; height: 100%; overflow: hidden; }
-#compat-zoom-sensor { position: absolute; left: 0; top: 0; width: 100px; height: 100px; margin: 0; padding: 0; border: 0; visibility: hidden; pointer-events: none; }
-#compat-zoom-reference { position: absolute; left: 0; top: 0; width: 100px; height: 100px; margin: 0; padding: 0; border: 0; zoom: 2; }
-body[data-viewport-fit] #compat-shell { display: flex; flex-direction: column; }
-body[data-viewport-fit] .pulse-topbar { display: flex; flex: none; }
-body[data-viewport-fit] .pulse-brand { width: 250px; }
-body[data-viewport-fit].tv-mode .pulse-brand { width: 210px; }
-body[data-viewport-fit] .top-actions { width: auto; justify-content: flex-end; margin-top: 0; }
-body[data-viewport-fit] .clock { display: block; }
-body[data-viewport-fit] main { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; min-width: 0; }
-body[data-viewport-fit] .presentation-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; flex: none; }
-body[data-viewport-fit] .presentation-toolbar h1 { display: block; }
-body[data-viewport-fit] .presentation-controls { display: block; margin-left: auto; text-align: right; }
-body[data-viewport-fit] #compat-screen { max-width: 220px; }
-body[data-viewport-fit] #compat-status { flex: none; }
-body[data-viewport-fit] #compat-content, body[data-viewport-fit] .compat-evidence, body[data-viewport-fit] .dashboard-blocks { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; min-width: 0; }
-body[data-viewport-fit] .compat-evidence > .compat-warning, body[data-viewport-fit] .monitor-status, body[data-viewport-fit] .compat-summary, body[data-viewport-fit] .dashboard-footer { flex: none; }
-body[data-viewport-fit] .dashboard-kpis { display: table; }
-body[data-viewport-fit] .dashboard-kpi { display: table-cell; width: auto; margin: 0; }
-body[data-viewport-fit] .compat-row { display: flex; align-items: stretch; flex: none; width: 100%; padding: 5px; border-spacing: 0; }
-body[data-viewport-fit] .compat-cell { display: flex; flex-direction: column; flex: 0 0 auto; height: auto; min-height: 0; margin: 0; padding: 0 5px; }
-body[data-viewport-fit] .compat-cell > .dashboard-panel { flex: 1 1 0; height: auto; min-height: 0; }
-/* One vertical scroll owner per fitted table/inventory panel; children keep their natural height. */
-body[data-viewport-fit] .panel-content > .table-scroll, body[data-viewport-fit] .panel-content > .host-card-grid { max-height: none !important; overflow: visible; }
-body[data-viewport-fit] .content-sized .compat-cell { display: block; }
-body[data-viewport-fit] .card-wrap { width: 238px; }
-body[data-viewport-fit] .split-row .card-wrap { width: 25%; }
-body[data-viewport-fit] .storage-extra { display: table; }
-body[data-viewport-fit] .storage-extra > .reading { display: table-cell; width: auto; }
+
+/* Native flex layout; explicit root CSS zoom expands the viewport without scaling the canvas. */
+@media (min-width: 761px) and (min-height: 480px) {
+  html, body, #compat-viewport, #compat-shell { height: 100%; min-height: 0; width: 100%; }
+  html, body { overflow: hidden; }
+  html[data-monitor-zoom] body { overflow: visible; }
+  html[data-monitor-zoom] #compat-viewport { position: fixed; left: 0; top: 0; }
+  html[data-monitor-zoom] .compat-modal, html[data-monitor-zoom] .modal-backdrop, html[data-monitor-zoom] .compat-toast { position: absolute; }
+  #compat-shell, main, #compat-content, .compat-evidence, .dashboard-blocks { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  #compat-shell { height: 100%; }
+  .pulse-topbar, .presentation-toolbar, .compat-summary, .compat-warning, .monitor-status, .dashboard-footer { flex: none; }
+  main, #compat-content, .compat-evidence, .dashboard-blocks { flex: 1 1 0; }
+  .dashboard-blocks { overflow: auto; }
+  .compat-row { display: flex; flex: 1 1 0; min-height: 140px; padding: 5px; border-spacing: 0; }
+  .compat-cell { display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0; padding: 0 5px; }
+  .compat-cell > .dashboard-panel { flex: 1 1 0; min-height: 0; }
+  .compat-row.content-sized { flex: 0 1 auto; min-height: 216px; max-height: 45%; }
+  .content-sized .compat-cell > .dashboard-panel { flex: 0 1 auto; height: auto; }
+  .panel-content > .table-scroll, .panel-content > .host-card-grid { max-height: none !important; overflow: visible; }
+  .presentation-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+  .presentation-toolbar h1 { display: block; }
+  .presentation-controls { display: block; margin-left: auto; }
+  .card-wrap { width: 238px; }
+  .split-row .card-wrap { width: 25%; }
+}
+.notification-filters { display: flex; flex-wrap: wrap; align-items: end; margin-bottom: 12px; }
+.notification-filters > * { margin: 0 8px 8px 0; }
+.notification-filters label { display: flex; flex-direction: column; font-size: 11px; }
+.notification-filters input { font: inherit; padding: 8px; color: inherit; background: transparent; border: 1px solid #777; border-radius: 8px; }
+.notification-tabs { display: flex; flex-wrap: wrap; margin-bottom: 12px; }
+.notification-tabs button { margin: 0 6px 6px 0; }
+.notification-error { color: #ed5158; }

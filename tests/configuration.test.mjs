@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { resourceInputSchema, resourcePatchSchema } from "../lib/config/resources.ts";
-import { initialPresentation, presentationWriteSchema } from "../lib/config/presentation.ts";
+import { initialPresentation, presentationWriteSchema, withReadingPlayback } from "../lib/config/presentation.ts";
 import { compileSelector, resolveResource } from "../lib/monitoring/selectors.ts";
 import { metricSchema, hostSchema, containerSchema } from "../lib/monitoring/contracts.ts";
 import { snapshotTiming, readResult } from "../lib/server/cache/snapshots.ts";
@@ -80,6 +80,16 @@ test("presentation limits, IDs, references and rotation are strict", () => {
   base.settings.screens.push(settings().settings.screens[0]);
   base.settings.rotation.autoStart = true;
   assert.equal(presentationWriteSchema.safeParse(base).success, true);
+});
+test("reading save stores TV mode and rotation, and keeps the last rotation when the interval is invalid", () => {
+  const { settings: confirmed } = settings();
+  const saved = withReadingPlayback(confirmed, { defaultTvMode: true, rotation: { autoStart: true, intervalSeconds: 30 }, displayScalePercent: 125 });
+  assert.equal(saved.defaultTvMode, true);
+  assert.deepEqual(saved.rotation, { autoStart: true, intervalSeconds: 30 });
+  assert.equal(saved.displayScalePercent, 125);
+  const kept = withReadingPlayback(confirmed, { defaultTvMode: true, rotation: { autoStart: true, intervalSeconds: 1 } });
+  assert.equal(kept.defaultTvMode, true);
+  assert.deepEqual(kept.rotation, confirmed.rotation);
 });
 test("unknown metrics remain null, observed zero remains zero, and DTOs strip internal identifiers", () => {
   const at = new Date().toISOString();

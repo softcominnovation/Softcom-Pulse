@@ -5,6 +5,7 @@ import { id, overview } from "../fixtures/dashboard";
 import { effectiveOptions } from "../../lib/config/presentation";
 import { publicStorage } from "../../lib/storage/presentation";
 import { enterNativeFullscreen, exitNativeFullscreen } from "../fixtures/fullscreen";
+import { notificationFixture } from "../fixtures/notifications";
 
 test("Storage Services edits real preferences, keeps drafts on conflict/poll and confirms reset", async ({ page }) => {
   const state = await storageUiFixture(page);
@@ -50,6 +51,122 @@ test("Storage Services edits real preferences, keeps drafts on conflict/poll and
   await page.getByRole("dialog", { name: "Restaurar padrões de Storage?" }).getByRole("button", { name: "Cancelar" }).click();
   await expect(dialog.getByLabel("Nome do Storage", { exact: true })).toHaveValue("My Archive");
   await dialog.getByRole("button", { name: "Cancelar", exact: true }).click();
+});
+
+for (const width of [390, 1366]) test(`Storage disk warning uses the card volumes, retains conflicting drafts and can be disabled at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  const state = await storageUiFixture(page), notifications = await notificationFixture(page);
+  const original = structuredClone(state.configs[0]);
+  notifications.targets.push({ ref: `storage:${original.id}`, label: original.displayName!, critical: true, enabled: true });
+  await signIn(page); await page.goto("/servicos#storages");
+  const trigger = page.locator("#storages").getByRole("button", { name: "Notificações deste serviço", exact: true });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Notificações do serviço", exact: true });
+  const enabled = dialog.getByLabel("Alertar ocupação do disco", { exact: true }), limit = dialog.getByLabel("Limite de disco (%)", { exact: true });
+  await expect(enabled).not.toBeChecked(); await expect(limit).toBeDisabled();
+  await enabled.check(); await expect(limit).toHaveValue("70");
+  await expect(dialog.getByText("Volumes monitorados: /. A seleção é feita em Editar configuração.", { exact: true })).toBeVisible();
+  await limit.fill("101"); await dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true }).click(); expect(state.writes).toHaveLength(0);
+  await limit.fill("75"); state.conflict = true;
+  await dialog.getByRole("tab", { name: "Entrega e sons", exact: true }).click();
+  await dialog.getByLabel("Som deste serviço", { exact: true }).selectOption("off");
+  await dialog.getByRole("tab", { name: "Alerta de disco", exact: true }).click();
+  await dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true }).click();
+  await expect(dialog.getByText("Esta configuração foi alterada", { exact: false })).toBeVisible(); await expect(limit).toHaveValue("75");
+  await page.keyboard.press("Escape"); await expect(trigger).toBeFocused(); await trigger.click(); await expect(limit).toHaveValue("75");
+  state.conflict = false; await dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true }).click(); await expect.poll(() => state.writes.length).toBe(1);
+  expect(state.writes[0].diskWarningPercent).toBe(75); expect(state.writes[0].filesystemKeys).toEqual([state.items[0].volumes[0].key]);
+  for (const key of ["displayName", "description", "critical", "dashboardEnabled", "displayOrder", "networkInterfaceKey"] as const) expect(state.writes[0][key]).toEqual(original[key]);
+  await dialog.getByRole("tab", { name: "Entrega e sons", exact: true }).click();
+  await expect(dialog.getByLabel("Som deste serviço", { exact: true })).toHaveValue("off"); expect(notifications.writes).toBe(0);
+  await dialog.getByRole("tab", { name: "Alerta de disco", exact: true }).click();
+  await expect(limit).toBeEnabled(); await expect(limit).toHaveValue("75");
+  await dialog.screenshot({ path: `.cache/storage-validation/notifications-disk-${width}.png` });
+  await page.keyboard.press("Escape"); await trigger.click(); await expect(limit).toHaveValue("75");
+  await enabled.uncheck(); await dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true }).click(); await expect.poll(() => state.writes.length).toBe(2);
+  expect(state.writes.at(-1)!.diskWarningPercent).toBeNull();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+for (const width of [390, 1366]) test(`Storage separates configuration and notification dialogs without changing saved preferences at ${width}px`, async ({ page }) => {
+  const height = width > 700 ? 768 : 844;
+  await page.setViewportSize({ width, height });
+  const state = await storageUiFixture(page), notifications = await notificationFixture(page);
+  const ref = `storage:${state.configs[0].id}`;
+  notifications.targets.push({ ref, label: state.items[0].displayName, critical: true, enabled: true });
+  await signIn(page); await page.goto("/servicos#storages");
+  const panel = page.locator("#storages .storage-panel"), trigger = panel.getByRole("button", { name: "Notificações deste serviço", exact: true });
+  await panel.getByRole("button", { name: /Configurar Storage/ }).click();
+  const config = page.getByRole("dialog", { name: "Configuração de Storage", exact: true });
+  await expect(config.getByRole("button", { name: "Notificações deste serviço", exact: true })).toHaveCount(0);
+  await expect(config.getByLabel("Limite de disco (%)", { exact: true })).toHaveCount(0);
+  await expect(config.getByLabel("Alertar ocupação do disco", { exact: true })).toHaveCount(0);
+  await config.getByRole("button", { name: "Cancelar", exact: true }).click();
+  const before = (await panel.boundingBox())!;
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Notificações do serviço", exact: true });
+  await expect(config).toHaveCount(0); await expect(dialog).toContainText(state.items[0].displayName);
+  await dialog.getByLabel("Alertar ocupação do disco", { exact: true }).check();
+  await dialog.getByLabel("Limite de disco (%)", { exact: true }).fill("83");
+  const size = (await dialog.boundingBox())!; expect(size.width).toBeLessThanOrEqual(width - 30); expect(size.height).toBeLessThanOrEqual(height - 30);
+  await dialog.getByRole("tab", { name: "Entrega e sons", exact: true }).click();
+  await dialog.getByLabel("Som deste serviço", { exact: true }).selectOption("off");
+  await page.keyboard.press("Escape"); await expect(trigger).toBeFocused(); await trigger.click();
+  await expect(dialog.getByLabel("Som deste serviço", { exact: true })).toHaveValue("off");
+  await dialog.getByRole("tab", { name: "Alerta de disco", exact: true }).click();
+  await expect(dialog.getByLabel("Limite de disco (%)", { exact: true })).toHaveValue("83");
+  await dialog.getByRole("tab", { name: "Entrega e sons", exact: true }).click();
+  await dialog.getByRole("button", { name: "Salvar notificações deste serviço", exact: true }).click();
+  await expect.poll(() => notifications.policy.overrides[ref]?.sound).toBe("off");
+  await dialog.getByRole("tab", { name: "Alerta de disco", exact: true }).click();
+  await expect(dialog.getByLabel("Limite de disco (%)", { exact: true })).toHaveValue("83");
+  await dialog.getByRole("button", { name: "Fechar diálogo", exact: true }).click();
+  await expect(trigger).toBeFocused(); expect(state.writes).toHaveLength(0);
+  expect((await panel.boundingBox())!.height).toBeCloseTo(before.height, 0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("Storage configuration saves and restores presentation defaults without changing its active disk alert", async ({ page }) => {
+  const state = await storageUiFixture(page);
+  Object.assign(state.configs[0], { diskWarningPercent: 75, filesystemKeys: [state.items[0].volumes[0].key] });
+  await signIn(page); await page.goto("/servicos#storages");
+  await page.getByRole("button", { name: /Configurar Storage/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Configuração de Storage", exact: true });
+  await expect(dialog.getByLabel("Limite de disco (%)", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByLabel("Selecionar volumes manualmente", { exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Restaurar padrões", exact: true }).click();
+  await page.getByRole("dialog", { name: "Restaurar padrões de Storage?", exact: true }).getByRole("button", { name: "Restaurar padrões", exact: true }).click();
+  await expect(dialog.getByLabel("/", { exact: true })).toBeChecked();
+  await dialog.getByRole("button", { name: "Salvar Storage", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(state.writes[0].diskWarningPercent).toBe(75);
+  expect(state.writes[0].filesystemKeys).toEqual([state.items[0].volumes[0].key]);
+  expect(state.writes[0].critical).toBe(true);
+});
+
+test("Storage notifications reload a changed configuration before enabling a disk alert and allow disabling on stale inventory", async ({ page }) => {
+  const state = await storageUiFixture(page), notifications = await notificationFixture(page);
+  notifications.targets.push({ ref: `storage:${state.configs[0].id}`, label: state.items[0].displayName, critical: true, enabled: true });
+  await signIn(page); await page.goto("/servicos#storages");
+  const trigger = page.locator("#storages").getByRole("button", { name: "Notificações deste serviço", exact: true });
+  const dialog = page.getByRole("dialog", { name: "Notificações do serviço", exact: true });
+  await trigger.click(); await expect(dialog.getByLabel("Limite de disco (%)", { exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /Configurar Storage/ }).click();
+  const config = page.getByRole("dialog", { name: "Configuração de Storage", exact: true });
+  await config.getByLabel("Nome do Storage", { exact: true }).fill("Archive Renamed");
+  await config.getByRole("button", { name: "Salvar Storage", exact: true }).click(); await expect(config).toHaveCount(0);
+  await trigger.click(); await expect(dialog).toContainText("Archive Renamed");
+  const enabled = dialog.getByLabel("Alertar ocupação do disco", { exact: true });
+  await enabled.check(); await dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true }).click();
+  await expect.poll(() => state.writes.length).toBe(2); expect(state.writes[1].displayName).toBe("Archive Renamed");
+  await page.keyboard.press("Escape"); state.items[0].stale = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("pulse:preferences-changed")));
+  await trigger.click(); await expect(dialog.getByText("Descoberta indisponível ou antiga.", { exact: false })).toBeVisible();
+  await expect(enabled).toBeEnabled(); await enabled.uncheck();
+  await dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true }).click();
+  await expect.poll(() => state.writes.length).toBe(3); expect(state.writes[2].diskWarningPercent).toBeNull();
+  await expect(enabled).toBeDisabled(); expect(notifications.writes).toBe(0);
 });
 
 test("Storage minicard preserves dimensions and loads details only when opened, with focus return", async ({ page }) => {

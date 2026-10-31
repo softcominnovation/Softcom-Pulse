@@ -1,3 +1,6 @@
+import { withAgentCards } from "../monitoring/agent-presentation.ts";
+import { resolveCardCpuRam } from "../../monitoring/card-metrics.ts";
+import { freshness } from "../monitoring/inventory.ts";
 import "server-only";
 import { Prisma } from "../../../generated/prisma/client.ts";
 import { ZodError } from "zod";
@@ -90,13 +93,14 @@ type LinkInventory = {
   availability: string | null;
   cpuUsagePercent: number | null;
   memoryUsagePercent: number | null;
+  agentHostKey?: string | null; cardMetrics?: import("../../config/agent-monitoring.ts").CardMetric[]; diskUsagePercent?: number | null;
 };
 
 async function resolveInventory(links: LinkRow[]) {
   const empty = new Map<string, LinkInventory>();
   if (!links.length) return empty;
   const batch = await readSnapshotBatch([snapshotKeys.hosts]).catch(() => null);
-  const hosts = batch ? snapshotData(batch, snapshotKeys.hosts, z.array(hostSchema), []) : [];
+  const hosts = batch ? await withAgentCards(freshness(snapshotData(batch, snapshotKeys.hosts, z.array(hostSchema), []), readResult(null,batch,[snapshotKeys.hosts]).stale)) : [];
   const inventory = batch ? readResult(hosts, batch, [snapshotKeys.hosts]) : null;
   const stale = inventory?.stale ?? true;
   const map = new Map<string, LinkInventory>();
@@ -112,20 +116,28 @@ async function resolveInventory(links: LinkRow[]) {
         map.set(link.id, { status: "missing", name: null, availability: null, cpuUsagePercent: null, memoryUsagePercent: null });
         continue;
       }
+      const agent = hosts.find(h => h.hostKey === vm.linuxHostKey);
+      const preferred = agent ? resolveCardCpuRam(agent, hosts, agent.agentCard?.metricsSource ?? "hypervisor").metrics : vm.metrics;
+      const disk = agent?.agentCard?.capacity.usagePercent;
       map.set(link.id, {
+        agentHostKey: agent?.hostKey ?? null, cardMetrics: agent?.agentCard?.cardMetrics, diskUsagePercent: !stale && disk?.quality === "fresh" && disk.validUntil && Date.parse(disk.validUntil)>Date.now() ? disk.value : null,
         status: stale ? "stale" : "ready",
         name: vm.displayName ?? vm.name,
         availability: vm.state,
-        cpuUsagePercent: vm.metrics.cpuUsagePercent?.value ?? null,
-        memoryUsagePercent: vm.metrics.memoryUsagePercent?.value ?? null,
+        cpuUsagePercent: preferred.cpuUsagePercent?.value ?? null,
+        memoryUsagePercent: preferred.memoryUsagePercent?.value ?? null,
       });
     } else {
+      const preferred = resolveCardCpuRam(host, hosts, host.agentCard?.metricsSource ?? "hypervisor").metrics;
+      const disk = host.agentCard?.capacity.usagePercent;
       map.set(link.id, {
+        agentHostKey: host.role === "linux" ? host.hostKey : null, cardMetrics: host.agentCard?.cardMetrics,
+        diskUsagePercent: !stale && disk?.quality === "fresh" && disk.validUntil && Date.parse(disk.validUntil) > Date.now() ? disk.value : null,
         status: stale ? "stale" : "ready",
         name: host.displayName ?? host.name,
         availability: host.availability,
-        cpuUsagePercent: host.metrics.cpuUsagePercent?.value ?? null,
-        memoryUsagePercent: host.metrics.memoryUsagePercent?.value ?? null,
+        cpuUsagePercent: preferred.cpuUsagePercent?.value ?? null,
+        memoryUsagePercent: preferred.memoryUsagePercent?.value ?? null,
       });
     }
   }
@@ -136,6 +148,7 @@ function publicLink(link: LinkRow, inventory: LinkInventory) {
   return {
     id: link.id, role: link.role, label: link.label, hostKey: link.hostKey, vmKey: link.vmKey,
     parentHostKey: link.parentHostKey, inventoryStatus: inventory.status,
+    agentHostKey: inventory.agentHostKey ?? null, cardMetrics: inventory.cardMetrics, diskUsagePercent: inventory.diskUsagePercent ?? null,
     inventoryName: inventory.name, inventoryAvailability: inventory.availability,
     cpuUsagePercent: inventory.cpuUsagePercent, memoryUsagePercent: inventory.memoryUsagePercent,
     createdAt: link.createdAt.toISOString(), updatedAt: link.updatedAt.toISOString(),
@@ -211,9 +224,11 @@ async function assemble(rows: TargetRow[]) {
     servicesByTarget.set(service.targetId, list);
   }
   const missing: LinkInventory = { status: "missing", name: null, availability: null, cpuUsagePercent: null, memoryUsagePercent: null };
+  const agentHosts = evidence ? await withAgentCards(evidence.hosts) : [];
   return rows.map(row => {
     const links = byTarget.get(row.id) ?? [];
     const services = resolveRows({
+      agentHosts,
       rows: (servicesByTarget.get(row.id) ?? []).map(service => ({ ...service, flowKpi: service.flowKpi === "database" || service.flowKpi === "redis" ? service.flowKpi : null })),
       links: links.map(link => ({ hostKey: link.hostKey, vmKey: link.vmKey, parentHostKey: link.parentHostKey })),
       ...observed,
@@ -332,7 +347,7 @@ export function listSignalServiceCards() {
       id: service.id, targetId: target.id, displayName: service.displayName, servicePrefix: service.servicePrefix,
       critical: service.critical, displayOrder: service.displayOrder, enabled: service.enabled, dashboardEnabled: service.dashboardEnabled,
       panelEnabled: service.panelEnabled, flowKpi: service.flowKpi, kpiLabel: service.kpiLabel, tone: service.tone,
-      hostKey: service.hostKey, vmName: service.vmName, cpu: service.cpu, memory: service.memory, uptimeSeconds: service.uptimeSeconds, reason: service.reason,
+      cardMetrics: service.cardMetrics, disk: service.disk, hostKey: service.hostKey, vmName: service.vmName, cpu: service.cpu, memory: service.memory, uptimeSeconds: service.uptimeSeconds, reason: service.reason,
     })));
   });
 }
@@ -532,7 +547,7 @@ export function createSignalService(targetId: string, body: unknown) {
         const count = await tx.signalService.count({ where: { targetId } });
         if (count >= signalServiceLimit) throw new BffError(409, "signal_service_limit");
         await tx.signalService.create({ data: {
-          targetId, displayName: input.displayName, servicePrefix: input.servicePrefix, enabled: input.enabled,
+          targetId, displayName: input.displayName, servicePrefix: input.servicePrefix, cardMetrics: input.cardMetrics, enabled: input.enabled,
           dashboardEnabled: input.dashboardEnabled, panelEnabled: input.panelEnabled, flowKpi: input.flowKpi,
           critical: input.critical, displayOrder: input.displayOrder,
         } });

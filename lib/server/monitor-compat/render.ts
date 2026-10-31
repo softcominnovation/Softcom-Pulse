@@ -13,9 +13,11 @@ import type { StorageView } from "../../storage/contracts.ts";
 import { publicVpsNetworkLabel, vpsMonitorLabel, vpsReasonColor, vpsStrip, vpsUptimeLabel } from "../../vps/labels.ts";
 import type { CompatibleMonitor } from "./read.ts";
 import { notificationMessages } from "../../notifications/contracts.ts";
-import { mergeCardCpuRam, resolveCardCpuRam } from "../../monitoring/card-metrics.ts";
+import { availabilityCardSlots, mergeCardCpuRam, resolveCardCpuRam } from "../../monitoring/card-metrics.ts";
 import { healthReasons, healthStates, resolutionLabel, severities } from "../../services/presentation.ts";
 import { monitorIcon, type MonitorIcon } from "./icons.ts";
+import { pulseAlertTabIcon, pulseTabIcon } from "../../notifications/tab-icon.ts";
+import { compatibleAssetUrl } from "./assets.ts";
 
 export function escapeMonitorHtml(value: unknown) {
   return String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
@@ -33,10 +35,10 @@ function heading(title: string, state = "", icon: MonitorIcon = "server") { retu
 function panel(title: string, body: string, foot = "", state = "", icon: MonitorIcon = "server") { return `<section class="dashboard-panel">${heading(title, state, icon)}<div class="panel-content" tabindex="0" role="region" aria-label="Conteúdo de ${h(title)}">${body}</div>${foot ? `<footer class="panel-foot">${foot}</footer>` : ""}</section>`; }
 function controlContent(icon: MonitorIcon, label: string) { return `${monitorIcon(icon)}<span data-control-label>${h(label)}</span>`; }
 function empty(text: string) { return `<p class="panel-empty">${h(text)}</p>`; }
-function reading(label: string, metric: Metric | undefined, stale: boolean, now: number, series = "cpu") {
+function reading(label: string, metric: Metric | undefined, stale: boolean, now: number, series = "cpu", currentOnly = false, context = "") {
   const valid = currentMetric(metric, stale, now), old = isOld(metric, stale, now);
   const width = valid && metric?.unit === "percent" ? Math.min(100, Math.max(0, metric.value!)) : 0;
-  return `<div class="reading${old ? " metric-old" : ""}"${expiry(metric?.validUntil)} title="${h(old ? "Dado desatualizado · " : "")}${h(stamp(metric?.observedAt))}"><span>${h(label)}</span><strong>${h(metricValue(metric))}</strong><span class="metric-meter ${series}"><i style="width:${width}%"></i></span></div>`;
+  return `<div class="reading${old ? " metric-old" : ""}"${expiry(metric?.validUntil)} title="${h(context ? context + " · " : "")}${h(old ? "Dado desatualizado · " : "")}${h(stamp(metric?.observedAt))}"><span>${h(label)}</span><strong>${currentOnly && !valid ? "—" : h(metricValue(metric))}</strong><span class="metric-meter ${series}"><i style="width:${width}%"></i></span></div>`;
 }
 function rawMetric(label: string, metric: Metric | undefined, stale: boolean, now: number) { return `<div class="reading${isOld(metric, stale, now) ? " metric-old" : ""}"${expiry(metric?.validUntil)} title="${h(stamp(metric?.observedAt))}"><span>${h(label)}</span><strong>${h(metricValue(metric))}</strong></div>`; }
 function percent(label: string, value: number | null, series = "cpu") {
@@ -62,6 +64,12 @@ function resourceReadings(item: ConfiguredResource, stale: boolean, now: number)
     + (p.showMemory ? reading("RAM", item.metrics.memoryUsagePercent ?? item.metrics.memoryUsedBytes, stale, now, "memory") : "")
     + (p.showDisk ? reading("Disco", item.metrics.diskUsagePercent ?? item.metrics.diskUsedBytes, stale, now, "disk") : "");
 }
+function resourceMiniReadings(item: ConfiguredResource, stale: boolean, now: number) {
+  return availabilityCardSlots(item.config.presentation, item.config.resourceType).map(kind => {
+    const metric = kind === "cpu" ? item.metrics.cpuUsagePercent : kind === "memory" ? item.metrics.memoryUsagePercent ?? (item.config.presentation.cardMetrics ? undefined : item.metrics.memoryUsedBytes) : item.metrics.diskUsagePercent;
+    return reading(kind === "cpu" ? "CPU" : kind === "memory" ? "RAM" : "Disco", metric, stale, now, kind === "memory" ? "memory" : kind, !!item.config.presentation.cardMetrics || kind === "disk", kind === "disk" ? item.cardDiskLabel ?? "Disco do recurso" : "");
+  }).join("");
+}
 function resourceDetail(item: ConfiguredResource, stale: boolean, now: number) {
   const p = item.config.presentation;
   const container = item.resource && "reference" in item.resource ? item.resource : null;
@@ -82,7 +90,7 @@ function miniCard(card: AvailabilityPanelCard, blockId: string, stale: boolean, 
       const item = card.item, status = serviceAvailability(item, stale, now);
       const title = item.config.displayName ?? item.resource?.displayName ?? item.resource?.name ?? item.config.zabbixHostKey;
       const footer = item.config.presentation.showUptime && currentMetric(item.metrics.uptimeSeconds, stale, now) ? `Ativo ${metricValue(item.metrics.uptimeSeconds)}` : `Leitura ${stamp(item.resource?.evidence.observedAt)}`;
-      return cardFrame(id, title, item.config.description || item.linkedVmName || item.config.zabbixHostKey, badge(status.label, status.tone, item.resource?.evidence.validUntil), `<span class="metric-grid">${resourceReadings(item, stale, now)}</span>`, `<span>${h(item.config.serviceType ?? "Host")}</span><strong>${h(footer)}</strong>`, resourceDetail(item, stale, now));
+      return cardFrame(id, title, item.config.description || item.linkedVmName || item.config.zabbixHostKey, badge(status.label, status.tone, item.resource?.evidence.validUntil), `<span class="metric-grid">${resourceMiniReadings(item, stale, now)}</span>`, `<span>${h(item.config.serviceType ?? (item.config.resourceType === "host" ? (item.resource && !("reference" in item.resource) && item.resource.role === "linux" ? "Host · Agent" : "Host") : "Container"))}</span><strong>${h(footer)}</strong>`, resourceDetail(item, stale, now));
     }
     case "storage": {
       const item = card.item, status = storageStatus({ ...item, stale: stale || item.stale }, now), network = item.selectedInterface;
@@ -102,7 +110,8 @@ function miniCard(card: AvailabilityPanelCard, blockId: string, stale: boolean, 
     }
     case "signal_service": {
       const item = card.item;
-      return cardFrame(id, item.displayName, item.servicePrefix, badge(item.kpiLabel, item.tone), `<span class="metric-grid">${percent("CPU", item.cpu)}${percent("RAM", item.memory, "memory")}</span>`, `<span>${h(item.vmName ?? "VM não associada")}</span><strong>${h(item.flowKpi === "database" ? "Banco" : item.flowKpi === "redis" ? "Redis" : "Serviço")}</strong>`, `<p>${h(item.reason)}</p><div class="metric-grid">${percent("CPU", item.cpu)}${percent("RAM", item.memory, "memory")}</div>`);
+      const uptime = item.uptimeSeconds == null ? "—" : item.uptimeSeconds >= 3600 ? `${Math.floor(item.uptimeSeconds / 3600)} h` : `${Math.floor(item.uptimeSeconds / 60)} min`;
+      return cardFrame(id, item.displayName, item.servicePrefix, badge(item.kpiLabel, item.tone), `<span class="metric-grid">${(item.cardMetrics ?? ["cpu", "memory"]).map(kind => percent(kind === "cpu" ? "CPU" : kind === "memory" ? "RAM" : "Disco", kind === "cpu" ? item.cpu : kind === "memory" ? item.memory : item.disk ?? null, kind === "memory" ? "memory" : kind)).join("")}</span>`, `<span>${h(item.vmName ?? item.hostKey ?? "Cluster")}</span><strong>${h(uptime)}</strong>`, `<p>${h(item.reason)}</p><div class="metric-grid">${percent("CPU", item.cpu)}${percent("RAM", item.memory, "memory")}${percent("Disco da VM", item.disk ?? null, "disk")}</div>`);
     }
   }
 }
@@ -158,7 +167,7 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
       const cards = resolved.cards;
       const split = model.layout === "overview" && model.screen.overviewGrid === "split";
       const visibleRows = split ? Math.max(2, options.visibleRows) : options.visibleRows;
-      return panel("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${visibleRows * 128 + 2}px">${cards.map(card => miniCard(card, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM na infraestrutura · latência nas aplicações · faixa Signal/VPS", "", "box");
+      return panel("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${visibleRows * 128 + 2}px">${cards.map(card => miniCard(card, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM / disco conforme configuração · latência nas aplicações · faixa Signal/VPS", "", "box");
     }
     case "asgard_summary": return asgardPanel(block.data as AsgardSummary, configuration, stale, now);
     case "storage_summary": return storagePanel((block.data as { target: StorageView | null }).target, stale, now, effectiveOptions({ ...configuration, type: "storage_summary" }).visibleRows);
@@ -219,11 +228,11 @@ export function renderCompatibleContent(model: CompatibleMonitor) {
   const summaries = composition.summaries.map(block => `<div class="compat-summary">${renderBlock(model, block)}</div>`).join("");
   const rows = composition.rows.map(row => `<div class="compat-row${row.contentSized ? " content-sized" : ""}${row.paired ? " split-row" : ""}" data-min-height="${row.minimum}">${row.blocks.map(({ block, span }) => `<div class="compat-cell block-${block.type}" style="width:${span / 12 * 100}%" data-block-id="${h(block.id)}">${renderBlock(model, block)}</div>`).join("")}</div>`).join("");
   const old = model.error || model.overview?.stale;
-  return `<div class="compat-evidence${old ? " is-stale" : ""}" data-updated-at="${h(model.overview?.lastUpdated)}">${old ? `<p class="compat-warning" role="alert">${h(model.error ?? "Dados desatualizados. Confira o horário de cada leitura.")}</p>` : ""}${model.document.showStatusBanner ? `<p class="monitor-status">${h(model.overview?.availability === "ready" ? "Monitoramento atualizado" : "Aguardando dados do monitoramento")} · ${h(stamp(model.overview?.lastUpdated))}</p>` : ""}${summaries}<div class="dashboard-blocks" aria-busy="false">${rows}</div><footer class="dashboard-footer"><span><i class="status-dot tone-good"></i>Disponível · <i class="status-dot tone-warn"></i>Atenção · <i class="status-dot tone-bad"></i>Indisponível · <i class="status-dot tone-unknown"></i>Desconhecido / sem dados</span><span>Horários de Fortaleza · UTC−3 · Leitura ${h(stamp(model.overview?.lastUpdated))}</span></footer></div>`;
+  return `<div class="compat-evidence${old ? " is-stale" : ""}" data-updated-at="${h(model.overview?.lastUpdated)}">${old ? `<p class="compat-warning" role="alert">${h(model.error ?? "Dados desatualizados. Confira o horário de cada leitura.")}</p>` : ""}${model.document.showStatusBanner ? `<p class="monitor-status">${h(model.overview?.availability === "ready" ? "Monitoramento atualizado" : "Aguardando dados do monitoramento")} · ${h(stamp(model.overview?.lastUpdated))}</p>` : ""}${summaries}<div class="dashboard-blocks" aria-busy="false" tabindex="0" role="region" aria-label="Composição da tela">${rows}</div><footer class="dashboard-footer"><span><i class="status-dot tone-good"></i>Disponível · <i class="status-dot tone-warn"></i>Atenção · <i class="status-dot tone-bad"></i>Indisponível · <i class="status-dot tone-unknown"></i>Desconhecido / sem dados</span><span>Horários de Fortaleza · UTC−3 · Leitura ${h(stamp(model.overview?.lastUpdated))}</span></footer></div>`;
 }
 
 export function compatibleMonitorState(model: CompatibleMonitor) {
-  return { screenId: model.screen.id, screens: model.screens.map(screen => ({ id: screen.id, name: screen.name })), revision: model.document.revision, layout: model.layout, tv: model.tv, theme: model.theme, scale: model.document.displayScalePercent, autoStart: model.document.rotation.autoStart, intervalMs: model.document.rotation.intervalSeconds * 1000, refreshAfterMs: model.refreshAfterMs, serverTime: new Date(model.now).toISOString(), messages: notificationMessages };
+  return { screenId: model.screen.id, screens: model.screens.map(screen => ({ id: screen.id, name: screen.name })), revision: model.document.revision, layout: model.layout, tv: model.tv, theme: model.theme, scale: model.document.displayScalePercent, autoStart: model.document.rotation.autoStart, intervalMs: model.document.rotation.intervalSeconds * 1000, refreshAfterMs: model.refreshAfterMs, serverTime: new Date(model.now).toISOString(), messages: notificationMessages, tabIcons: { normal: pulseTabIcon, alert: pulseAlertTabIcon }, audioAdapterUrl: compatibleAssetUrl("monitor-compat-audio.js") };
 }
 function scriptData(value: unknown) { return JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, character => "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0")); }
 
@@ -234,12 +243,11 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#191919"><title>${h(appName)}</title>
-  <link rel="icon" href="/favicon.ico"><link rel="stylesheet" href="/monitor-compat.css">
+  <link id="compat-tab-icon" rel="icon" href="${h(pulseTabIcon)}"><link rel="stylesheet" href="${h(compatibleAssetUrl("monitor-compat.css"))}">
   <noscript><meta http-equiv="refresh" content="${Math.ceil(model.refreshAfterMs / 1000)}"></noscript>
 </head>
 <body class="${model.tv ? "tv-mode" : ""}">
 <div id="compat-viewport">
-<span id="compat-zoom-sensor" aria-hidden="true"><i id="compat-zoom-reference"></i></span>
 <div id="compat-shell">
   <a class="skip-link" href="#main">Ir para o conteúdo</a>
   <header class="pulse-topbar">
@@ -276,18 +284,19 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
     <div id="compat-content">${renderCompatibleContent(model)}</div>
   </main>
 </div>
-</div>
 <div id="compat-modal" class="compat-modal" role="dialog" aria-modal="true" aria-labelledby="compat-modal-title" hidden>
   <div class="modal-backdrop" data-close-modal></div>
   <section class="modal-panel"><header><h2 id="compat-modal-title">Detalhes</h2><button type="button" class="control" data-close-modal aria-label="Fechar">${monitorIcon("close")}</button></header><div id="compat-modal-body"></div></section>
 </div>
 <button type="button" id="compat-toast" class="compat-toast" hidden></button>
 <div id="compat-announcement" class="sr-only" role="status" aria-live="polite"></div>
+</div>
 <script id="compat-state" type="application/json">${scriptData(state)}</script>
-<script src="/monitor-compat.js" defer></script>
+<style id="compat-density"></style>
+<script src="${h(compatibleAssetUrl("monitor-compat.js"))}" defer></script>
 </body></html>`;
 }
 
 export function renderCompatibleFailure(message: string, appName: string) {
-  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="20"><title>${h(appName)}</title><link rel="stylesheet" href="/monitor-compat.css"></head><body><main><h1>${h(appName)}</h1><section class="dashboard-panel"><h2>Não foi possível carregar o monitoramento</h2><p>${h(message)}</p><p>A atualização será tentada novamente em 20 segundos.</p><a class="control" href="/monitor?compat=1">Tentar novamente</a></section></main></body></html>`;
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="20"><title>${h(appName)}</title><link rel="stylesheet" href="${h(compatibleAssetUrl("monitor-compat.css"))}"></head><body><main><h1>${h(appName)}</h1><section class="dashboard-panel"><h2>Não foi possível carregar o monitoramento</h2><p>${h(message)}</p><p>A atualização será tentada novamente em 20 segundos.</p><a class="control" href="/monitor?compat=1">Tentar novamente</a></section></main></body></html>`;
 }

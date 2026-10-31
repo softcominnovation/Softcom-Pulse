@@ -1,4 +1,7 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+import type { ClusterService } from "../../components/services/signal-cluster-services";
+import { notificationFixture } from "../fixtures/notifications";
+import { mkdir } from "node:fs/promises";
 import { adminFixture } from "../fixtures/admin";
 import { servicesFixture } from "../fixtures/services";
 import { signIn } from "../fixtures/infrastructure";
@@ -26,6 +29,72 @@ const signalTarget = {
     cpuUsagePercent: 2.8, memoryUsagePercent: 42.9,
   }], createdAt: checkedAt, updatedAt: checkedAt,
 };
+
+async function signalDialogFixture(page: Page) {
+  await servicesFixture(page);
+  const notifications = await notificationFixture(page), target = { ...structuredClone(signalTarget), services: [] as ClusterService[] };
+  notifications.targets.push({ ref: `signal_target:${target.id}`, label: target.displayName, critical: true, enabled: true });
+  const state = { target, notifications, conflict: true, serviceWrites: [] as Record<string, unknown>[], configWrites: [] as Record<string, unknown>[] };
+  await page.route("**/api/monitoring/signal-targets", route => route.fulfill({ json: { data: [target] } }));
+  await page.route(`**/api/monitoring/signal-targets/${target.id}`, route => { state.configWrites.push(route.request().postDataJSON()); return route.fulfill({ json: { data: target } }); });
+  await page.route(`**/api/monitoring/signal-targets/${target.id}/services/candidates`, route => route.fulfill({ json: { truncated: false, data: [{ hostKey: "vm-signal-manager", name: "stack_postgres.1.fixture", suggestedPrefix: "stack_postgres" }, { hostKey: "vm-signal-manager", name: "stack_redis.1.fixture", suggestedPrefix: "stack_redis" }] } }));
+  await page.route(`**/api/monitoring/signal-targets/${target.id}/services`, route => {
+    const body = route.request().postDataJSON(); state.serviceWrites.push(body);
+    if (state.conflict) return route.fulfill({ status: 409, json: { error: { code: "revision_conflict" } } });
+    const service: ClusterService = { ...body, id: id(919), revision: 1, kpiLabel: "Sem leitura", tone: "unknown", vmName: null, hostKey: null, reason: "missing" };
+    target.services.push(service); target.revision++;
+    return route.fulfill({ json: { data: service } });
+  });
+  return state;
+}
+
+for (const width of [390, 1366]) test(`Signal cluster registration modal preserves drafts, candidates and revisions at ${width}px`, async ({ page }) => {
+  const height = width > 700 ? 768 : 844;
+  await page.setViewportSize({ width, height });
+  const state = await signalDialogFixture(page); await signIn(page); await page.goto("/servicos#signal");
+  const cluster = page.getByRole("region", { name: "Serviços do cluster", exact: true });
+  const trigger = cluster.getByRole("button", { name: "Adicionar serviço", exact: true });
+  await expect(cluster.getByLabel("Prefixo do serviço", { exact: true })).toHaveCount(0);
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Adicionar serviço do cluster", exact: true });
+  await dialog.getByLabel("Bloco do Signal", { exact: true }).selectOption("database");
+  await dialog.getByLabel("Containers disponíveis", { exact: true }).selectOption("stack_postgres");
+  await dialog.getByLabel("Nome", { exact: true }).fill("Banco principal");
+  await dialog.getByLabel("Métricas do novo minicard", { exact: true }).selectOption("cpu,disk");
+  await dialog.getByLabel("Crítico, para notificar", { exact: true }).check();
+  await dialog.getByLabel("Card na Disponibilidade", { exact: true }).check();
+  await page.keyboard.press("Escape"); await expect(trigger).toBeFocused(); expect(state.serviceWrites).toHaveLength(0);
+  await trigger.click(); await expect(dialog.getByLabel("Nome", { exact: true })).toHaveValue("Banco principal");
+  const size = (await dialog.boundingBox())!; expect(size.width).toBeLessThanOrEqual(width - 30); expect(size.height).toBeLessThanOrEqual(height - 30);
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await mkdir(".cache/screenshots", { recursive: true });
+  await dialog.screenshot({ path: `.cache/screenshots/signal-cluster-registration-${width}.png` });
+  await dialog.getByRole("button", { name: "Adicionar", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("alterada em outra sessão");
+  await expect(dialog.getByLabel("Prefixo do serviço", { exact: true })).toHaveValue("stack_postgres");
+  state.conflict = false; await dialog.getByRole("button", { name: "Adicionar", exact: true }).click();
+  await expect(dialog).toHaveCount(0); await expect(cluster.locator(".signal-cluster-card .availability-name")).toHaveText("Banco principal");
+  expect(state.serviceWrites.at(-1)).toMatchObject({ expectedTargetRevision: 1, displayName: "Banco principal", servicePrefix: "stack_postgres", cardMetrics: ["cpu", "disk"], flowKpi: "database", critical: true, dashboardEnabled: true });
+  await trigger.click(); await expect(dialog.getByLabel("Nome", { exact: true })).toHaveValue("");
+  await dialog.getByRole("button", { name: "Cancelar", exact: true }).click(); await expect(trigger).toBeFocused();
+});
+
+for (const width of [390, 1366]) test(`Signal notification modal saves independently of its configuration draft at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: width > 700 ? 768 : 844 });
+  const state = await signalDialogFixture(page); await signIn(page); await page.goto("/servicos#signal");
+  const signal = page.getByRole("region", { name: "Softcom Signal", exact: true });
+  await signal.getByRole("button", { name: "Editar", exact: true }).click();
+  await signal.getByLabel("Nome", { exact: true }).fill("Rascunho do Signal");
+  await expect(signal.locator(".signal-edit-form").getByRole("button", { name: "Notificações deste serviço", exact: true })).toHaveCount(0);
+  await signal.getByRole("button", { name: "Notificações deste serviço", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Notificações do serviço", exact: true });
+  await dialog.getByLabel("Som deste serviço", { exact: true }).selectOption("off");
+  await dialog.getByRole("button", { name: "Salvar notificações deste serviço", exact: true }).click();
+  await expect.poll(() => state.notifications.policy.overrides[`signal_target:${state.target.id}`]?.sound).toBe("off");
+  await dialog.getByRole("button", { name: "Fechar diálogo", exact: true }).click();
+  await expect(signal.getByLabel("Nome", { exact: true })).toHaveValue("Rascunho do Signal"); expect(state.configWrites).toHaveLength(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
 
 test("signal panel on services shows metrics and keeps DLQ from forcing attention badge", async ({ page }) => {
   await servicesFixture(page);

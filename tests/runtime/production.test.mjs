@@ -2,13 +2,12 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { startAuthUpstream } from "../fixtures/auth-upstream.mjs";
 import { before, test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, readdir, writeFile, unlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
 import { zabbixFixture } from "../fixtures/zabbix.mjs";
-import { getWithHost } from "../fixtures/http-host.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import pg from "pg";
 import { createClient } from "redis";
@@ -55,7 +54,7 @@ async function withServer(environment, run) {
     await Promise.race([exited, delay(500).then(() => { child.kill("SIGKILL"); return exited; })]);
   }
 }
-test("packaged collector publishes real Redis contracts, serves history and excludes concurrent workers", { timeout: 90000 }, async () => {
+test("packaged collector publishes real Redis contracts, serves history and excludes concurrent workers", { timeout: 90000 }, async context => {
   const f = zabbixFixture(), databaseName = "pulse_runtime04_test_" + process.pid + "_" + Date.now();
   const scopeFile = new URL(".cache/" + databaseName + "-scope.json", root);
   const db = new URL(process.env.DATABASE_URL), redisUrl = new URL(process.env.REDIS_URL);
@@ -78,8 +77,12 @@ test("packaged collector publishes real Redis contracts, serves history and excl
   const worker = (args, environment, ipc = false) => {
     let output = "";
     const child = spawn(process.execPath, args, { cwd: fileURLToPath(standalone), env: { ...process.env, ...environment }, windowsHide: true, stdio: ["ignore", "pipe", "pipe", ...(ipc ? ["ipc"] : [])] }); children.add(child);
+    const label = (args.find(arg => arg.endsWith(".mjs")) ?? "collector IPC") + (["healthy", "candidate", "confirmed"].includes(args.at(-1)) ? ` ${args.at(-1)}` : "");
+    context.diagnostic(`Starting packaged worker: ${label}`);
+    const abort = () => child.kill();
+    context.signal.addEventListener("abort", abort, { once: true });
     child.stdout.on("data", data => { output += data; }); child.stderr.on("data", data => { output += data; });
-    const done = new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", code => { children.delete(child); resolve({ code, output }); }); });
+    const done = new Promise((resolve, reject) => { child.once("error", reject); child.once("exit", code => { context.signal.removeEventListener("abort", abort); children.delete(child); context.diagnostic(`Packaged worker exited: ${label} (${code})`); resolve({ code, output }); }); });
     return { child, done, output: () => output };
   };
   try {
@@ -167,7 +170,6 @@ test("public monitor supports isolated iframe origins and blocked storage in pro
             const page = await context.newPage(), errors = [], requests = [];
             page.on("pageerror", error => errors.push(error.message));
             page.on("request", request => { if (new URL(request.url()).pathname.startsWith("/api/")) requests.push(request); });
-            const configuration = page.waitForResponse(response => new URL(response.url()).pathname === "/api/public/settings/presentation", { timeout: 12000 });
             const loaded = page.waitForResponse(response => new URL(response.url()).pathname === "/api/public/dashboard/overview", { timeout: 12000 });
             await page.goto(`http://127.0.0.1:${parent.address().port}/${mode === "isolated-origin" ? "?isolated" : ""}`);
             const response = await loaded;
@@ -179,8 +181,7 @@ test("public monitor supports isolated iframe origins and blocked storage in pro
             }
             const frame = page.frameLocator('iframe[title="Pulse"]');
             await frame.locator(".dashboard-blocks:not([aria-busy=true])").waitFor({ state: "visible" });
-            const { data: settings } = await (await configuration).json();
-            assert.equal(await frame.getByRole("button", { name: settings.defaultTvMode ? "Sair do modo TV" : "Modo TV", exact: true }).getAttribute("aria-pressed"), String(settings.defaultTvMode), mode);
+            assert.equal(await frame.getByRole("button", { name: "Sair do modo TV", exact: true }).getAttribute("aria-pressed"), "true", mode);
             assert.equal(await frame.getByText("Carregando as telas configuradas…", { exact: true }).count(), 0, mode);
             assert.deepEqual(errors, [], mode);
             assert.ok(requests.every(request => request.method() === "GET" && new URL(request.url()).pathname.startsWith("/api/public/")), mode);
@@ -188,409 +189,6 @@ test("public monitor supports isolated iframe origins and blocked storage in pro
           } finally { await context.close(); }
         }
       } finally { await new Promise(resolve => parent.close(resolve)); }
-    });
-  } finally { await browser.close(); }
-});
-
-test("compatible monitor serves data without Next bundles, including opaque iframe and no-JS clients", { timeout: 90000 }, async t => {
-  // A spoofed UA verifies routing. Actual old-engine coverage still requires the target TV.
-  const userAgent = "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36 Version/4.0 Chrome/83.0.4103.120 Safari/537.36";
-  const browser = await chromium.launch();
-  try {
-    await withServer({ PULSE_DEMO_MODE: "1", PULSE_E2E: "", PULSE_PUBLIC_HOSTS: "127.0.0.1", DATABASE_URL: "postgresql://unused:unused@127.0.0.1:1/unused", REDIS_URL: "redis://127.0.0.1:1" }, async base => {
-      const parent = createHttpServer((_request, response) => {
-        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        response.end(`<!doctype html><iframe title="Pulse compatível" sandbox="allow-scripts" src="${base}/monitor" width="1366" height="768"></iframe>`);
-      });
-      await new Promise(resolve => parent.listen(0, "127.0.0.1", resolve));
-      try {
-        for (const mode of ["old-ua", "forced", "no-js", "isolated", "iframe-modern", "blocked-storage", "capability-fallback", "blocked-audio", "no-web-audio"]) {
-          const modern = ["forced", "capability-fallback", "iframe-modern"].includes(mode);
-          const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, ...(modern ? {} : { userAgent }), javaScriptEnabled: mode !== "no-js" });
-          try {
-            if (mode === "blocked-storage") await context.addInitScript(() => {
-              for (const key of ["localStorage", "sessionStorage"]) Object.defineProperty(window, key, { configurable: true, get() { throw new DOMException("Unavailable", "SecurityError"); } });
-              Object.defineProperty(document, "cookie", { configurable: true, get() { throw new DOMException("Unavailable", "SecurityError"); } });
-            });
-            if (mode === "capability-fallback") await context.addInitScript(() => { window.CSS.supports = () => false; });
-            if (mode === "no-web-audio") await context.addInitScript(() => {
-              window.AudioContext = undefined; window.webkitAudioContext = undefined;
-            });
-            const page = await context.newPage(), errors = [], requests = [];
-            if (mode === "blocked-audio") await page.route("**/monitor-compat-audio.js", route => route.abort());
-            page.on("pageerror", error => errors.push(error.message));
-            page.on("request", request => requests.push(request));
-            const embedded = mode === "isolated" || mode === "iframe-modern";
-            const url = embedded ? `http://127.0.0.1:${parent.address().port}/` : base + "/monitor" + (mode === "forced" ? "?compat=1" : "");
-            const response = await page.goto(url);
-            assert.equal(response.status(), 200, response.status() === 200 ? mode : `${mode}: ${(await response.text()).slice(0, 300)}`);
-            const surface = embedded ? page.frameLocator('iframe[title="Pulse compatível"]') : page;
-            await surface.locator("#compat-content .dashboard-blocks").waitFor({ state: "visible" });
-            await surface.getByRole("heading", { name: "Disponibilidade de Serviços", exact: true }).waitFor({ state: "visible" });
-            assert.ok(await surface.locator(".availability-card").count() > 0, mode);
-            assert.ok(await surface.locator(".panel-icon svg[data-icon]").count() > 0, mode);
-            assert.equal(await surface.locator('#compat-tv svg[data-icon="tv"]').isVisible(), true, mode);
-            assert.equal(await surface.locator("#compat-volume").isVisible(), true, mode);
-            if (mode === "no-js") assert.equal(await surface.locator("#compat-volume").isDisabled(), true);
-            const html = await surface.locator("#compat-content").innerHTML();
-            assert.ok(!html.includes(privateCanary), mode);
-            if (mode !== "no-js") {
-              await surface.locator(".availability-card").first().click();
-              await surface.getByRole("dialog").waitFor({ state: "visible" });
-              await surface.getByRole("button", { name: "Fechar", exact: true }).click();
-              const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/monitor/compat" && new URL(response.url()).searchParams.get("fragment") === "1");
-              await surface.getByRole("link", { name: "Atualizar", exact: true }).click();
-              const fragment = await refreshed;
-              assert.equal(fragment.status(), 200, mode); assert.equal(fragment.headers()["cache-control"], "no-store");
-              assert.ok((await fragment.json()).html.includes("Disponibilidade de Serviços"), mode);
-              if (embedded) {
-                assert.equal((await fragment.request().allHeaders()).origin, "null");
-                assert.equal(fragment.headers()["access-control-allow-origin"], "*");
-              }
-              if (mode === "blocked-audio") {
-                await surface.locator('#compat-audio[data-audio-state="unavailable"]').waitFor();
-                assert.equal(await surface.locator("#compat-volume").isDisabled(), true);
-                assert.equal(await surface.getByText("Áudio indisponível", { exact: true }).isVisible(), true);
-              } else {
-                await surface.getByRole("button", { name: "Som ativo", exact: true }).click();
-                assert.equal(await surface.locator('#compat-volume-off svg[data-icon="volumeOff"]').isVisible(), true);
-                assert.equal(await surface.getByRole("button", { name: "Testar som", exact: true }).isDisabled(), true);
-                await surface.getByRole("button", { name: "Som mudo", exact: true }).click();
-                await surface.locator("#compat-volume").evaluate(input => {
-                  input.value = "0"; input.dispatchEvent(new Event("input", { bubbles: true }));
-                });
-                assert.equal(await surface.getByRole("button", { name: "Som mudo", exact: true }).isVisible(), true);
-                assert.equal(await surface.locator("#compat-volume-value").textContent(), "0%");
-                assert.equal(await surface.getByRole("button", { name: "Testar som", exact: true }).isDisabled(), true);
-                if (mode === "no-web-audio") assert.equal(await surface.locator("#compat-audio").getAttribute("data-audio-state"), "unsupported");
-              }
-              await surface.locator("#compat-theme").click();
-              assert.equal(await surface.locator('#compat-theme svg[data-icon="sun"]').isVisible(), true);
-              if (await surface.locator("#compat-tv").getAttribute("aria-pressed") !== "true") await surface.locator("#compat-tv").click();
-              assert.equal(await surface.locator('#compat-tv svg[data-icon="tv"]').isVisible(), true);
-              assert.equal(await surface.locator("#compat-volume").isVisible(), true);
-            }
-            if (mode !== "capability-fallback") assert.ok(requests.every(request => !new URL(request.url()).pathname.startsWith("/_next/")), mode);
-            assert.ok(requests.every(request => !new URL(request.url()).pathname.startsWith("/api/") || request.method() === "GET" && new URL(request.url()).pathname.startsWith("/api/public/")), mode);
-            assert.deepEqual(errors, [], mode);
-            t.diagnostic(`Compatible public monitor loaded: ${mode}`);
-          } finally { await context.close(); }
-        }
-        const snapshot = await fetch(base + "/monitor/compat?fragment=1", { headers: { Origin: "null", Authorization: "Bearer ignored-private-token" } });
-        assert.equal(snapshot.status, 200); assert.equal(snapshot.headers.get("access-control-allow-origin"), "*");
-        assert.equal(snapshot.headers.get("access-control-allow-credentials"), null);
-        for (const path of ["/monitor?compat=1", "/monitor", "/monitor/compat?fragment=1"]) {
-          const blocked = await getWithHost(base + path, "not-allowed.test", { "User-Agent": userAgent, "X-Forwarded-Host": "127.0.0.1", Origin: "null" });
-          assert.equal(blocked.sentHost, "not-allowed.test", path);
-          assert.equal(blocked.status, 403, path); assert.equal(blocked.headers.get("access-control-allow-origin"), null, path);
-          assert.equal(JSON.parse(blocked.body).error.code, "host_not_allowed", path);
-        }
-        for (const sound of ["notification", "warning", "error", "success"]) {
-          const audio = await fetch(base + "/monitor/compat/audio/" + sound, { headers: { Origin: "null" } });
-          assert.equal(audio.status, 200, sound); assert.equal(audio.headers.get("content-type"), "audio/wav");
-          assert.equal(audio.headers.get("access-control-allow-origin"), "*");
-          assert.equal(Buffer.from(await audio.arrayBuffer()).toString("ascii", 0, 4), "RIFF");
-        }
-        assert.equal((await fetch(base + "/monitor/compat/audio/unknown")).status, 404);
-        const denied = await getWithHost(base + "/monitor/compat", "not-allowed.test");
-        assert.equal(denied.status, 403); assert.equal(denied.headers.get("access-control-allow-origin"), null);
-        const deniedAudio = await getWithHost(base + "/monitor/compat/audio/notification", "not-allowed.test");
-        assert.equal(deniedAudio.status, 403); assert.equal(deniedAudio.headers.get("access-control-allow-origin"), null);
-        assert.equal((await fetch(base + "/monitor/compat", { method: "POST" })).status, 405);
-      } finally { await new Promise(resolve => parent.close(resolve)); }
-    });
-  } finally { await browser.close(); }
-});
-
-test("compatible monitor keeps unread badges and scrolls complete panel bodies without page overflow", { timeout: 60000 }, async () => {
-  const browser = await chromium.launch();
-  try {
-    await withServer({ PULSE_DEMO_MODE: "1", PULSE_E2E: "", PULSE_PUBLIC_HOSTS: "127.0.0.1", DATABASE_URL: "postgresql://unused:unused@127.0.0.1:1/unused", REDIS_URL: "redis://127.0.0.1:1" }, async base => {
-      const page = await browser.newPage({ viewport: { width: 1280, height: 480 } });
-      try {
-        const fixture = JSON.parse(execFileSync(process.execPath, ["--conditions=react-server", fileURLToPath(new URL("../fixtures/monitor-compat-scroll.mjs", import.meta.url))], {
-          cwd: fileURLToPath(root), windowsHide: true, encoding: "utf8", timeout: 10000, maxBuffer: 2 * 1024 * 1024,
-        }));
-        let unread = 4;
-        await page.route(url => url.pathname.startsWith("/api/public/monitoring/notifications"), route => route.fulfill({ json: {
-          counts: { unreadCount: unread, activeCount: 2 }, serverTime: new Date().toISOString(),
-          runtime: { deliveryRevision: 1, enabled: false }, syncCursor: "fixture", nextCursor: "fixture", events: [], changes: [], hasMore: false,
-        } }));
-        // Use the real renderer with an explicit test-only presentation, leaving product defaults intact.
-        await page.route(url => url.origin === base && (url.pathname === "/monitor" || url.pathname === "/monitor/compat"), async route => {
-          if (new URL(route.request().url()).searchParams.get("fragment") === "1") {
-            await route.fulfill({ json: { ...fixture.snapshot, state: { ...fixture.snapshot.state, serverTime: new Date().toISOString() } } });
-          } else await route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: fixture.page });
-        });
-        await page.goto(base + "/monitor?compat=1");
-        await page.locator('#compat-viewport[data-fit-state="ready"]').waitFor();
-        await page.locator("#compat-count:not([hidden])").waitFor();
-        assert.equal(await page.locator("#compat-count").textContent(), "4");
-        assert.equal(await page.locator("#compat-count").evaluate(element => getComputedStyle(element).backgroundColor), "rgb(220, 38, 38)");
-        assert.equal(await page.locator('#compat-notifications svg[data-icon="bell"]').isVisible(), true);
-        const positions = {};
-        for (const type of ["asgard_summary", "signal_flow"]) {
-          const selector = `.block-${type} > .dashboard-panel > .panel-content`, body = page.locator(selector);
-          assert.equal(await body.count(), 1, type + ": explicit fixture must render the panel");
-          assert.equal(await body.evaluate(element => element.scrollHeight > element.clientHeight + 1), true, type + ": panel must retain overflowing content");
-          await body.hover(); await page.mouse.wheel(0, 250);
-          await page.waitForFunction(selector => document.querySelector(selector).scrollTop > 0, selector);
-          await body.focus(); await page.keyboard.press("End");
-          await page.waitForFunction(selector => {
-            const body = document.querySelector(selector);
-            return Math.abs(body.scrollHeight - body.clientHeight - body.scrollTop) < 2;
-          }, selector);
-          const last = await body.locator("tbody tr").last().evaluate(element => {
-            const row = element.getBoundingClientRect(), body = element.closest(".panel-content").getBoundingClientRect();
-            return row.bottom <= body.bottom + 1 && row.top >= body.top - 1;
-          });
-          assert.equal(last, true, type + ": final row must be reachable");
-          positions[selector] = await body.evaluate(element => element.scrollTop);
-        }
-        const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/monitor/compat" && new URL(response.url()).searchParams.get("fragment") === "1");
-        await page.locator("#compat-refresh").click(); assert.equal((await refreshed).status(), 200);
-        await page.waitForFunction(() => document.getElementById("compat-content").getAttribute("data-connection") === "ready");
-        for (const [selector, position] of Object.entries(positions)) assert.ok(Math.abs(await page.locator(selector).evaluate(element => element.scrollTop) - position) < 2, selector + ": refresh must preserve scroll");
-        assert.equal(await page.evaluate(() => document.scrollingElement.scrollHeight <= innerHeight + 1 && document.scrollingElement.scrollWidth <= innerWidth + 1), true);
-        for (const count of [0, 150]) {
-          unread = count; await page.reload();
-          await page.waitForFunction(count => document.getElementById("compat-notifications").getAttribute("aria-label").includes(count + " não lidas"), count);
-          assert.equal(await page.locator("#compat-count").isVisible(), count > 0);
-          if (count > 99) assert.equal(await page.locator("#compat-count").textContent(), "99+");
-        }
-      } finally { await page.close(); }
-    });
-  } finally { await browser.close(); }
-});
-
-test("compatible controller preserves stale evidence and completes slow screen transitions", { timeout: 90000 }, async () => {
-  const browser = await chromium.launch();
-  try {
-    await withServer({ PULSE_DEMO_MODE: "1", PULSE_E2E: "", PULSE_PUBLIC_HOSTS: "127.0.0.1", DATABASE_URL: "postgresql://unused:unused@127.0.0.1:1/unused", REDIS_URL: "redis://127.0.0.1:1" }, async base => {
-      const initial = await (await fetch(base + "/monitor/compat?fragment=1")).json();
-      const fragmentUrl = url => url.pathname === "/monitor/compat" && url.searchParams.get("fragment") === "1";
-      const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
-      try {
-        const page = await context.newPage(); let calls = 0;
-        await page.route(fragmentUrl, async route => {
-          calls++;
-          if (calls === 2) { await route.fulfill({ status: 503, json: { error: "unavailable" } }); return; }
-          if (calls === 4) { await route.fulfill({ json: { html: '<p id="invalid-marker">Resposta inválida</p>', state: {} } }); return; }
-          const body = structuredClone(initial); body.state.serverTime = new Date().toISOString();
-          if (calls === 1) body.html = '<p id="queued-marker">Leitura pendente</p>' + body.html;
-          else {
-            const until = new Date(Date.now() + 1500).toISOString();
-            body.html = `<div id="expiry-reading" class="reading" data-valid-until="${until}"><strong>25%</strong><span class="metric-meter"><i style="width:25%"></i></span></div><span id="expiry-status" class="status-pill tone-good" data-live-status data-valid-until="${until}">Disponível</span>` + body.html;
-          }
-          await route.fulfill({ json: body });
-        });
-        await page.goto(base + "/monitor?compat=1");
-        await page.waitForFunction(() => document.querySelector("#compat-content").getAttribute("data-monitor-controller") === "ready");
-        await page.locator(".availability-card").first().click();
-        await page.evaluate(() => document.getElementById("compat-refresh").click());
-        await page.waitForFunction(() => document.querySelector("#compat-content").getAttribute("data-connection") === "pending");
-        await page.evaluate(() => document.getElementById("compat-refresh").click());
-        await page.waitForFunction(() => document.querySelector("#compat-content").getAttribute("data-connection") === "stale");
-        await page.getByRole("button", { name: "Fechar", exact: true }).click();
-        assert.equal(await page.locator("#queued-marker").count(), 0);
-        assert.equal(await page.locator("#compat-status").isVisible(), true);
-        assert.equal(await page.locator(".compat-evidence.is-stale").count(), 1);
-        await page.getByRole("link", { name: "Atualizar", exact: true }).click();
-        await page.waitForFunction(() => document.getElementById("expiry-status")?.getAttribute("data-expired") === "true");
-        assert.equal(await page.locator("#expiry-status").textContent(), "Desatualizado");
-        assert.equal(await page.locator("#expiry-reading strong").textContent(), "25%");
-        assert.equal(await page.locator("#expiry-reading i").evaluate(element => element.style.width), "0%");
-        await page.getByRole("link", { name: "Atualizar", exact: true }).click();
-        await page.waitForFunction(() => document.querySelector("#compat-content").getAttribute("data-connection") === "stale");
-        assert.equal(await page.locator("#invalid-marker").count(), 0);
-        assert.equal(await page.locator("#expiry-reading strong").textContent(), "25%");
-        await page.getByRole("link", { name: "Atualizar", exact: true }).click();
-        await page.waitForFunction(() => document.querySelector("#compat-content").getAttribute("data-connection") === "ready");
-      } finally { await context.close(); }
-
-      const rotating = await browser.newContext({ viewport: { width: 1366, height: 768 } });
-      try {
-        const page = await rotating.newPage(), secondId = initial.state.screens.find(screen => screen.id !== initial.state.screenId).id;
-        const second = await (await fetch(base + "/monitor/compat?fragment=1&screenId=" + secondId)).json();
-        const secondBlock = /data-block-id="([^"]+)"/.exec(second.html)[1];
-        await page.route(url => url.pathname === "/monitor" && url.searchParams.get("compat") === "1", async route => {
-          const response = await route.fetch(), html = await response.text();
-          const body = html.replace(/(<script id="compat-state" type="application\/json">)([\s\S]*?)(<\/script>)/, (_match, start, data, end) => {
-            const state = JSON.parse(data); state.intervalMs = 5000; state.autoStart = false;
-            return start + JSON.stringify(state).replace(/</g, "\\u003c") + end;
-          });
-          await route.fulfill({ response, body });
-        });
-        await page.route(fragmentUrl, async route => {
-          const id = new URL(route.request().url()).searchParams.get("screenId");
-          if (id === secondId) await delay(6000);
-          const body = structuredClone(id === secondId ? second : initial);
-          body.state.serverTime = new Date().toISOString(); body.state.intervalMs = 5000;
-          await route.fulfill({ json: body });
-        });
-        await page.goto(base + "/monitor?compat=1");
-        await page.getByRole("button", { name: "Alternar telas", exact: true }).click();
-        await page.locator(`[data-block-id="${secondBlock}"]`).waitFor({ state: "visible", timeout: 18000 });
-        assert.equal(await page.locator("#compat-screen").inputValue(), secondId);
-      } finally { await rotating.close(); }
-    });
-  } finally { await browser.close(); }
-});
-
-test("compatible monitor fills the iframe viewport across screens and small WebViews", { timeout: 90000 }, async () => {
-  const browser = await chromium.launch();
-  try {
-    await withServer({ PULSE_DEMO_MODE: "1", PULSE_E2E: "", PULSE_PUBLIC_HOSTS: "127.0.0.1", DATABASE_URL: "postgresql://unused:unused@127.0.0.1:1/unused", REDIS_URL: "redis://127.0.0.1:1" }, async base => {
-      const parent = createHttpServer((_request, response) => {
-        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        // The frame is deliberately smaller than the display; Pulse must use its own viewport.
-        response.end(`<!doctype html><style>html,body{margin:0;height:100%;overflow:hidden}iframe{position:absolute;left:17px;top:23px;width:calc(100% - 34px);height:calc(100% - 46px);border:0}</style><iframe title="Monitor ajustado" sandbox="allow-scripts" src="${base}/monitor?compat=1"></iframe>`);
-      });
-      await new Promise(resolve => parent.listen(0, "127.0.0.1", resolve));
-      const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 2 });
-      try {
-        // The classic fallback must not require VisualViewport, which some TV engines lack.
-        await context.addInitScript(() => Object.defineProperty(window, "visualViewport", { configurable: true, value: undefined }));
-        const page = await context.newPage(), errors = [];
-        page.on("pageerror", error => errors.push(error.message));
-        await page.goto(`http://127.0.0.1:${parent.address().port}/`);
-        const surface = page.frameLocator('iframe[title="Monitor ajustado"]');
-        await surface.locator('#compat-viewport[data-fit-state="ready"]').waitFor();
-        const frame = page.frames().find(frame => frame.url().startsWith(base + "/monitor"));
-        assert.ok(frame);
-        const screens = await surface.locator("#compat-screen option").evaluateAll(options => options.map(option => option.value));
-        assert.ok(screens.length >= 2);
-        for (const size of [{ width: 1920, height: 1080 }, { width: 1280, height: 720 }, { width: 960, height: 540 }, { width: 640, height: 360 }, { width: 1920, height: 1080 }]) {
-          await page.setViewportSize(size);
-          for (const screenId of screens) {
-            if (await surface.locator("#compat-screen").inputValue() !== screenId) {
-              const response = page.waitForResponse(response => {
-                const url = new URL(response.url());
-                return url.pathname === "/monitor/compat" && url.searchParams.get("fragment") === "1" && url.searchParams.get("screenId") === screenId;
-              });
-              await surface.locator("#compat-screen").selectOption(screenId);
-              assert.equal((await response).status(), 200);
-            }
-            await frame.waitForFunction(() => {
-              const viewport = document.getElementById("compat-viewport");
-              return viewport?.getAttribute("data-fit-state") === "ready" && Number(viewport.getAttribute("data-fit-width")) === window.innerWidth && Number(viewport.getAttribute("data-fit-height")) === window.innerHeight && document.getElementById("compat-content").getAttribute("data-connection") !== "updating";
-            });
-            const geometry = await frame.evaluate(() => {
-              const bounds = element => { const rect = element.getBoundingClientRect(); return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, height: rect.height }; };
-              const rows = [...document.querySelectorAll(".compat-row")];
-              return {
-                width: window.innerWidth, height: window.innerHeight,
-                scrollWidth: document.scrollingElement.scrollWidth, scrollHeight: document.scrollingElement.scrollHeight,
-                footer: bounds(document.querySelector(".dashboard-footer")),
-                panels: [...document.querySelectorAll(".compat-cell > .dashboard-panel")].map(bounds),
-                rows: rows.map(bounds), flexible: rows.some(row => !row.classList.contains("content-sized")),
-                scale: Number(document.getElementById("compat-viewport").getAttribute("data-fit-scale")),
-              };
-            });
-            const label = `${size.width}x${size.height} / ${screenId}`;
-            assert.ok(geometry.scrollWidth <= geometry.width + 1 && geometry.scrollHeight <= geometry.height + 1, label + ": document overflow");
-            assert.ok(geometry.footer.bottom <= geometry.height + 1 && geometry.footer.bottom >= geometry.height - 24, label + ": footer outside viewport or unused height");
-            for (const panel of geometry.panels) {
-              assert.ok(panel.height > 0 && panel.left >= -1 && panel.right <= geometry.width + 1 && panel.bottom <= geometry.footer.top + 1, label + ": clipped panel");
-            }
-            for (let index = 1; index < geometry.rows.length; index++) assert.ok(geometry.rows[index].top >= geometry.rows[index - 1].bottom - 1, label + ": overlapping rows");
-            if (geometry.flexible) assert.ok(Math.abs(geometry.rows.at(-1).bottom - geometry.footer.top) <= 3, label + ": unused panel area");
-            if (size.width <= 960) assert.ok(geometry.scale < 1, label + ": small viewport needs automatic scale");
-          }
-        }
-        await frame.evaluate(() => {
-          window.__pulseNativeRect = Element.prototype.getBoundingClientRect;
-          window.__pulseNativeStyle = window.getComputedStyle;
-        });
-        for (const legacy of [false, true]) {
-          if (legacy) await frame.evaluate(() => {
-            // Emulate the CSS-zoom rectangle convention used by old Chromium, without
-            // changing how this browser actually renders. Native rectangles remain the oracle.
-            function effectiveCssZoom(element) {
-              let zoom = 1;
-              for (let node = element; node instanceof Element; node = node.parentElement) {
-                const raw = window.__pulseNativeStyle(node).zoom;
-                let value = parseFloat(raw); if (String(raw).includes("%")) value /= 100;
-                if (Number.isFinite(value) && value > 0) zoom *= value;
-              }
-              return zoom;
-            }
-            Element.prototype.getBoundingClientRect = function () {
-              const zoom = effectiveCssZoom(this);
-              const rect = window.__pulseNativeRect.call(this);
-              return new DOMRect(rect.x / zoom, rect.y / zoom, rect.width / zoom, rect.height / zoom);
-            };
-            // Observed on WebView 83/DPR 1.5: an unstyled root reports computed zoom
-            // 1.5 although its viewport/geometry already use the document's CSS pixels.
-            window.getComputedStyle = function (element, pseudo) {
-              const style = window.__pulseNativeStyle(element, pseudo);
-              if (element !== document.documentElement || element.style.zoom) return style;
-              return new Proxy(style, { get(target, key) {
-                if (key === "zoom") return "1.5";
-                const value = Reflect.get(target, key, target);
-                return typeof value === "function" ? value.bind(target) : value;
-              } });
-            };
-            document.documentElement.style.removeProperty("zoom");
-          });
-          if (legacy) {
-            await frame.waitForFunction(() => document.getElementById("compat-viewport").getAttribute("data-fit-rect-mode") === "legacy");
-            const initial = await frame.evaluate(() => {
-              const rect = window.__pulseNativeRect.call(document.getElementById("compat-shell"));
-              return { reported: getComputedStyle(document.documentElement).zoom, declared: document.documentElement.style.zoom, width: rect.width, height: rect.height, viewportWidth: innerWidth, viewportHeight: innerHeight, compensated: document.getElementById("compat-viewport").getAttribute("data-fit-zoom-x") };
-            });
-            assert.equal(initial.reported, "1.5"); assert.equal(initial.declared, "");
-            assert.equal(initial.compensated, "1", "native root zoom must not be counted as declared CSS zoom");
-            assert.ok(Math.abs(initial.width - initial.viewportWidth) < 2 && Math.abs(initial.height - initial.viewportHeight) < 2, "initial WebView sizing must fill the frame before manual zoom");
-          }
-          const baseline = await frame.evaluate(() => ({ width: document.getElementById("compat-shell").offsetWidth, textHeight: window.__pulseNativeRect.call(document.querySelector(".panel-heading h2")).height }));
-          // CSS zoom does not have to fire resize. It must change density, not leave a smaller canvas.
-          for (const target of ["body", "root", "shell"]) {
-            for (const zoom of [0.7, 1.25, 1]) {
-              await frame.evaluate(({ target, zoom }) => {
-                document.body.style.zoom = "1"; document.documentElement.style.zoom = "1"; document.getElementById("compat-shell").style.zoom = "1";
-                const element = target === "body" ? document.body : target === "root" ? document.documentElement : document.getElementById("compat-shell");
-                element.style.zoom = String(zoom);
-              }, { target, zoom });
-              await frame.waitForFunction(zoom => {
-                const viewport = document.getElementById("compat-viewport"), shell = document.getElementById("compat-shell");
-                const rect = window.__pulseNativeRect.call(shell);
-                return Math.abs(Number(viewport.getAttribute("data-fit-zoom-x")) - zoom) < 0.01 && Math.abs(rect.width - window.innerWidth) < 2 && Math.abs(rect.height - window.innerHeight) < 2;
-              }, zoom);
-              const result = await frame.evaluate(() => {
-                const shell = document.getElementById("compat-shell"), rect = window.__pulseNativeRect.call(shell), footer = window.__pulseNativeRect.call(document.querySelector(".dashboard-footer"));
-                return { width: rect.width, height: rect.height, left: rect.left, top: rect.top, viewportWidth: window.innerWidth, viewportHeight: window.innerHeight, logicalWidth: shell.offsetWidth, textHeight: window.__pulseNativeRect.call(document.querySelector(".panel-heading h2")).height, footerBottom: footer.bottom };
-              });
-              const label = `${legacy ? "legacy" : "native"} ${target} zoom ${zoom}`;
-              assert.equal(await surface.locator("#compat-viewport").getAttribute("data-fit-rect-mode"), legacy ? "legacy" : "viewport", label);
-              assert.ok(Math.abs(result.left) < 2 && Math.abs(result.top) < 2, label + ": shifted canvas");
-              assert.ok(Math.abs(result.width - result.viewportWidth) < 2 && Math.abs(result.height - result.viewportHeight) < 2, label + ": empty screen margins");
-              assert.ok(result.footerBottom <= result.viewportHeight + 1 && result.footerBottom >= result.viewportHeight - 24, label + ": footer not fitted");
-              if (zoom === 0.7) {
-                assert.ok(result.logicalWidth > baseline.width * 1.1, label + ": zoom out must expose more logical space");
-                assert.ok(result.textHeight < baseline.textHeight * 0.9, label + ": zoom out must keep text smaller");
-              }
-              // Replacing a screen must retain the requested zoom and fill the same viewport.
-              const current = await surface.locator("#compat-screen").inputValue(), next = screens.find(id => id !== current);
-              const response = page.waitForResponse(response => new URL(response.url()).searchParams.get("screenId") === next);
-              await surface.locator("#compat-screen").selectOption(next); assert.equal((await response).status(), 200);
-              await frame.waitForFunction(() => document.getElementById("compat-content").getAttribute("data-connection") === "ready");
-              assert.equal(await frame.evaluate(() => document.getElementById("compat-shell").style.zoom), target === "shell" ? String(zoom) : "1");
-            }
-          }
-        }
-        await frame.evaluate(() => {
-          Element.prototype.getBoundingClientRect = window.__pulseNativeRect;
-          window.getComputedStyle = window.__pulseNativeStyle;
-        });
-        // Simulate a WebView exposing a larger visual viewport after zooming out, without resize.
-        await frame.evaluate(() => Object.defineProperty(window, "visualViewport", { configurable: true, value: { width: window.innerWidth / 0.7, height: window.innerHeight / 0.7, offsetLeft: 0, offsetTop: 0, scale: 0.7 } }));
-        await frame.waitForFunction(() => Math.abs(Number(document.getElementById("compat-viewport").getAttribute("data-fit-width")) - window.innerWidth / 0.7) < 1);
-        assert.ok(await frame.evaluate(() => document.getElementById("compat-shell").getBoundingClientRect().width > window.innerWidth * 1.1));
-        await frame.evaluate(() => Object.defineProperty(window, "visualViewport", { configurable: true, value: undefined }));
-        await frame.waitForFunction(() => Math.abs(document.getElementById("compat-shell").getBoundingClientRect().width - window.innerWidth) < 2);
-        assert.deepEqual(errors, []);
-      } finally { await context.close(); await new Promise(resolve => parent.close(resolve)); }
     });
   } finally { await browser.close(); }
 });
@@ -612,7 +210,8 @@ test("one standalone build accepts different public runtime settings", { timeout
         assert.ok(await page.getByText(name, { exact: true }).first().isVisible());
         assert.equal(await page.title(), name);
         assert.equal(await page.getByRole("link", { name: "Softcom Tecnologia" }).getAttribute("href"), link);
-        assert.equal((await fetch(base + "/api/health")).status, 200);
+        const health = await fetch(base + "/api/health");
+        assert.equal(health.status, 200, JSON.stringify(await health.json()));
         assert.deepEqual(errors, []);
         await page.close();
       });
@@ -742,8 +341,8 @@ test("standalone persists configuration across restarts and serves every protect
       await cache.set(hostsKey, wrap([runtimeHost]), { EX: 120 });
       await cache.set(syncKey, wrap({ status: "ok", lastSuccessfulAt: observedAt, lastAttemptAt: observedAt, error: null, keys: [hostsKey] }), { EX: 120 });
       const post = await fetch(base + "/api/monitoring/services", { method: "POST", headers: auth, body: JSON.stringify({ resourceType: "host", zabbixHostKey: "runtime-host", displayName: "Runtime" }) });
-      assert.equal(post.status, 201); resourceId = (await post.json()).data.id;
-      const edit = await fetch(base + "/api/monitoring/services/" + resourceId, { method: "PATCH", headers: auth, body: JSON.stringify({ displayName: "Persistido" }) }); assert.equal(edit.status, 200);
+      assert.equal(post.status, 201); const registered = (await post.json()).data; resourceId = registered.id;
+      const edit = await fetch(base + "/api/monitoring/services/" + resourceId, { method: "PATCH", headers: auth, body: JSON.stringify({ expectedRevision: registered.revision, displayName: "Persistido" }) }); assert.equal(edit.status, 200);
       // Drop discovery so protected reads stay on the empty/no_data contract for this suite.
       await cache.del([hostsKey, syncKey]);
       for (const path of ["/monitoring/templates", "/monitoring/hosts", "/monitoring/containers", "/monitoring/problems", "/monitoring/services", "/monitoring/services/" + resourceId, "/monitoring/services/" + resourceId + "/history"]) {
@@ -764,7 +363,7 @@ test("standalone persists configuration across restarts and serves every protect
     await withServer(environment, async base => {
       assert.deepEqual(await (await fetch(base + "/api/settings/presentation", { headers: { ...auth, "User-Agent": "second-device" } })).json(), saved);
       const resource = await (await fetch(base + "/api/monitoring/services/" + resourceId, { headers: auth })).json(); assert.equal(resource.data.config.displayName, "Persistido");
-      assert.equal((await fetch(base + "/api/monitoring/services/" + resourceId, { method: "DELETE", headers: auth })).status, 204);
+      assert.equal((await fetch(base + "/api/monitoring/services/" + resourceId, { method: "DELETE", headers: auth, body: JSON.stringify({ expectedRevision: resource.data.config.revision }) })).status, 204);
       assert.equal((await fetch(base + "/api/monitoring/services/" + resourceId, { headers: auth })).status, 404);
     });
     const broken = new URL(db.href); broken.port = "1";

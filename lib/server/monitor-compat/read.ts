@@ -7,7 +7,7 @@ import { isPublicHost } from "../auth/public-hosts.ts";
 import { authJson } from "../auth/errors.ts";
 import { publicGet } from "../monitoring/public-handlers.ts";
 
-const querySchema = z.object({ screenId: uuidSchema.optional(), layout: z.enum(["overview", "wall"]).optional(), tv: z.enum(["0", "1"]).optional(), theme: z.enum(["dark", "light"]).optional() });
+const querySchema = z.object({ screenId: uuidSchema.optional(), layout: z.enum(["overview", "wall"]).optional(), tv: z.enum(["0", "1"]).optional(), theme: z.enum(["dark", "light"]).optional(), compat: z.enum(["0", "1"]).optional(), fragment: z.literal("1").optional() });
 const availability = z.enum(["ready", "no_data", "unavailable"]);
 const observedAt = z.iso.datetime({ offset: true }).nullable();
 const overviewEnvelopeSchema = z.object({
@@ -57,5 +57,5 @@ export async function readCompatibleMonitor(request: Request, reader = publicGet
     if (validated.data.screenId !== screen.id || validated.data.presentationRevision !== document.revision) error = "A apresentação mudou. A atualização será tentada novamente.";
     else overview = validated;
   } catch { error = "Não foi possível atualizar os dados. Tente novamente."; }
-  return { document, screens, screen, overview, error, layout: layout === "overview" || layout === "wall" ? layout : screen.layout, tv: tv ? tv === "1" : document.defaultTvMode, theme: theme === "light" ? "light" : "dark", now: Date.now(), refreshAfterMs: Math.max(5000, Math.min(60000, overview?.refreshAfterMs ?? 20000)) };
+  return { document, screens, screen, overview, error, layout: layout === "overview" || layout === "wall" ? layout : screen.layout, tv: tv ? tv === "1" : true, theme: theme === "light" ? "light" : "dark", now: Date.now(), refreshAfterMs: Math.max(5000, Math.min(60000, overview?.refreshAfterMs ?? 20000)) };
 }

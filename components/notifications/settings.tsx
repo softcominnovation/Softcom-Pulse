@@ -1,27 +1,34 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { ConfirmationDialog } from "@/components/confirmation-dialog";
 import { api } from "@/lib/client/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, Check as CheckField, errorText } from "@/components/admin/shared";
 import { defaultNotificationPolicy, notificationPolicySchema, notificationSettingsSchema, notificationEventTypes, notificationToastPositions, notificationOverrideSchema, type NotificationPolicy, type NotificationOverride, type NotificationToastPosition } from "@/lib/notifications/policy";
 
 type Settings = { data: NotificationPolicy; targets: { ref: string; label: string; critical: boolean; enabled: boolean }[]; orphanRefs: string[] };
-export function TargetNotificationSettings({ targetRef }: { targetRef?: string }) {
+export function TargetNotificationSettings({ targetRef, presentation = "dialog", displayName, className }: { targetRef?: string; presentation?: "inline" | "dialog"; displayName?: string; className?: string }) {
   const [open, setOpen] = useState(false), [visited, setVisited] = useState(false);
-  return <div className="my-3" onKeyDown={event => { if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.preventDefault(); }}>
-    {targetRef ? <><Button type="button" size="sm" variant="outline" aria-expanded={open} onClick={() => { setVisited(true); setOpen(value => !value); }}>Notificações deste serviço</Button>{visited && <div hidden={!open}><NotificationSettings targetRef={targetRef} /></div>}</> : <p className="admin-muted">Salve o cadastro para configurar notificações específicas deste serviço.</p>}
+  const trigger = useRef<HTMLButtonElement>(null);
+  return <div className={className ?? "my-3"} onKeyDown={event => { if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.preventDefault(); }}>
+    {targetRef ? <><Button ref={trigger} type="button" size="sm" variant="outline" data-sound={open ? "close" : "open"} aria-haspopup={presentation === "dialog" ? "dialog" : undefined} aria-expanded={open} onClick={() => { setVisited(true); setOpen(value => !value); }}>Notificações deste serviço</Button>{visited && (presentation === "dialog" ? <NotificationSettings targetRef={targetRef} render={content => <Dialog open={open} onOpenChange={setOpen}>
+      <DialogContent className="w-[44rem] max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)]" onCloseAutoFocus={event => { event.preventDefault(); trigger.current?.focus(); }}>
+        <DialogHeader><DialogTitle>Notificações do serviço</DialogTitle><DialogDescription>{displayName ? `${displayName} · ` : ""}Preferências específicas de avisos e sons.</DialogDescription></DialogHeader>
+        <DialogBody>{content}</DialogBody>
+      </DialogContent>
+    </Dialog>} /> : <div hidden={!open}><NotificationSettings targetRef={targetRef} /></div>)}</> : <p className="admin-muted">Salve o cadastro para configurar notificações específicas deste serviço.</p>}
   </div>;
 }
-const labels = { unavailable: "Indisponibilidade / falha de consulta", problem: "Problemas do Zabbix", attention: "Atenção / degradação", recovery: "Recuperação" };
+const labels = { usage: "Uso acima do limite", unavailable: "Indisponibilidade / falha de consulta", problem: "Problemas do Zabbix", attention: "Atenção / degradação", recovery: "Recuperação" };
 const toastPositionLabels: Record<NotificationToastPosition, string> = { "bottom-end": "Canto inferior direito", "top-end": "Canto superior direito", "header-center": "Centro do header" };
 function Check({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return <CheckField label={label}><input type="checkbox" checked={checked} onChange={event => onChange(event.target.checked)} /></CheckField>;
 }
-export function NotificationSettings({ targetRef }: { targetRef?: string }) {
+export function NotificationSettings({ targetRef, render }: { targetRef?: string; render?: (content: ReactNode) => ReactNode }) {
   const [loaded, setLoaded] = useState<Settings | null>(null);
   const form = useForm<NotificationPolicy>({ defaultValues: defaultNotificationPolicy() });
   const { reset } = form;
@@ -61,8 +68,11 @@ export function NotificationSettings({ targetRef }: { targetRef?: string }) {
       toast({ message: "Preferências de notificações salvas.", state: "success" });
     } catch (failure) { setError(errorText(failure)); } finally { setBusy(false); }
   }
-  if (!loaded) return <div className="admin-form"><p>{error || "Carregando preferências…"}</p>{error && <Button type="button" onClick={() => setRefresh(value => value + 1)}>Recarregar</Button>}</div>;
-  return <section className="dashboard-panel"><div className="panel-heading"><h2>Notificações de serviços</h2></div><div className="admin-form space-y-4">
+  // Keep the editor state outside the dialog portal so closing preserves unsaved changes.
+  const show = render ?? ((content: ReactNode) => content);
+  if (!loaded) return show(<div className="admin-form"><p>{error || "Carregando preferências…"}</p>{error && <Button type="button" onClick={() => setRefresh(value => value + 1)}>Recarregar</Button>}</div>);
+  const eventFields = notificationEventTypes.map(key => <Field key={key} label={labels[key]}><select value={override.events?.[key] === undefined ? "inherit" : String(override.events[key])} onChange={event => { const events = { ...override.events }; if (event.target.value === "inherit") delete events[key]; else events[key] = event.target.value === "true"; setOverride({ ...override, events }); }}><option value="inherit">Seguir política geral</option><option value="true">Ativado</option><option value="false">Desativado</option></select></Field>);
+  return show(<section className={render ? undefined : "dashboard-panel"}>{!render && <div className="panel-heading"><h2>Notificações de serviços</h2></div>}<div className="admin-form space-y-4">
     <p className="admin-muted">Histórico e leitura são compartilhados. Volume e mute pertencem a este dispositivo.</p>
     <fieldset disabled={busy} className="space-y-4">
       {!targetRef && <>
@@ -79,9 +89,9 @@ export function NotificationSettings({ targetRef }: { targetRef?: string }) {
       </>}
       <Field label="Exceção por serviço" hint={overrideDirty ? "Salve ou descarte a exceção antes de trocar de serviço." : undefined}><select disabled={!!targetRef || overrideDirty} value={selected} onChange={event => { setSelected(event.target.value); setOverride(loaded.data.overrides[event.target.value] ?? notificationOverrideSchema.parse({})); }}><option value="">Selecione um serviço</option>{loaded.targets.map(target => <option key={target.ref} value={target.ref}>{target.label}{target.critical ? " · crítico" : ""}{!target.enabled ? " · monitor pausado" : ""}</option>)}</select></Field>
       {selected && <><div className="admin-fields"><Field label="Notificações deste serviço"><select value={override.mode} onChange={event => setOverride({ ...override, mode: event.target.value as NotificationOverride["mode"] })}><option value="inherit">Seguir política geral</option><option value="on">Incluir neste escopo</option><option value="off">Desativar</option></select></Field><Field label="Som deste serviço"><select value={override.sound} onChange={event => setOverride({ ...override, sound: event.target.value as NotificationOverride["sound"] })}><option value="inherit">Seguir política geral</option><option value="on">Incluir nos sons permitidos</option><option value="off">Silencioso</option></select></Field></div>
-        {notificationEventTypes.map(key => <Field key={key} label={labels[key]}><select value={override.events?.[key] === undefined ? "inherit" : String(override.events[key])} onChange={event => { const events = { ...override.events }; if (event.target.value === "inherit") delete events[key]; else events[key] = event.target.value === "true"; setOverride({ ...override, events }); }}><option value="inherit">Seguir política geral</option><option value="true">Ativado</option><option value="false">Desativado</option></select></Field>)}
+        {render ? <div className="admin-fields">{eventFields}</div> : eventFields}
         <p className="admin-muted">A exceção não habilita monitor pausado nem ultrapassa mute, volume zero ou a desativação geral.</p><Button type="button" onClick={() => void save(false)}>Salvar notificações deste serviço</Button>{overrideDirty && <ConfirmationDialog trigger={<Button type="button" variant="ghost">Descartar exceção não salva</Button>} title="Descartar alterações da exceção?" description="A preferência salva deste serviço será restaurada. O rascunho geral será mantido." confirmLabel="Descartar exceção" onConfirm={() => setOverride(loaded.data.overrides[selected] ?? notificationOverrideSchema.parse({}))} />}</>}
     </fieldset>
     {error && <div role="alert" className="admin-error"><p>{error}</p><ConfirmationDialog trigger={<Button type="button">Recarregar valores salvos</Button>} title="Descartar os rascunhos de notificações?" description="A política e a exceção serão recarregadas do servidor. Alterações ainda não salvas serão descartadas." confirmLabel="Recarregar preferências" onConfirm={() => setRefresh(value => value + 1)} /></div>}
-  </div></section>;
+  </div></section>);
 }

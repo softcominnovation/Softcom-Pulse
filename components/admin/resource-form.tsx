@@ -11,7 +11,8 @@ import type { Host, Container } from "@/lib/monitoring/contracts";
 import { compileSelector, resolveResource } from "@/lib/monitoring/selectors";
 import { ServiceAvailabilityCard } from "@/components/dashboard/service-availability-card";
 import "@/components/dashboard/availability.css";
-import { hostMetricsPreference, mergeCardCpuRam, resolveCardCpuRam } from "@/lib/monitoring/card-metrics";
+import { availabilityCardSlots, resolveAvailabilityCardMetrics } from "@/lib/monitoring/card-metrics";
+import { cardMetricPresentation, cardMetricsSchema } from "@/lib/config/agent-monitoring";
 import { Button } from "@/components/ui/button";
 import { Check, Field, errorText, useMutation } from "./shared";
 
@@ -22,9 +23,12 @@ export function resourceDefaults(target: Host | Container): ResourceInput {
     selectorType: container ? prefix !== target.name ? "name_prefix" : "exact_name" : null, selectorValue: container ? prefix : null, dashboardEnabled: true });
 }
 export function ResourceForm({ initial, existing, hosts, containers, stale, onSaved, onCancel, context }: {
-  initial: ResourceInput; existing?: ResourceConfig; context?: ResourceContext; hosts: Host[]; containers: Container[]; stale: boolean; onSaved: () => void; onCancel: () => void;
+  initial: ResourceInput | ResourceConfig; existing?: ResourceConfig; context?: ResourceContext; hosts: Host[]; containers: Container[]; stale: boolean; onSaved: () => void; onCancel: () => void;
 }) {
-  const defaults = resourceInputSchema.parse(Object.fromEntries(Object.entries(initial).filter(([key]) => !["id", "createdAt", "updatedAt"].includes(key))));
+  const defaults = resourceInputSchema.parse(Object.fromEntries(Object.entries(initial).filter(([key]) => !["id", "revision", "createdAt", "updatedAt"].includes(key))));
+  const inheritedPair = cardMetricsSchema.safeParse(availabilityCardSlots(defaults.presentation));
+  const defaultPair = defaults.presentation.cardMetrics ?? (inheritedPair.success ? inheritedPair.data : undefined);
+  if (defaults.resourceType === "host" && defaultPair) defaults.presentation = { ...defaults.presentation, ...cardMetricPresentation(defaultPair) };
   const form = useForm<ResourceInput>({ defaultValues: defaults }), value = useWatch({ control: form.control }) as ResourceInput, mutation = useMutation();
   const [error, setError] = useState("");
   const isContainer = value.resourceType === "docker_container";
@@ -35,14 +39,15 @@ export function ResourceForm({ initial, existing, hosts, containers, stale, onSa
   const resolution = parsed.success ? resolveResource(parsed.data, { hosts, containers }) : null;
   const ambiguous = isContainer && candidates.length > 1;
   const changedSelector = !existing || value.selectorType !== existing.selectorType || value.selectorValue !== existing.selectorValue;
-  const flags = [["showStatus", "Estado"], ["showCpu", "CPU"], ["showMemory", "Memória"], ["showDisk", "Disco"], ["showNetwork", "Rede"], ["showUptime", "Tempo ativo"], ...(isContainer ? [["showHealth", "Healthcheck"], ["showHealthTimeline", "Histórico de healthcheck"]] : [])] as const;
+  const flags = [["showStatus", "Estado"], ...(isContainer ? [["showCpu", "CPU"], ["showMemory", "Memória"], ["showDisk", "Disco"]] : []), ["showNetwork", "Rede"], ["showUptime", "Tempo ativo"], ...(isContainer ? [["showHealth", "Healthcheck"], ["showHealthTimeline", "Histórico de healthcheck"]] : [])] as const;
   const submit = form.handleSubmit(async input => {
     setError(""); form.clearErrors();
     const validation = resourceInputSchema.safeParse(input);
     if (!validation.success) { for (const issue of validation.error.issues) form.setError(issue.path.join(".") as FieldPath<ResourceInput>, { message: "Confira este campo e o limite informado." }); setError("Revise os campos. Nome: até 120 caracteres; ordem: inteiro positivo; histórico de healthcheck exige healthcheck visível."); return; }
     try {
       const result = await mutation.run(async signal => {
-        const response = existing ? await api.patch(`/monitoring/services/${existing.id}`, { ...validation.data, ...(context ? { context } : {}) }, { signal }) : await api.post("/monitoring/services", { ...validation.data, ...(context ? { context } : {}) }, { signal });
+        const { agentMonitoring: _monitoring, ...write } = validation.data; void _monitoring;
+        const response = existing ? await api.patch(`/monitoring/services/${existing.id}`, { ...write, expectedRevision: existing.revision ?? 1, ...(context ? { context } : {}) }, { signal }) : await api.post("/monitoring/services", { ...write, ...(context ? { context } : {}) }, { signal });
         return resourceConfigSchema.parse(response.data.data);
       });
       if (result) { window.dispatchEvent(new Event("pulse:preferences-changed")); toast.success("Configuração do recurso salva."); onSaved(); }
@@ -58,7 +63,8 @@ export function ResourceForm({ initial, existing, hosts, containers, stale, onSa
         {isContainer && <><Field label="Correspondência do nome"><select {...form.register("selectorType")}><option value="exact_name">Nome exato</option><option value="name_prefix">Prefixo lógico (Swarm)</option><option value="name_contains">Contém</option><option value="regex">Expressão regular</option></select></Field><Field label="Seletor" error={invalidSelector ? "Expressão inválida ou não suportada." : ambiguous ? "Mais de um candidato. Ajuste o seletor." : undefined}><input maxLength={256} {...form.register("selectorValue")} /></Field></>}
       </div><div className="admin-checks">{([['enabled', 'Configuração habilitada'], ['dashboardEnabled', 'Destacar no dashboard'], ['critical', 'Recurso crítico']] as const).map(([key, label]) => <Check key={key} label={label}><input type="checkbox" {...form.register(key)} /></Check>)}</div>
       {existing && (!value.enabled || !value.dashboardEnabled) && <p className="admin-notice">Blocos individuais vinculados ficarão indisponíveis, preservando a escolha nas telas.</p>}
-      <h3>Conteúdo do card</h3><div className="admin-checks">{flags.map(([key, label]) => <Check key={key} label={label}><input type="checkbox" {...form.register(`presentation.${key}` as keyof ResourceInput)} /></Check>)}</div>
+      {!isContainer && <Field label="Métricas do minicard" hint="Escolha duas leituras. A mesma escolha é usada em Alertas e exibição da VM. Disco usa os volumes monitorados; sem configuração de monitoramento, usa a raiz / quando disponível."><select value={value.presentation.cardMetrics?.join(",") ?? ""} onChange={event => form.setValue("presentation", { ...value.presentation, ...cardMetricPresentation(cardMetricsSchema.parse(event.target.value.split(","))) }, { shouldDirty: true, shouldTouch: true })}>{!value.presentation.cardMetrics && <option value="">Manter configuração atual</option>}<option value="cpu,memory">CPU e RAM</option><option value="cpu,disk">CPU e Disco</option><option value="disk,memory">Disco e RAM</option></select></Field>}
+      <h3>{isContainer ? "Conteúdo do card" : "Opções de exibição"}</h3><div className="admin-checks">{flags.map(([key, label]) => <Check key={key} label={label}><input type="checkbox" {...form.register(`presentation.${key}` as keyof ResourceInput)} /></Check>)}</div>
       {!isContainer && <Field label="CPU e RAM do card" hint="Padrão: mesma fonte da listagem de VMs. Agent só se quiser mudar."><select value={((value.presentation as { metricsSource?: string } | undefined)?.metricsSource === "agent" ? "agent" : "hypervisor")} onChange={event => form.setValue("presentation.metricsSource", event.target.value as "agent" | "hypervisor", { shouldDirty: true, shouldTouch: true })}><option value="hypervisor">Listagem de VMs (Asgard / hipervisor) — padrão</option><option value="agent">Agent Zabbix (convidado Linux)</option></select></Field>}
       {isContainer && <Field label="Janela do histórico de healthcheck" hint="O histórico é consultado sob demanda no detalhe."><select {...form.register("presentation.healthTimelineRange")}><option value="1h">1 hora</option><option value="24h">24 horas</option><option value="7d">7 dias</option></select></Field>}
       </fieldset>
@@ -69,12 +75,8 @@ export function ResourceForm({ initial, existing, hosts, containers, stale, onSa
     </form>
     {parsed.success && resolution && (() => {
       const target = resolution.target;
-      const baseMetrics = target?.metrics ?? {};
-      const preferred = target && !("reference" in target)
-        ? resolveCardCpuRam(target, hosts, hostMetricsPreference(parsed.data.presentation)).metrics
-        : {};
-      const metrics = mergeCardCpuRam(baseMetrics, preferred);
-      return <div className="admin-resource-preview"><h3>Prévia local · não salva</h3><ServiceAvailabilityCard preview stale={stale} item={{ id: existing?.id ?? "00000000-0000-4000-8000-000000000000", config: { ...parsed.data, id: existing?.id ?? "00000000-0000-4000-8000-000000000000", createdAt: existing?.createdAt ?? new Date(0).toISOString(), updatedAt: existing?.updatedAt ?? new Date(0).toISOString() }, resolved: resolution.resolved, resolution: resolution.resolution, resource: resolution.target, metrics }} /></div>;
+      const item = { id: existing?.id ?? "00000000-0000-4000-8000-000000000000", config: { ...parsed.data, id: existing?.id ?? "00000000-0000-4000-8000-000000000000", createdAt: existing?.createdAt ?? new Date(0).toISOString(), updatedAt: existing?.updatedAt ?? new Date(0).toISOString() }, resolved: resolution.resolved, resolution: resolution.resolution, resource: target, metrics: target?.metrics ?? {} };
+      return <div className="admin-resource-preview"><h3>Prévia local · não salva</h3><ServiceAvailabilityCard preview stale={stale} item={{ ...item, ...resolveAvailabilityCardMetrics(item, hosts) }} /></div>;
     })()}
   </section>;
 }

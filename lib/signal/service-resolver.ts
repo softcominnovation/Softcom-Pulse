@@ -5,7 +5,13 @@ export type ServiceContainerHealth = "healthy" | "unhealthy" | "starting" | "not
 export type ServiceKpiLabel = "No ar" | "Atualizando" | "Atenção" | "Fora" | "Sem leitura";
 
 export type ServiceScopeLink = { hostKey: string; vmKey: string | null; parentHostKey: string | null };
-export type ServiceScopeVm = { parentHostKey: string; vmKey: string; linuxHostKey: string | null };
+export type ServiceScopeVm = {
+  parentHostKey: string;
+  vmKey: string;
+  linuxHostKey: string | null;
+  state?: "running" | "stopped" | "paused" | "unknown";
+  stateFresh?: boolean;
+};
 export type ServiceScopeHost = {
   hostKey: string;
   role: "hypervisor" | "linux" | "unknown";
@@ -91,11 +97,16 @@ export function resolveSignalService(input: {
   if (!hostKeys.length) return empty("no_scope", "unknown");
   if (agents.every(agent => agent.disabled)) return { ...empty("suppressed", "suppressed", hostKeys), complete: true };
   if (agents.some(agent => agent.disabled)) return empty("incomplete_scope", "unknown", hostKeys);
+  const poweredOff = new Set(input.vms.flatMap(vm => vm.linuxHostKey && vm.state === "stopped" && vm.stateFresh ? [vm.linuxHostKey] : []));
+  if (hostKeys.every(key => poweredOff.has(key))) {
+    return { ...empty("vm_stopped", "down", hostKeys), complete: true, tone: "bad", kpiLabel: "Fora", statusState: "unavailable" };
+  }
 
   let matches: (name: string) => boolean;
   try { matches = compileSelector("name_prefix", input.servicePrefix); }
   catch { return empty("invalid_prefix", "unknown", hostKeys); }
-  const candidates = input.containers.filter(container => hostKeys.includes(container.hostKey) && matches(container.name));
+  const observed = input.containers.map(container => poweredOff.has(container.hostKey) ? { ...container, status: "stopped" as const, statusFresh: true } : container);
+  const candidates = observed.filter(container => hostKeys.includes(container.hostKey) && matches(container.name));
   const coverageComplete = hostKeys.every(key => input.coverage.some(item => item.hostKey === key && item.complete && item.fresh));
   const enumerated = coverageComplete
     ? input.coverage.filter(item => hostKeys.includes(item.hostKey)).flatMap(item => item.names).filter(matches)

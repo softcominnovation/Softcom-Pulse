@@ -12,9 +12,10 @@ Antes de criar ou alterar telas, ler o [Design system Kobra do Pulse](design-sys
 | [Encaixe da raiz](overview-fit.md) | Altura, grade e rolagem interna dos blocos do dashboard |
 | [Minicards](availability-cards.md) | Composição, dimensões e estados da Disponibilidade de Serviços |
 | [Administração](administration.md) | Configuração, edição, revisão e prévias |
+| [Alertas de VMs](vm-agent-alerts.md) | Limites de CPU/RAM/disco do Agent, seleção de volumes e pares dos minicards |
 | [Infraestrutura](infrastructure.md) | Navegação e dados de host, VM e histórico |
 | [Templates](templates.md) | Identidade, capacidades e preferências de templates |
-| [Storages](storage.md) | Classificação por tag, capacidade, configuração, cards e leitura pública |
+| [Storages](storage.md) | Classificação por tag, capacidade, alertas de disco, configuração, cards e leitura pública |
 
 ## Dados e operação
 
@@ -22,6 +23,7 @@ Antes de criar ou alterar telas, ler o [Design system Kobra do Pulse](design-sys
 |---|---|
 | [Autenticação](authentication.md) | Sessão corporativa, login, proteção e renovação |
 | [BFF](bff.md) | Contratos de leitura e configuração |
+| [Notificações](notifications.md) | Histórico/leitura compartilhados, política por serviço, avisos e sons |
 | [Workers](workers.md) | Processos, coleta, persistência e isolamento de falhas |
 | [Zabbix](zabbix.md) | Escopo, descoberta, normalização e histórico |
 | [Ambiente](environment.md) | Instalação, variáveis, verificação e publicação |

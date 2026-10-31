@@ -1,0 +1,145 @@
+import { test, expect } from "@playwright/test";
+import { infrastructureFixture, signIn } from "../fixtures/infrastructure";
+import { id } from "../fixtures/dashboard";
+import { servicesFixture } from "../fixtures/services";
+import { notificationFixture } from "../fixtures/notifications";
+import { mkdir } from "node:fs/promises";
+
+for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 }, { width: 768, height: 1024 }, { width: 1366, height: 768 }]) test(`VM Agent settings retain drafts, select capacity and persist pairs at ${viewport.width}px`, async ({ page }) => {
+  await page.setViewportSize(viewport);
+  const state = await infrastructureFixture(page), agent = state.hosts[1];
+  const notifications = await notificationFixture(page);
+  notifications.targets.push({ ref: `resource:${id(988)}`, label: "VM operação", critical: true, enabled: true });
+  const m = (value: number, unit = "percent") => ({ value, unit, quality: "fresh", observedAt: new Date().toISOString(), validUntil: new Date(Date.now() + 3600000).toISOString() });
+  const key = (letter: string) => `device-${letter.repeat(32)}`;
+  let data = {
+    name: "VM operação", resourceId: null as string | null, revision: 0, eligible: true, stale: false, bindingValid: true,
+    currentVmBinding: { parentHostKey: "ASGARD", vmKey: "vm-0" },
+    settings: { schemaVersion: 1, vmBinding: { parentHostKey: "ASGARD", vmKey: "vm-0" }, capacity: { filesystemKeys: [] as string[], independentVolumesConfirmed: false }, thresholds: { cpu: null, memory: null, disk: null as number | null } },
+    cardMetrics: ["cpu", "memory"], metricsSource: "hypervisor", critical: false, monitoringEnabled: true, notificationEnabled: false, soundEnabled: false,
+    metrics: { cpuUsagePercent: m(11), memoryUsagePercent: m(22) },
+    volumes: [{ key: key("a"), name: "/", metrics: { diskUsedBytes: m(80, "bytes"), diskTotalBytes: m(100, "bytes") } }, { key: key("b"), name: "/data", metrics: { diskUsedBytes: m(20, "bytes"), diskTotalBytes: m(400, "bytes") } }],
+  };
+  let conflict = true;
+  const writes: Record<string, unknown>[] = [];
+  await page.route(`**/api/settings/agent-monitoring/${agent.hostKey}`, async route => {
+    if (route.request().method() === "GET") return route.fulfill({ json: { data } });
+    const body = route.request().postDataJSON(); writes.push(body);
+    if (conflict) return route.fulfill({ status: 409, json: { error: { code: "revision_conflict" } } });
+    data = { ...data, ...body, resourceId: id(988), revision: data.revision + 1, settings: { schemaVersion: 1, vmBinding: body.vmBinding, capacity: body.capacity, thresholds: body.thresholds } };
+    await route.fulfill({ json: { data } });
+  });
+  await signIn(page); await page.goto("/asgard?hostKey=ASGARD&vm=vm-0");
+  await page.getByRole("button", { name: "Alertas e exibição", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Alertas e exibição da VM" });
+  await expect(dialog.getByLabel("Alertar disco", { exact: true })).not.toBeChecked();
+  await dialog.getByLabel("Alertar disco", { exact: true }).check();
+  await dialog.getByLabel("Limite de disco (%)", { exact: true }).fill("52");
+  await dialog.getByRole("button", { name: "Salvar alertas e exibição", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("Selecione ao menos um volume");
+  const capacity = dialog.getByRole("group", { name: "Armazenamento monitorado", exact: true });
+  await expect(capacity).toBeFocused();
+  expect(writes).toHaveLength(0);
+  await expect(dialog.getByLabel("Alertar CPU", { exact: true })).not.toBeChecked();
+  await expect(dialog.getByLabel("Alertar RAM", { exact: true })).not.toBeChecked();
+  await dialog.getByLabel(/^\/ ·/).check();
+  conflict = false;
+  await dialog.getByRole("button", { name: "Salvar alertas e exibição", exact: true }).click();
+  await expect(dialog).toContainText("Alertas e exibição salvos.");
+  expect(writes[0]).toMatchObject({ expectedRevision: 0, cardMetrics: ["cpu", "memory"], metricsSource: "hypervisor", thresholds: { cpu: null, memory: null, disk: 52 }, capacity: { filesystemKeys: [key("a")] } });
+  await dialog.getByLabel(/^\/data ·/).check();
+  await expect(dialog).toContainText("capacidade incompleta");
+  await dialog.getByRole("button", { name: "Salvar alertas e exibição", exact: true }).click();
+  await expect(capacity.getByRole("alert")).toContainText("Confirme que os volumes selecionados são independentes");
+  expect(writes).toHaveLength(1);
+  await dialog.getByLabel("Confirmo que os volumes são independentes e não duplicam a mesma capacidade").check();
+  await expect(dialog).toContainText("20%");
+  await dialog.getByLabel("Alertar disco", { exact: true }).check();
+  await dialog.getByLabel("Limite de disco (%)", { exact: true }).fill("70");
+  await dialog.getByLabel("Métricas do minicard", { exact: true }).selectOption("cpu,disk");
+  await dialog.getByLabel("Recurso crítico", { exact: true }).check();
+  conflict = true;
+  await dialog.getByRole("button", { name: "Salvar alertas e exibição", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("alterada em outra sessão");
+  await expect(dialog.getByLabel("Limite de disco (%)")).toHaveValue("70");
+  expect(writes[1]).toMatchObject({ expectedRevision: 1, critical: true, cardMetrics: ["cpu", "disk"], thresholds: { cpu: null, memory: null, disk: 70 } });
+  conflict = false;
+  await dialog.getByRole("button", { name: "Salvar alertas e exibição", exact: true }).click();
+  await expect(dialog).toContainText("Alertas e exibição salvos.");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Alertas e exibição", exact: true }).click();
+  await expect(dialog.getByLabel("Métricas do minicard", { exact: true })).toHaveValue("cpu,disk");
+  await dialog.getByLabel("Métricas do minicard", { exact: true }).selectOption("disk,memory");
+  if (viewport.width === 390) {
+    const before = writes.length;
+    await dialog.getByRole("button", { name: "Notificações deste serviço", exact: true }).click();
+    const settings = page.getByRole("dialog", { name: "Notificações do serviço", exact: true });
+    await settings.getByLabel("Som deste serviço", { exact: true }).selectOption("off");
+    await settings.getByRole("button", { name: "Salvar notificações deste serviço", exact: true }).click();
+    await expect.poll(() => notifications.policy.overrides[`resource:${id(988)}`]?.sound).toBe("off");
+    await page.keyboard.press("Escape"); await expect(settings).toHaveCount(0); await expect(dialog).toBeVisible();
+    await expect(dialog.getByLabel("Limite de disco (%)", { exact: true })).toHaveValue("70"); expect(writes).toHaveLength(before);
+  }
+  await expect(dialog.locator(".availability-reading").first()).toContainText("Disco");
+  await expect(dialog.locator(".availability-reading").last()).toContainText("RAM");
+  await expect(dialog.locator(".availability-reading")).toHaveCount(2);
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+});
+
+for (const width of [390,1366]) test(`Signal service notification dialog keeps drafts, fits its controls and preserves cards at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 844 });
+  await servicesFixture(page);
+  const notifications = await notificationFixture(page);
+  const service = { id: id(980), displayName: "Signal DB", servicePrefix: "stack_postgres", enabled: true, dashboardEnabled: true, panelEnabled: true, flowKpi: "database", critical: true, displayOrder: 0, revision: 1, kpiLabel: "Disponível", tone: "available", vmName: "VM operação", hostKey: "linux-operacao", reason: "running", cpu: 3, memory: 40, disk: 20, cardMetrics: ["cpu", "disk"] };
+  const target = { id: id(979), displayName: "Signal", description: null, baseUrl: "https://example.test", enabled: true, dashboardEnabled: true, critical: true, displayOrder: 0, timeoutMs: 5000, revision: 1, state: 0, latencyMs: 10, httpStatus: 200, liveOk: true, readyStatus: "ok", workerStatus: "up", activeInstances: 1, outboxPending: 0, inboxPending: 0, outboxDead: 0, inboxDead: 0, oldestOutboxSeconds: 0, oldestInboxSeconds: 0, checks: {}, strip: [], uptime24h: null, checkedAt: new Date().toISOString(), links: [{ id: id(978), role: "worker", label: "Worker", hostKey: "ASGARD", vmKey: "vm-0", parentHostKey: "ASGARD", agentHostKey: "linux-operacao", inventoryStatus: "ready" }], services: [service] };
+  const serviceRef = `signal_service:${service.id}`;
+  notifications.targets.push({ ref: serviceRef, label: service.displayName, critical: true, enabled: true });
+  await page.route("**/api/monitoring/signal-targets", route => route.fulfill({ json: { data: [target] } }));
+  await page.route(`**/api/monitoring/signal-targets/${target.id}/services/candidates`, route => route.fulfill({ json: { data: [], truncated: false } }));
+  const writes: Record<string, unknown>[] = [];
+  await page.route(`**/api/monitoring/signal-targets/${target.id}/services/${service.id}`, async route => { const body = route.request().postDataJSON(); writes.push(body); Object.assign(service, body); service.revision++; target.revision++; await route.fulfill({ json: { data: service } }); });
+  await page.route("**/api/settings/agent-monitoring/linux-operacao", route => route.fulfill({ json: { data: { name: "VM operação", resourceId: null, revision: 0, eligible: true, stale: false, bindingValid: true, currentVmBinding: { parentHostKey: "ASGARD", vmKey: "vm-0" }, settings: { schemaVersion: 1, vmBinding: { parentHostKey: "ASGARD", vmKey: "vm-0" }, capacity: { filesystemKeys: [], independentVolumesConfirmed: false }, thresholds: { cpu: 70, memory: null, disk: null } }, metricsSource: "agent", critical: true, monitoringEnabled: true, notificationEnabled: true, soundEnabled: true, volumes: [], metrics: {} } } }));
+  await signIn(page); await page.goto("/servicos#signal");
+  const cluster = page.getByRole("region", { name: "Serviços do cluster", exact: true });
+  await expect(cluster.locator(".availability-reading").first()).toContainText("3%");
+  await expect(cluster.locator(".availability-reading").last()).toContainText("Disco da VM");
+  await expect(cluster.locator(".availability-reading").last()).toContainText("20%");
+  await cluster.getByLabel("Métricas do minicard", { exact: true }).selectOption("disk,memory");
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes[0]).toMatchObject({ expectedRevision: 1, expectedTargetRevision: 1, cardMetrics: ["disk", "memory"] });
+  await expect(cluster.locator(".availability-reading").last()).toContainText("40%");
+  const trigger = cluster.getByRole("button", { name: "Notificações deste serviço", exact: true });
+  const card = page.locator(`#signal-service-${service.id}`);
+  const before = await card.boundingBox();
+  await trigger.click();
+  const settings = page.getByRole("dialog", { name: "Notificações do serviço", exact: true });
+  await expect(settings).toContainText(service.displayName);
+  await expect(settings.getByLabel("Som deste serviço", { exact: true })).toHaveValue("inherit");
+  const bounds = (await settings.boundingBox())!;
+  expect(bounds.width).toBeLessThanOrEqual(width-30);
+  if(width>700) expect(bounds.width).toBeGreaterThanOrEqual(650);
+  expect(await settings.evaluate(element => element.scrollWidth<=element.clientWidth)).toBe(true);
+  expect((await card.boundingBox())!.height).toBe(before!.height);
+  await settings.getByLabel("Som deste serviço", { exact: true }).selectOption("off");
+  await page.keyboard.press("Escape");
+  await expect(settings).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await expect(settings.getByLabel("Som deste serviço", { exact: true })).toHaveValue("off");
+  notifications.conflict = true;
+  await settings.getByRole("button", { name: "Salvar notificações deste serviço", exact: true }).click();
+  await expect(settings.getByRole("alert")).toContainText("alterada em outra sessão");
+  await expect(settings.getByLabel("Som deste serviço", { exact: true })).toHaveValue("off");
+  notifications.conflict = false;
+  await settings.getByRole("button", { name: "Salvar notificações deste serviço", exact: true }).click();
+  await expect.poll(() => notifications.policy.overrides[serviceRef]?.sound).toBe("off");
+  await mkdir(".cache/screenshots", { recursive: true });
+  await settings.screenshot({ path: `.cache/screenshots/signal-service-notifications-${width}.png` });
+  await settings.getByRole("button", { name: "Fechar diálogo", exact: true }).click();
+  await expect(trigger).toBeFocused();
+  expect(writes).toHaveLength(1);
+  await cluster.getByRole("button", { name: "Alertas e exibição", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Alertas e exibição da VM" });
+  await expect(dialog.getByLabel("Limite de CPU (%)")).toHaveValue("70");
+  await expect(dialog).toContainText("VM operação");
+});

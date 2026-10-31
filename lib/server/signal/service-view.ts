@@ -1,3 +1,4 @@
+import { cardMetricsSchema } from "../../config/agent-monitoring.ts";
 import "server-only";
 import { z } from "zod";
 import { hostKeySchema } from "../../config/resources.ts";
@@ -20,7 +21,7 @@ export const dockerCoverageSchema = z.object({
 export type SignalServiceRow = {
   id: string; targetId: string; displayName: string; servicePrefix: string; enabled: boolean;
   dashboardEnabled: boolean; panelEnabled: boolean; flowKpi: "database" | "redis" | null; critical: boolean;
-  displayOrder: number; revision: number;
+  cardMetrics?: unknown; displayOrder: number; revision: number;
 };
 
 const fresh = (until: string | null | undefined, now: number) => !!until && Date.parse(until) > now;
@@ -40,10 +41,12 @@ function observedContainer(container: Container, now: number): ServiceObservedCo
   };
 }
 
-export function presentSignalService(row: SignalServiceRow, resolution: SignalServiceResolution, vms: { linuxHostKey: string | null; name: string; displayName?: string }[]) {
+export function presentSignalService(row: SignalServiceRow, resolution: SignalServiceResolution, vms: { linuxHostKey: string | null; name: string; displayName?: string }[], agentHosts: Host[] = []) {
   const vm = resolution.candidate ? vms.find(item => item.linuxHostKey === resolution.candidate?.hostKey) : undefined;
   return {
     ...row,
+    cardMetrics: cardMetricsSchema.safeParse(row.cardMetrics).data ?? ["cpu", "memory"] as ["cpu", "memory"],
+    disk: (() => { const m = agentHosts.find(host => host.hostKey === resolution.candidate?.hostKey)?.agentCard?.capacity.usagePercent; return m?.quality === "fresh" && m.validUntil && Date.parse(m.validUntil) > Date.now() ? m.value : null; })(),
     resolution: resolution.resolution,
     reason: resolution.reason,
     kpiLabel: resolution.kpiLabel,
@@ -61,6 +64,7 @@ export function presentSignalService(row: SignalServiceRow, resolution: SignalSe
 }
 
 export function resolveRows(input: {
+  agentHosts?: Host[];
   rows: SignalServiceRow[];
   links: ServiceScopeLink[];
   vms: ServiceScopeVm[];
@@ -71,7 +75,7 @@ export function resolveRows(input: {
 }) {
   return input.rows.map(row => presentSignalService(row, resolveSignalService({
     servicePrefix: row.servicePrefix, links: input.links, vms: input.vms, hosts: input.hosts, containers: input.containers, coverage: input.coverage,
-  }), input.names));
+  }), input.names, input.agentHosts));
 }
 
 export async function readSignalServiceEvidence(now = Date.now()) {
@@ -99,6 +103,8 @@ export function evidenceInput(evidence: Awaited<ReturnType<typeof readSignalServ
   const hosts: ServiceScopeHost[] = evidence.hosts.map(host => ({
     hostKey: host.hostKey, role: host.role, disabled: evidence.disabledHostKeys.includes(host.hostKey), readable: true,
   }));
-  const vms: ServiceScopeVm[] = evidence.hosts.flatMap(host => host.vms.map(vm => ({ parentHostKey: vm.parentHostKey, vmKey: vm.vmKey, linuxHostKey: vm.linuxHostKey })));
+  const vms: ServiceScopeVm[] = evidence.hosts.flatMap(host => host.vms.map(vm => ({
+    parentHostKey: vm.parentHostKey, vmKey: vm.vmKey, linuxHostKey: vm.linuxHostKey, state: vm.state, stateFresh: fresh(vm.evidence.validUntil, now),
+  })));
   return { hosts, vms, containers: evidence.containers.map(container => observedContainer(container, now)), coverage: evidence.coverage, names: evidence.names };
 }

@@ -80,10 +80,10 @@ export function mapMetrics(items: Item[], context: ObservationContext, prefix = 
   deriveRatio(metrics, "diskUsedBytes", "diskTotalBytes", "diskUsagePercent");
   return { metrics, bindings };
 }
-function deriveRatio(metrics: Metrics, used: keyof Metrics, total: keyof Metrics, output: keyof Metrics) {
+export function deriveRatio(metrics: Metrics, used: keyof Metrics, total: keyof Metrics, output: keyof Metrics) {
   const a = metrics[used], b = metrics[total];
   if (metrics[output] || !a || !b) return;
   const value = a.value !== null && b.value !== null && b.value > 0 ? a.value / b.value * 100 : null;
   const quality = value === null ? (a.quality === "unsupported" || b.quality === "unsupported" ? "unsupported" : "missing") : a.quality === "fresh" && b.quality === "fresh" ? "fresh" : "stale";
-  metrics[output] = { value, unit: "percent", quality, observedAt: a.observedAt && b.observedAt ? [a.observedAt, b.observedAt].sort()[0] : null, validUntil: a.validUntil && b.validUntil ? [a.validUntil, b.validUntil].sort()[0] : null };
+  metrics[output] = { value, unit: "percent", quality, sampleObservedAt: a.observedAt && b.observedAt ? [a.sampleObservedAt ?? a.observedAt, b.sampleObservedAt ?? b.observedAt].sort().at(-1) : undefined, observedAt: a.observedAt && b.observedAt ? [a.observedAt, b.observedAt].sort()[0] : null, validUntil: a.validUntil && b.validUntil ? [a.validUntil, b.validUntil].sort()[0] : null };
 }

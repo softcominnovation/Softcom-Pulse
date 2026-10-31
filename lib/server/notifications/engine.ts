@@ -1,3 +1,6 @@
+import { metricContextSchema, type MetricContext } from "../../config/agent-monitoring.ts";
+import { evaluateUsage, type UsageCheckpoint, type UsageSample } from "../../notifications/usage.ts";
+import { usageRule, storageUsageRule } from "./usage-rule.ts";
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -15,18 +18,24 @@ const observationSchema = z.strictObject({
   severity: z.enum(["info", "warning", "critical"]), sourceSeverity: z.number().int().min(0).max(5).nullable(), confirmation: z.enum(["explicit", "sampled"]),
 });
 const inputSchema = z.strictObject({
-  key: z.string().min(1).max(256).refine(value => !value.startsWith("$")), family: z.enum(["availability", "status", "health", "problems"]),
-  source: z.enum(["zabbix", "probe", "vps", "signal"]), eventType: z.enum(["unavailable", "attention", "problem"]),
+  key: z.string().min(1).max(256).refine(value => !value.startsWith("$")), family: z.enum(["availability", "status", "health", "problems", "metrics"]),
+  source: z.enum(["zabbix", "probe", "vps", "signal"]), eventType: z.enum(["unavailable", "attention", "problem", "usage"]),
   messageCode: notificationMessageSchema, observation: observationSchema,
+  usage: z.object({ metric: z.enum(["cpu", "memory", "disk"]), limit: z.number(), token: z.string(), sampleAt: z.number(), validUntil: z.number(), value: z.number().nullable(), rule: z.string(), scopeRevision: z.number() }).optional(),
+  metricContext: metricContextSchema.optional(),
   resourceIdentity: z.string().min(1).max(256).optional(),
 });
-export type NotificationObservation = { key: string; family: "availability" | "status" | "health" | "problems"; source: "zabbix" | "probe" | "vps" | "signal"; eventType: Exclude<NotificationEventType, "recovery">; messageCode: NotificationMessageCode; observation: ConditionObservation; resourceIdentity?: string };
+export type NotificationObservation = { key: string; family: "availability" | "status" | "health" | "problems" | "metrics"; source: "zabbix" | "probe" | "vps" | "signal"; eventType: Exclude<NotificationEventType, "recovery">; messageCode: NotificationMessageCode; observation: ConditionObservation; resourceIdentity?: string; usage?: UsageSample & { scopeRevision: number }; metricContext?: MetricContext };
 
 export async function recordNotificationObservations(target: NotificationTarget, input: NotificationObservation[], completeFamilies: string[], replay = false, signal?: AbortSignal) {
   const observations = z.array(inputSchema).max(5004).parse(input).sort((a, b) => a.key.localeCompare(b.key));
   if (new Set(observations.map(row => row.key)).size !== observations.length) throw new Error("duplicate_notification_condition");
   return notificationTransaction(async client => {
     const policy = await readPolicy(client, true);
+    if (observations.some(row => row.usage?.scopeRevision)) {
+      const scope = (await client.query("SELECT value FROM pulse_settings WHERE key='monitoringScope' FOR SHARE")).rows[0]?.value;
+      if (observations.some(row => row.usage && row.usage.scopeRevision !== scope?.revision)) return;
+    }
     const current = await lockTarget(client, target);
     if (!current) return;
     const { rows: states } = await client.query("SELECT * FROM notification_target_state WHERE target_ref=$1 ORDER BY condition_key FOR UPDATE", [target.ref]);
@@ -53,15 +62,25 @@ export async function recordNotificationObservations(target: NotificationTarget,
     }
     for (const row of observations) {
       const existing = byKey.get(row.key);
-      const previous = existing?.checkpoint as ConditionCheckpoint | undefined;
+      const previous = existing?.checkpoint as (ConditionCheckpoint & { usage?: UsageCheckpoint }) | undefined;
+      let usage: UsageCheckpoint | undefined;
+      if (row.usage) {
+        if (current.kind === "storage" && row.usage.metric !== "disk") continue;
+        if (row.usage.rule !== (current.kind === "storage" ? storageUsageRule(current.identity) : usageRule(current.identity.agentMonitoring, row.usage.metric))) continue;
+        const prepared = evaluateUsage(previous?.usage, row.usage, row.observation.checkedAt);
+        usage = prepared.checkpoint;
+        if (row.observation.state !== "suppressed") row.observation.state = prepared.state;
+        row.observation.fingerprint = `${row.usage.rule}:${prepared.state}`;
+      }
       const decision = notificationDecision(policy, { targetRef: current.ref, critical: current.critical, monitoringEnabled: current.enabled,
         eventType: row.eventType, severity: row.observation.severity, sourceSeverity: row.observation.sourceSeverity });
       const recovery = notificationDecision(policy, { targetRef: current.ref, critical: current.critical, monitoringEnabled: current.enabled,
         eventType: "recovery", severity: "info", previouslyAnnounced: previous?.incident?.highestAnnouncedRank != null });
-      const result = evaluateCondition(previous ?? null, { ...row.observation, state: current.enabled ? row.observation.state : "suppressed" }, {
-        now: Date.now(), expectedEpoch: current.epoch, baseline: !baselines[row.family], eligible: decision.enabled, recoveryEnabled: recovery.enabled,
+      const result = evaluateCondition(row.usage && previous?.confirmed === null ? { ...previous, eligible: decision.enabled } : previous ?? null, { ...row.observation, state: current.enabled ? row.observation.state : "suppressed" }, {
+        now: Date.now(), expectedEpoch: current.epoch, baseline: row.usage ? false : !baselines[row.family], eligible: decision.enabled, recoveryEnabled: recovery.enabled,
       });
       if (result.ignored) continue;
+      if (usage) Object.assign(result.checkpoint, { usage });
       let incidentId: string | null = existing?.incident_id ?? null;
       if (result.incidentAction === "opened" && result.checkpoint.incident) {
         const incident = result.checkpoint.incident; incidentId = randomUUID();
@@ -72,17 +91,17 @@ export async function recordNotificationObservations(target: NotificationTarget,
         await client.query(`UPDATE notification_incident SET status=$2::text,severity=$3,source_severity=$4,message_code=$5,changed_at=clock_timestamp(),
           closed_at=CASE WHEN $2::text='active' THEN NULL ELSE clock_timestamp() END WHERE id=$1`,
         [incidentId, status, result.checkpoint.incident?.severity ?? result.previousIncident?.severity ?? row.observation.severity, row.observation.sourceSeverity,
-          status === "resolved" ? "recovered" : status === "cancelled" ? "monitor_changed" : row.messageCode]);
+          status === "resolved" ? (row.usage ? "usage_recovered" : "recovered") : status === "cancelled" ? "monitor_changed" : row.messageCode]);
       }
       let eventId: string | null = null;
       if (result.event && incidentId) {
         eventId = randomUUID(); const recovered = result.event === "recovered";
         const rank = result.checkpoint.incident?.highestAnnouncedRank ?? "closed";
-        await client.query(`INSERT INTO notification_event(id,incident_id,transition_key,target_ref,display_name,event_type,transition,severity,source_severity,critical_at_occurrence,message_code,occurred_at,announce)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        await client.query(`INSERT INTO notification_event(id,incident_id,transition_key,target_ref,display_name,event_type,transition,severity,source_severity,critical_at_occurrence,message_code,occurred_at,announce,metric_context)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [eventId, incidentId, `${incidentId}:${result.event}:${rank}`, target.ref, current.label, recovered ? "recovery" : row.eventType,
           result.event, recovered ? "info" : row.observation.severity, row.observation.sourceSeverity, current.critical,
-          recovered ? "recovered" : row.messageCode, new Date(recovered ? row.observation.observedAt : result.checkpoint.incident!.startedAt), !replay]);
+          recovered ? (row.usage ? "usage_recovered" : "recovered") : row.messageCode, new Date(recovered ? row.observation.observedAt : result.checkpoint.incident!.startedAt), !replay, row.metricContext ? JSON.stringify(row.metricContext) : null]);
       }
       await client.query(`INSERT INTO notification_target_state(target_ref,condition_key,epoch,checkpoint,incident_id) VALUES($1,$2,$3,$4,$5)
         ON CONFLICT(target_ref,condition_key) DO UPDATE SET epoch=EXCLUDED.epoch,checkpoint=EXCLUDED.checkpoint,incident_id=EXCLUDED.incident_id,updated_at=clock_timestamp()`,

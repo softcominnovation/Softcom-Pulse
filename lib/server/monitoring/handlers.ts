@@ -287,7 +287,7 @@ export function servicePatch(request: Request, context: Params<"id">) {
   return protectedResponse(request, async () => {
     queryParams(request, emptyQuery);
     const id = uuidSchema.parse((await context.params).id);
-    const { context: origin, ...body } = z.object({ context: resourceContextSchema.optional() }).passthrough().parse(await jsonBody(request));
+    const { context: origin, ...body } = z.object({ context: resourceContextSchema.optional(), expectedRevision: z.number().int().positive() }).passthrough().parse(await jsonBody(request));
     if (isDemoMode()) {
       const existing = buildDemoResourceConfigs().find(r => r.id === id) ?? buildDemoResourceConfigs()[0];
       return { data: { ...existing, ...body, id, updatedAt: new Date().toISOString() } };
@@ -300,7 +300,8 @@ export function serviceDelete(request: Request, context: Params<"id">) {
     queryParams(request, emptyQuery);
     const id = uuidSchema.parse((await context.params).id);
     if (isDemoMode()) return;
-    return deleteResource(id);
+    const body = z.strictObject({ expectedRevision: z.number().int().positive() }).parse(await jsonBody(request));
+    return deleteResource(id, body.expectedRevision);
   }, 204);
 }
 export function externalServicesGet(request: Request) {

@@ -7,10 +7,13 @@ import { notificationTargets } from "./targets.ts";
 import { notificationDecision, notificationRuntime } from "../../notifications/policy.ts";
 import { notificationListQuery, notificationReadSchema, type NotificationEventView, type NotificationSnapshot, type NotificationChangeView, type NotificationChanges, type NotificationSourceHealth } from "../../notifications/contracts.ts";
 import { eventView, incidentView } from "./views.ts";
+import type { NotificationDateRange } from "../../notifications/history-range.ts";
 
+const incidentSelect = "SELECT i.*,e.metric_context,e.occurred_at AS context_occurred_at FROM notification_incident i LEFT JOIN LATERAL (SELECT metric_context,occurred_at FROM notification_event WHERE incident_id=i.id AND metric_context IS NOT NULL ORDER BY created_at DESC,id DESC LIMIT 1) e ON true";
 const decimal = z.string().regex(/^\d{1,20}$/);
 const cursorSchema = z.strictObject({ g: z.uuid(), r: decimal, scope: z.enum(["private", "public"]),
-  end: decimal.optional(), delivery: decimal.optional(), time: z.iso.datetime().optional(), id: z.uuid().optional(), list: z.enum(["events", "incidents"]).optional() });
+  end: decimal.optional(), delivery: decimal.optional(), time: z.iso.datetime().optional(), id: z.uuid().optional(), list: z.enum(["events", "incidents"]).optional(),
+  from: z.iso.date().optional(), to: z.iso.date().optional() });
 type Cursor = z.infer<typeof cursorSchema>;
 export const encodeNotificationCursor = (cursor: Cursor) => Buffer.from(JSON.stringify(cursor)).toString("base64url");
 function parseCursor(raw: string, stream: Stream, scope: Cursor["scope"]): Cursor {
@@ -55,10 +58,11 @@ async function delivery(client: PoolClient, events: NotificationEventView[], pol
   });
 }
 
-async function listWithClient(client: PoolClient, query: z.infer<typeof notificationListQuery>, scope: Cursor["scope"], incidents = false, incidentId?: string): Promise<NotificationSnapshot> {
+async function listWithClient(client: PoolClient, query: z.infer<typeof notificationListQuery>, scope: Cursor["scope"], incidents = false, incidentId?: string, range?: NotificationDateRange): Promise<NotificationSnapshot> {
     const stream = await readStream(client), policy = await readPolicy(client);
     const paging = query.cursor ? parseCursor(query.cursor, stream, scope) : null;
     if (paging && (paging.list !== (incidents ? "incidents" : "events") || !paging.time || !paging.id)) throw new BffError(400, "invalid_notification_cursor");
+    if (paging && (range ? paging.from !== range.from || paging.to !== (range.to ?? range.from) : paging.from || paging.to)) throw new BffError(400, "invalid_notification_cursor");
     const conditions: string[] = [], args: unknown[] = [];
     const parameter = (value: unknown) => { args.push(value); return `$${args.length}`; };
     const alias = incidents ? "i" : "e";
@@ -67,27 +71,34 @@ async function listWithClient(client: PoolClient, query: z.infer<typeof notifica
     if (query.state !== "all") conditions.push(`i.status=${parameter(query.state)}`);
     if (!incidents && query.read === "unread") conditions.push("e.read_at IS NULL");
     if (incidentId) conditions.push(`i.id=${parameter(incidentId)}::uuid`);
+    if (range) {
+      conditions.push(`e.created_at >= (${parameter(range.from)}::date::timestamp AT TIME ZONE 'America/Fortaleza')`);
+      conditions.push(`e.created_at < ((${parameter(range.to ?? range.from)}::date + 1)::timestamp AT TIME ZONE 'America/Fortaleza')`);
+    }
     const time = incidents ? "i.opened_at" : "e.created_at";
     if (paging) conditions.push(`(${time},${alias}.id)<(${parameter(paging.time)}::timestamptz,${parameter(paging.id)}::uuid)`);
     const limit = parameter(query.limit + 1);
-    const sql = incidents ? "SELECT i.* FROM notification_incident i" : "SELECT e.*,i.status AS incident_status FROM notification_event e JOIN notification_incident i ON i.id=e.incident_id";
+    const sql = incidents ? incidentSelect : "SELECT e.*,i.status AS incident_status FROM notification_event e JOIN notification_incident i ON i.id=e.incident_id";
     const rows = (await client.query(`${sql}${conditions.length ? " WHERE " + conditions.join(" AND ") : ""} ORDER BY ${time} DESC,${alias}.id DESC LIMIT ${limit}`, args)).rows;
     const hasMore = rows.length > query.limit, page = rows.slice(0, query.limit), last = page.at(-1);
     const cursor = { g: stream.generation, r: stream.revision, scope };
     return { events: incidents ? [] : await delivery(client, page.map(eventView), policy), incidents: incidents ? page.map(incidentView) : [],
       counts: await counts(client), syncCursor: encodeNotificationCursor(cursor), streamRevision: stream.revision,
-      nextPageCursor: hasMore && last ? encodeNotificationCursor({ ...cursor, list: incidents ? "incidents" : "events", time: (incidents ? last.opened_at : last.created_at).toISOString(), id: last.id }) : null,
+      nextPageCursor: hasMore && last ? encodeNotificationCursor({ ...cursor, ...(range ? { from: range.from, to: range.to ?? range.from } : {}), list: incidents ? "incidents" : "events", time: (incidents ? last.opened_at : last.created_at).toISOString(), id: last.id }) : null,
       serverTime: new Date().toISOString(), runtime: notificationRuntime(policy, stream.delivery_revision), sources: await sourceHealth(client) };
 }
 export async function listNotifications(query: z.infer<typeof notificationListQuery>, scope: Cursor["scope"] = "private", incidents = false, incidentId?: string): Promise<NotificationSnapshot> {
   return notificationTransaction(client => listWithClient(client, query, scope, incidents, incidentId), true);
+}
+export async function notificationHistory(query: { from: string; to?: string } & Omit<z.infer<typeof notificationListQuery>, "read" | "state">, scope: Cursor["scope"]) {
+  return notificationTransaction(client => listWithClient(client, { ...query, read: "all", state: "all" }, scope, false, undefined, { from: query.from, to: query.to }), true);
 }
 export async function notificationDetail(id: string, scope: Cursor["scope"], incident = false, query = notificationListQuery.parse({})) {
   z.uuid().parse(id);
   if (incident) {
     return notificationTransaction(async client => {
       const history = await listWithClient(client, query, scope, false, id);
-      const current = (await client.query("SELECT * FROM notification_incident WHERE id=$1", [id])).rows[0];
+      const current = (await client.query(`${incidentSelect} WHERE i.id=$1`, [id])).rows[0];
       if (!current) throw new BffError(404, "notification_not_found");
       return { ...history, incident: incidentView(current), targetHref: await targetHref(client, current.target_ref, scope) };
     }, true);

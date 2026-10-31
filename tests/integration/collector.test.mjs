@@ -162,10 +162,11 @@ test("Storage migration, revisioned preferences, isolated snapshots and authenti
     assert.equal(advertised.keys.includes(keys.storages), false);
     assert.deepEqual([...advertised.extensionKeys].sort(), [keys.dockerCoverage, keys.storages].sort());
     // The old Web allowlist sees only its original keys; new Web resolves the
-    // extension in the same generation without changing primary DTOs.
+    // extensions in the same generation without changing primary DTOs.
     assert.ok(advertised.keys.every(key => /^pulse:(?:snapshot:(?:overview|host:.+|service:.+)|inventory:(?:hosts|containers:.+)|problems:current|source:bindings)$/.test(key)));
-    const generation = await readSnapshotBatch([keys.hosts, keys.storages]);
+    const generation = await readSnapshotBatch([keys.hosts, keys.storages, keys.dockerCoverage]);
     assert.equal(generation.snapshots.get(keys.hosts).generation, generation.snapshots.get(keys.storages).generation);
+    assert.equal(generation.snapshots.get(keys.hosts).generation, generation.snapshots.get(keys.dockerCoverage).generation);
     const scopeBefore = await getPrisma().pulseSetting.findUnique({ where: { key: "monitoringScope" } });
     let list = await readStorages(); assert.equal(list.data.items.length, 1); assert.equal(list.data.items[0].configId, null);
     assert.equal((await storagesGet(req("monitoring/storages", null, null))).status, 401);
@@ -175,10 +176,18 @@ test("Storage migration, revisioned preferences, isolated snapshots and authenti
     assert.equal(concurrent.filter(result => result.value).length, 1); assert.equal(concurrent.find(result => result.error).error.status, 409);
     const config = concurrent.find(result => result.value).value;
     assert.equal(config.zabbixHostId, "77"); assert.equal(config.revision, 1);
+    assert.equal(config.diskWarningPercent, null);
     list = await readStorages(); assert.equal(list.data.items[0].configId, config.id);
     const volumes = list.data.items[0].volumes;
+    assert.equal((await storageSettingsPut(req(`settings/storages/${key}`, { expectedRevision: 1, diskWarningPercent: 70 }), context)).status, 400);
+    const incomplete = structuredClone(result.entries);
+    delete incomplete[keys.storages].items[0].volumes[0].metrics.diskUsedBytes;
+    await publish(incomplete);
+    await assert.rejects(saveStorageConfig(key, { expectedRevision: 1, filesystemKeys: [volumes[0].key], diskWarningPercent: 70 }), error => error.code === "storage_capacity_unavailable");
+    await publish(result.entries);
     const invalid = await storageSettingsPut(req(`settings/storages/${key}`, { expectedRevision: 1, filesystemKeys: volumes.map(item => item.key) }), context); assert.equal(invalid.status, 400);
-    const updated = await saveStorageConfig(key, { expectedRevision: 1, displayName: "Archive One", dashboardEnabled: true, filesystemKeys: volumes.map(item => item.key), independentVolumesConfirmed: true }); assert.equal(updated.revision, 2);
+    const updated = await saveStorageConfig(key, { expectedRevision: 1, displayName: "Archive One", dashboardEnabled: true, filesystemKeys: volumes.map(item => item.key), independentVolumesConfirmed: true, diskWarningPercent: 70 }); assert.equal(updated.revision, 2); assert.equal(updated.diskWarningPercent, 70);
+    const legacy = await saveStorageConfig(key, { expectedRevision: 2, displayName: "Archive One", dashboardEnabled: true, filesystemKeys: updated.filesystemKeys, independentVolumesConfirmed: true }); assert.equal(legacy.diskWarningPercent, 70);
     const p = (await getPresentation()).data, { revision, ...settings } = p;
     settings.schemaVersion = 2; settings.screens[0].blocks.push({ id: randomUUID(), type: "storage_summary", enabled: true, width: "wide", options: { storageConfigId: config.id, visibleRows: 3 } });
     await savePresentation({ expectedRevision: revision, settings });
@@ -197,11 +206,11 @@ test("Storage migration, revisioned preferences, isolated snapshots and authenti
     await publish(broken.entries);
     assert.equal((await readStorages()).data.status, "failed"); assert.equal((await readStorages()).data.items[0].stale, true);
     const unaffected = await readOverview(); assert.equal(unaffected.stale, false); assert.equal(unaffected.data.blocks.find(block => block.type === "asgard_summary").stale, false);
-    await assert.rejects(saveStorageConfig(key, { expectedRevision: 2, networkInterfaceKey: list.data.items[0].interfaces[0].key }), error => error.code === "storage_inventory_unavailable");
+    await assert.rejects(saveStorageConfig(key, { expectedRevision: 3, diskWarningPercent: null, networkInterfaceKey: list.data.items[0].interfaces[0].key }), error => error.code === "storage_inventory_unavailable");
     f.host.tags = [];
     await publish((await collectSnapshots({ rpc: f.rpc })).entries);
     assert.equal((await readStorages()).data.orphans[0].resolution, "tag_missing");
-    const reset = await saveStorageConfig(key, { expectedRevision: 2 }); assert.equal(reset.id, config.id); assert.equal(reset.revision, 3);
+    const reset = await saveStorageConfig(key, { expectedRevision: 3, diskWarningPercent: null }); assert.equal(reset.id, config.id); assert.equal(reset.revision, 4);
     const scopeAfter = await getPrisma().pulseSetting.findUnique({ where: { key: "monitoringScope" } }); assert.deepEqual(scopeAfter.value, scopeBefore.value);
     const rows = await getDatabase().query("SELECT column_name FROM information_schema.columns WHERE table_name='storage_config'"); assert.ok(!rows.rows.some(row => /metric|availability|cpu|memory|tags/.test(row.column_name)));
   } finally {

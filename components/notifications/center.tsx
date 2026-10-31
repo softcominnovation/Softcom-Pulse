@@ -8,9 +8,11 @@ import { useCanEdit } from "@/store/auth.store";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { useNotificationCenter } from "./provider";
-import { notificationMessages, type NotificationSnapshot, type NotificationIncidentView } from "@/lib/notifications/contracts";
+import { notificationText, type NotificationSnapshot, type NotificationIncidentView } from "@/lib/notifications/contracts";
+import { notificationDay, notificationTimeZone, type NotificationDateRange } from "@/lib/notifications/history-range";
+import { NotificationHistoryDateRange } from "./history-date-range";
 
-const date = (value: string) => new Date(value).toLocaleString("pt-BR", { timeZone: "America/Fortaleza", dateStyle: "short", timeStyle: "short" });
+const date = (value: string) => new Date(value).toLocaleString("pt-BR", { timeZone: notificationTimeZone, dateStyle: "short", timeStyle: "short" });
 const statuses = { active: "Em andamento", resolved: "Resolvido", cancelled: "Acompanhamento encerrado" };
 const severities = { critical: "Crítica", warning: "Atenção", info: "Informação" };
 
@@ -47,21 +49,30 @@ function NotificationList({ editor, publicRead, revision, refresh }: { editor: b
   const [data, setData] = useState<NotificationSnapshot | null>(null), [error, setError] = useState("");
   const [detail, setDetail] = useState<string | null>(null), [severity, setSeverity] = useState("");
   const [target, setTarget] = useState("");
+  const [today, setToday] = useState(() => notificationDay());
+  const [historyRange, setHistoryRange] = useState<NotificationDateRange | null>(null);
+  const historyFrom = tab === "all" ? historyRange?.from ?? today : undefined;
+  const historyTo = tab === "all" ? historyRange?.to : undefined;
   const [busy, setBusy] = useState(false), [refreshKey, setRefreshKey] = useState(0);
   const generation = useRef(0);
   useEffect(() => {
+    const update = () => setToday(notificationDay()), timer = setInterval(update, 60000);
+    document.addEventListener("visibilitychange", update);
+    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", update); };
+  }, []);
+  useEffect(() => {
     const abort = new AbortController(), run = ++generation.current;
-    const path = tab === "incidents" ? "/monitoring/notifications/incidents" : "/monitoring/notifications";
-    void api.get<NotificationSnapshot>(path, { signal: abort.signal, params: { ...(tab === "incidents" ? {} : { read: tab }), severity: severity || undefined, targetRef: target || undefined } }).then(response => {
+    const path = tab === "incidents" ? "/monitoring/notifications/incidents" : tab === "all" ? "/monitoring/notifications/history" : "/monitoring/notifications";
+    void api.get<NotificationSnapshot>(path, { signal: abort.signal, params: { ...(tab === "all" ? { from: historyFrom, to: historyTo } : tab === "unread" ? { read: tab } : {}), severity: severity || undefined, targetRef: target || undefined } }).then(response => {
       if (run === generation.current) { setData(response.data); setError(""); }
     }).catch(() => { if (!abort.signal.aborted) setError("Não foi possível atualizar a central. Tente novamente."); });
     return () => abort.abort();
-  }, [tab, revision, refreshKey, severity, target]);
+  }, [tab, revision, refreshKey, severity, target, historyFrom, historyTo]);
   async function more() {
     if (!data?.nextPageCursor || busy) return;
     const run = generation.current; setBusy(true);
     try {
-      const response = await api.get<NotificationSnapshot>(tab === "incidents" ? "/monitoring/notifications/incidents" : "/monitoring/notifications", { params: { cursor: data.nextPageCursor, ...(tab === "incidents" ? {} : { read: tab }), severity: severity || undefined, targetRef: target || undefined } });
+      const response = await api.get<NotificationSnapshot>(tab === "incidents" ? "/monitoring/notifications/incidents" : tab === "all" ? "/monitoring/notifications/history" : "/monitoring/notifications", { params: { cursor: data.nextPageCursor, ...(tab === "all" ? { from: historyFrom, to: historyTo } : tab === "unread" ? { read: tab } : {}), severity: severity || undefined, targetRef: target || undefined } });
       if (run === generation.current) setData(current => current && BigInt(current.streamRevision) <= BigInt(response.data.streamRevision) ? { ...response.data, events: [...new Map([...current.events, ...response.data.events].map(event => [event.id, event])).values()], incidents: [...new Map([...current.incidents, ...response.data.incidents].map(incident => [incident.id, incident])).values()] } : current);
     } catch { setError("Não foi possível carregar mais registros."); } finally { setBusy(false); }
   }
@@ -77,6 +88,7 @@ function NotificationList({ editor, publicRead, revision, refresh }: { editor: b
   return <div className="flex min-h-0 flex-1 flex-col gap-3 p-4 pt-0">
     <div className="flex flex-wrap gap-2" aria-label="Filtrar notificações">{([['unread', 'Não lidas'], ['incidents', 'Incidentes atuais'], ['all', 'Histórico']] as const).map(([value, label]) => <Button key={value} size="sm" variant={tab === value ? "secondary" : "ghost"} aria-pressed={tab === value} onClick={() => { setDetail(null); setData(null); setTab(value); }}>{label}</Button>)}</div>
     <label className="flex items-center gap-2 text-xs">Severidade<select className="min-w-0 rounded-md border bg-background p-2" value={severity} onChange={event => { setSeverity(event.target.value); setData(null); }}><option value="">Todas</option><option value="critical">Crítica</option><option value="warning">Atenção</option><option value="info">Informação</option></select></label>
+    {tab === "all" && !detail && <NotificationHistoryDateRange key={`${historyFrom}:${historyTo ?? ""}`} value={{ from: historyFrom!, to: historyTo }} today={today} onApply={range => { generation.current++; setHistoryRange(range); setData(null); setError(""); setRefreshKey(key => key + 1); }} />}
     {target && <Button size="sm" variant="ghost" onClick={() => { setTarget(""); setData(null); }}>Limpar filtro de serviço</Button>}
     {publicRead && <p className="text-xs text-muted-foreground">Leitura compartilhada. <Link href="/admin/configuracoes" className="underline">Entrar na área privada</Link> para gerenciar.</p>}
     {editor && data && <Button size="sm" variant="outline" disabled={busy || !data.counts.unreadCount} onClick={() => void mark({ allThrough: data.syncCursor })}>Marcar notificações existentes como lidas</Button>}
@@ -87,10 +99,10 @@ function NotificationList({ editor, publicRead, revision, refresh }: { editor: b
         {data && !data.events.length && !data.incidents.length && <p className="text-muted-foreground">Nenhum registro neste filtro.</p>}
         {data?.events.map(event => <article key={event.id} className="rounded-xl border p-3 space-y-2">
           <div className="flex items-center justify-between gap-2"><h3 className="min-w-0 break-words font-semibold">{event.displayName}</h3>{!event.readAt && <span className="shrink-0 text-xs text-primary">Não lida</span>}</div>
-          <p>{notificationMessages[event.messageCode]}</p><p className="text-xs text-muted-foreground">{date(event.createdAt)} · {severities[event.severity]} · {statuses[event.incidentStatus]}</p>
+          <p>{notificationText(event)}</p><p className="text-xs text-muted-foreground">{date(event.createdAt)} · {severities[event.severity]} · {statuses[event.incidentStatus]}</p>
           <div className="flex flex-wrap gap-2"><Button size="sm" variant="ghost" onClick={() => show(event.incidentId)}>Ver incidente</Button><Button size="sm" variant="ghost" onClick={() => { setTarget(event.targetRef); setData(null); }}>Filtrar serviço</Button>{editor && !event.readAt && <Button size="sm" disabled={busy} onClick={() => void mark({ ids: [event.id] })}>Marcar como lida</Button>}</div>
         </article>)}
-        {data?.incidents.map(incident => <article key={incident.id} className="rounded-xl border p-3 space-y-2"><h3 className="break-words font-semibold">{incident.displayName}</h3><p>{notificationMessages[incident.messageCode]}</p><p className="text-xs text-muted-foreground">{severities[incident.severity]} · Desde {date(incident.openedAt)}</p><Button size="sm" variant="ghost" onClick={() => void show(incident.id)}>Ver incidente</Button></article>)}
+        {data?.incidents.map(incident => <article key={incident.id} className="rounded-xl border p-3 space-y-2"><h3 className="break-words font-semibold">{incident.displayName}</h3><p>{notificationText(incident)}</p><p className="text-xs text-muted-foreground">{severities[incident.severity]} · Desde {date(incident.openedAt)}</p><Button size="sm" variant="ghost" onClick={() => void show(incident.id)}>Ver incidente</Button></article>)}
         {data?.nextPageCursor && <Button disabled={busy} onClick={() => void more()}>Carregar mais</Button>}
       </>}
     </div>
@@ -123,6 +135,6 @@ function IncidentDetail({ id, revision }: { id: string; revision: string }) {
   return <article className="rounded-xl border p-3 space-y-2">
     {error && <p role="status">Não foi possível atualizar o incidente. <Button size="sm" onClick={() => setRetry(value => value + 1)}>Recarregar</Button></p>}
     {!detail && !error && <p>Carregando incidente…</p>}
-    {detail && <><h3 ref={heading} tabIndex={-1} className="font-semibold">{detail.incident.displayName}</h3><p>{notificationMessages[detail.incident.messageCode]}</p><p>{statuses[detail.incident.status]}</p><p className="text-xs text-muted-foreground">Observado: {date(detail.incident.openedAt)} · Confirmado: {date(detail.incident.confirmedAt)}</p>{!detail.events.length && <p>Condição preexistente, acompanhada sem aviso retroativo.</p>}{detail.events.map(event => <p key={event.id} className="text-xs">{date(event.createdAt)} · {notificationMessages[event.messageCode]} · {event.readAt ? "Lida" : "Não lida"}</p>)}{detail.nextPageCursor && <Button size="sm" disabled={busy} onClick={() => void more()}>Mais eventos do incidente</Button>}{detail.targetHref && <Link className="inline-block underline" href={detail.targetHref}>Ver serviço</Link>}</>}
+    {detail && <><h3 ref={heading} tabIndex={-1} className="font-semibold">{detail.incident.displayName}</h3><p>{notificationText(detail.incident)}</p><p>{statuses[detail.incident.status]}</p>{detail.incident.metricContext && detail.incident.contextOccurredAt && <p className="text-xs text-muted-foreground">Último evento: {date(detail.incident.contextOccurredAt)} · {detail.incident.metricContext.coverage}. Valor histórico.</p>}<p className="text-xs text-muted-foreground">Observado: {date(detail.incident.openedAt)} · Confirmado: {date(detail.incident.confirmedAt)}</p>{!detail.events.length && <p>Condição preexistente, acompanhada sem aviso retroativo.</p>}{detail.events.map(event => <p key={event.id} className="text-xs">{date(event.createdAt)} · {notificationText(event)} · {event.readAt ? "Lida" : "Não lida"}</p>)}{detail.nextPageCursor && <Button size="sm" disabled={busy} onClick={() => void more()}>Mais eventos do incidente</Button>}{detail.targetHref && <Link className="inline-block underline" href={detail.targetHref}>Ver serviço</Link>}</>}
   </article>;
 }

@@ -145,6 +145,41 @@ describe("signal service resolver", () => {
     assert.notEqual(stale.reason, "down");
   });
 
+  it("marks the service down when its VM is powered off even if the container still says running", () => {
+    const result = resolve({
+      vms: [{ ...vm, state: "stopped", stateFresh: true }],
+      containers: [container("softcom-signal-staging_postgres.1.a", "running")],
+    });
+    assert.equal(result.resolution, "down");
+    assert.equal(result.reason, "vm_stopped");
+    assert.equal(result.kpiLabel, "Fora");
+  });
+
+  it("keeps the container reading when the VM power sample is stale", () => {
+    const result = resolve({
+      vms: [{ ...vm, state: "stopped", stateFresh: false }],
+      containers: [container("softcom-signal-staging_postgres.1.a", "running")],
+    });
+    assert.equal(result.kpiLabel, "No ar");
+  });
+
+  it("ignores a powered-off replica and keeps the service on the VM that is still on", () => {
+    const result = resolve({
+      links: [link, { hostKey: "ASGARD", vmKey: "qemu/8003002", parentHostKey: "ASGARD" }],
+      vms: [
+        { ...vm, state: "stopped", stateFresh: true },
+        { parentHostKey: "ASGARD", vmKey: "qemu/8003002", linuxHostKey: "vm-squad-ia-worker-02", state: "running", stateFresh: true },
+      ],
+      hosts: [host, { hostKey: "vm-squad-ia-worker-02", role: "linux", disabled: false, readable: true }],
+      containers: [
+        container("softcom-signal-staging_postgres.1.old", "running"),
+        container("softcom-signal-staging_postgres.1.live", "running", { hostKey: "vm-squad-ia-worker-02" }),
+      ],
+    });
+    assert.equal(result.kpiLabel, "No ar");
+    assert.equal(result.candidate.hostKey, "vm-squad-ia-worker-02");
+  });
+
   it("does not call an empty link set a down service", () => {
     assert.equal(resolve({ links: [] }).reason, "no_scope");
     assert.equal(resolve({ hosts: [{ ...host, readable: false }] }).reason, "incomplete_scope");

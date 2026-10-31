@@ -51,9 +51,13 @@ O card de container do cluster Signal (`signal_service`) usa o mesmo envelope. O
 
 Componente `ServiceAvailabilityCard`. Só a classe `availability-card`.
 
-O miolo são duas leituras, classe `availability-readings`, em duas colunas: CPU e RAM. Cada uma tem rótulo, valor tabular de 10px e uma barra de 3px. CPU usa o verde. RAM usa o azul. Sem as duas leituras habilitadas, a zona mostra o texto **Ver detalhes**.
+O miolo usa até duas leituras, classe `availability-readings`, em duas colunas. O seletor único **Métricas do minicard** em Recursos oferece CPU/RAM, CPU/Disco ou Disco/RAM, gravando o par existente `presentation.cardMetrics`. Não há checkboxes duplicados de CPU/memória/disco para hosts. Recursos e Alertas e exibição da VM salvam essa mesma escolha e sincronizam `showCpu`/`showMemory`/`showDisk` para compatibilidade, sem pares contraditórios. Cada leitura tem rótulo, valor tabular de 10px e barra de 3px: CPU verde, RAM azul, disco âmbar. Cadastros sem par explícito continuam respeitando suas flags, limitadas a duas leituras; Disco marcado tem prioridade sobre RAM quando CPU também está marcada. Sem leituras, a zona mostra **Ver detalhes**. Abrir um par legado no editor só o adota no rascunho, sem gravar automaticamente.
 
 CPU/RAM do card de recurso Zabbix seguem `presentation.metricsSource` do recurso (Recursos → editar host): padrão **hypervisor** (mesma fonte da listagem de VMs do Asgard); opcional **agent**. A lista de VMs do Asgard não muda.
+
+Prévia e dashboard usam `resolveAvailabilityCardMetrics`, sem fallback posterior no componente. Com configuração de monitoramento do Agent, Disco usa somente a capacidade selecionada e o vínculo válido; falta de seleção, volume, vínculo ou leitura atual mostra **—**, sem substituir pela raiz. Sem configuração de monitoramento, o recurso avulso pode exibir o percentual observado de `/`, ou a métrica percentual do host quando não há raiz no inventário; a dica identifica a origem e não anuncia total geral. A preferência de CPU/RAM não muda essa origem. Zero observado aparece como **0%**; bytes não viram percentuais. `cardDiskLabel` é metadado opcional de apresentação do BFF, sem nova configuração no banco, nomes técnicos de volumes ou regras privadas, e preserva a mesma indicação no leitor público.
+
+A altura permanece **120px**, com nome, descrição e rodapé visíveis. Estado, rede e tempo ativo mantêm suas opções de exibição; a escolha das métricas do host existe somente no seletor. Containers conservam seus controles e CPU/RAM: sua flag de disco não vira medidor de capacidade de uma VM. A dica de disco é discreta, sem faixa permanente ou alteração de grade.
 
 O rodapé, classe `availability-footer`, fica abaixo das barras. À esquerda, o tipo (Host, Container ou o tipo cadastrado). À direita, o tempo ativo ou o horário da leitura. Uma métrica só.
 
@@ -105,3 +109,7 @@ O serviço que for exibido nesta grade implementa um componente no mesmo grid, n
 10. A nota de rodapé do painel pode ganhar uma frase curta do novo tipo. O título do painel continua **Disponibilidade de Serviços**.
 
 Fora deste contrato: não colocar o card em `uptime_list` só para reaproveitar a lista, não desenhar o card como linha de tabela e não usar o tamanho dos painéis de ASGARD ou de infraestrutura.
+
+## Alertas de uso e pares dos minicards
+
+O [guia de alertas das VMs com Agent](vm-agent-alerts.md) documenta limites percentuais, armazenamento agregado selecionado, configuração compartilhada entre ASGARD e Signal, revisão das escritas e seleção CPU/RAM, CPU/Disco ou Disco/RAM. O Collector existente avalia os limites; disponibilidade, processos, layouts salvos e o áudio mantêm seus contratos.

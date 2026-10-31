@@ -1,3 +1,4 @@
+import { cardMetricsSchema } from "../config/agent-monitoring.ts";
 import { z } from "zod";
 import { hostKeySchema, historyRangeSchema, resourceConfigSchema, type ResourceConfig } from "../config/resources.ts";
 import type { BlockType } from "../config/presentation.ts";
@@ -9,7 +10,7 @@ const opaqueId = z.string().min(1).max(256);
 export const metricSchema = z.object({
   value: z.number().finite().nullable(), unit: z.enum(["percent", "bytes", "bytes/s", "bits/s", "seconds", "count"]),
   observedAt: isoSchema.nullable(), quality: z.enum(["fresh", "stale", "missing", "unsupported"]),
-  validUntil: isoSchema.nullable().optional(),
+  sampleObservedAt: isoSchema.optional(), validUntil: isoSchema.nullable().optional(),
 }).refine(metric => metric.value === null || (metric.observedAt !== null && ["fresh", "stale"].includes(metric.quality)));
 export const metricsSchema = z.object({
   cpuUsagePercent: metricSchema.optional(), provisionedCpuCount: metricSchema.optional(), osCpuCount: metricSchema.optional(), memoryUsedBytes: metricSchema.optional(), memoryTotalBytes: metricSchema.optional(),
@@ -30,8 +31,10 @@ export const vmSchema = z.object({
   state: z.enum(["running", "stopped", "paused", "unknown"]), metrics: metricsSchema,
   linuxHostKey: hostKeySchema.nullable(), evidence: evidenceSchema,
 });
-const deviceSchema = z.object({ key: opaqueId, name, metrics: metricsSchema });
+const deviceSchema = z.object({ key: opaqueId, name, filesystemType: z.string().nullable().optional(), metrics: metricsSchema });
+const capacitySchema = z.object({ coverage: z.enum(["complete", "incomplete", "unconfigured"]), label: z.string(), filesystemKeys: z.array(z.string()), usedBytes: metricSchema.optional(), totalBytes: metricSchema.optional(), usagePercent: metricSchema.optional(), availableBytes: metricSchema.optional() });
 export const hostSchema = z.object({
+  agentCard: z.object({ capacity: capacitySchema, cardMetrics: cardMetricsSchema.optional(), metricsSource: z.enum(["agent", "hypervisor", "auto"]) }).optional(),
   ...presentationFields,
   hostKey: hostKeySchema, name, role: z.enum(["hypervisor", "linux", "unknown"]), availability: observedAvailability,
   metrics: metricsSchema.extend({ cpuCount: metricSchema.optional() }), storages: z.array(deviceSchema), filesystems: z.array(deviceSchema), interfaces: z.array(deviceSchema),
@@ -89,14 +92,15 @@ export type Availability = "ready" | "no_data" | "unavailable";
 export type ReadResult<T> = { presentationStatus?: "ready" | "unavailable"; data: T; availability: Availability; stale: boolean; lastUpdated: string | null; refreshAfterMs: number };
 export type ConfiguredResource = {
   id: string; config: ResourceConfig; resolved: boolean; resolution: "resolved" | "missing" | "ambiguous";
-  resource: Host | Container | null; metrics: Metrics; linkedVmName?: string;
+  resource: Host | Container | null; metrics: Metrics; linkedVmName?: string; cardDiskLabel?: string;
 };
-export const configuredResourceSchema = z.object({ id: z.uuid(), config: resourceConfigSchema, resolved: z.boolean(), resolution: z.enum(["resolved", "missing", "ambiguous"]), resource: z.union([hostSchema, containerSchema]).nullable(), metrics: metricsSchema });
+export const configuredResourceSchema = z.object({ id: z.uuid(), config: resourceConfigSchema, resolved: z.boolean(), resolution: z.enum(["resolved", "missing", "ambiguous"]), resource: z.union([hostSchema, containerSchema]).nullable(), metrics: metricsSchema, cardDiskLabel: z.string().max(160).optional() });
 export const vmWorkloadsSchema = z.object({ vm: vmSchema, association: z.enum(["linked", "unlinked", "host_unavailable"]), containers: z.array(containerSchema), configuredServices: z.array(configuredResourceSchema) });
 export type VmWorkloads = z.infer<typeof vmWorkloadsSchema>;
 export type SignalServiceCard = {
   id: string; targetId: string; displayName: string; servicePrefix: string; critical: boolean; displayOrder: number;
   enabled: boolean; dashboardEnabled: boolean; panelEnabled: boolean; flowKpi: "database" | "redis" | null;
+  cardMetrics?: import("../config/agent-monitoring.ts").CardMetric[]; disk?: number | null;
   kpiLabel: string; tone: "good" | "warn" | "bad" | "unknown"; hostKey: string | null; vmName: string | null;
   cpu: number | null; memory: number | null; uptimeSeconds: number | null; reason: string;
 };

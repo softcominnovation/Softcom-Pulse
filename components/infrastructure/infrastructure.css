@@ -60,6 +60,8 @@
 .vm-list-toolbar .resource-select-label { flex: 1 1 180px; }
 .vm-list-toolbar .resource-select-label select, .vm-list-toolbar .resource-select-label input[type=search] { width: 100%; }
 .vm-list-toolbar-count { margin: 0 0 2px auto; color: var(--pulse-muted); font: 11px var(--font-numeric); }
+.vm-detail-panel .vm-list-toolbar { border: 0; border-radius: 0; background: transparent; padding-top: 0; }
+.vm-detail-panel .vm-list-toolbar .resource-select-label { flex: 1 1 220px; max-width: 320px; min-width: 0; }
 .history-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; padding: 0 18px 12px; }
 .history-ranges { display: flex; flex-wrap: wrap; gap: 4px; }
 .history-ranges button { background: transparent; font-size: 11px; padding: 6px 9px; }

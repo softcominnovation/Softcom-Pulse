@@ -7,6 +7,7 @@ import { readCompatibleMonitor } from "../lib/server/monitor-compat/read.ts";
 import { renderCompatibleContent, renderCompatiblePage } from "../lib/server/monitor-compat/render.ts";
 import { buildDemoOverview, buildDemoPresentation, buildDemoSignalTargets } from "../lib/server/monitoring/demo-data.ts";
 import { blockTypes, effectiveOptions } from "../lib/config/presentation.ts";
+import { buildScrollableMonitorFixture } from "./fixtures/monitor-compat-scroll.mjs";
 
 const chromium83 = "Mozilla/5.0 (Linux; Android 10; TV Build/Q) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.120 Safari/537.36";
 function fixture() {
@@ -25,6 +26,21 @@ function storage() {
     selectedInterface: { key: "network", name: "Interface selecionada", metrics: { networkReceiveBitsPerSecond: metric(150000, "bits/s"), networkTransmitBitsPerSecond: metric(50000, "bits/s") } },
   };
 }
+
+test("scroll regression fixture explicitly configures ASGARD and Signal without changing defaults", () => {
+  const defaults = buildDemoPresentation().data;
+  const model = buildScrollableMonitorFixture();
+  assert.deepEqual(model.screen.blocks.map(block => block.type), ["summary", "highlighted_resources", "asgard_summary", "signal_flow"]);
+  const asgard = model.overview.data.blocks.find(block => block.type === "asgard_summary");
+  const signal = model.overview.data.blocks.find(block => block.type === "signal_flow");
+  assert.equal(asgard.data.vms.length, 40);
+  assert.ok(signal.data.target);
+  const html = renderCompatibleContent(model);
+  assert.match(html, /block-asgard_summary/);
+  assert.match(html, /block-signal_flow/);
+  assert.match(html, /Pipeline Signal/);
+  assert.deepEqual(buildDemoPresentation().data.screens.map(screen => screen.blocks), defaults.screens.map(screen => screen.blocks));
+});
 
 test("compatible routing covers old Chromium, old Safari, unknown UAs and modern boundaries", () => {
   for (const ua of [chromium83, "Chrome/110.0.0.0", "Firefox/127.0", "Version/16.3 Safari/605.1.15", "iPhone OS 16_3 like Mac OS X Version/16.3 Mobile Safari/604.1", "TV Browser", ""]) assert.equal(needsCompatibleMonitor(ua), true, ua);

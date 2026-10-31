@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { startAuthUpstream } from "../fixtures/auth-upstream.mjs";
 import { before, test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { cp, mkdir, readFile, readdir, writeFile, unlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
@@ -308,20 +308,19 @@ test("compatible monitor keeps unread badges and scrolls complete panel bodies w
     await withServer({ PULSE_DEMO_MODE: "1", PULSE_E2E: "", PULSE_PUBLIC_HOSTS: "127.0.0.1", DATABASE_URL: "postgresql://unused:unused@127.0.0.1:1/unused", REDIS_URL: "redis://127.0.0.1:1" }, async base => {
       const page = await browser.newPage({ viewport: { width: 1280, height: 480 } });
       try {
+        const fixture = JSON.parse(execFileSync(process.execPath, ["--conditions=react-server", fileURLToPath(new URL("../fixtures/monitor-compat-scroll.mjs", import.meta.url))], {
+          cwd: fileURLToPath(root), windowsHide: true, encoding: "utf8", timeout: 10000, maxBuffer: 2 * 1024 * 1024,
+        }));
         let unread = 4;
         await page.route(url => url.pathname.startsWith("/api/public/monitoring/notifications"), route => route.fulfill({ json: {
           counts: { unreadCount: unread, activeCount: 2 }, serverTime: new Date().toISOString(),
           runtime: { deliveryRevision: 1, enabled: false }, syncCursor: "fixture", nextCursor: "fixture", events: [], changes: [], hasMore: false,
         } }));
-        // Keep real public rendering, but provide enough read-only fixture rows to require scrolling.
-        const longInventory = html => html.replace(/(<div class="table-scroll"[^>]*aria-label="VMs dentro de ASGARD"[^>]*><table>[\s\S]*?<tbody>)([\s\S]*?)(<\/tbody>)/,
-          (_match, start, rows, end) => start + rows.repeat(12) + end);
+        // Use the real renderer with an explicit test-only presentation, leaving product defaults intact.
         await page.route(url => url.origin === base && (url.pathname === "/monitor" || url.pathname === "/monitor/compat"), async route => {
-          const response = await route.fetch();
           if (new URL(route.request().url()).searchParams.get("fragment") === "1") {
-            const data = await response.json(); data.html = longInventory(data.html);
-            await route.fulfill({ response, json: data });
-          } else await route.fulfill({ response, body: longInventory(await response.text()) });
+            await route.fulfill({ json: { ...fixture.snapshot, state: { ...fixture.snapshot.state, serverTime: new Date().toISOString() } } });
+          } else await route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: fixture.page });
         });
         await page.goto(base + "/monitor?compat=1");
         await page.locator('#compat-viewport[data-fit-state="ready"]').waitFor();
@@ -332,6 +331,7 @@ test("compatible monitor keeps unread badges and scrolls complete panel bodies w
         const positions = {};
         for (const type of ["asgard_summary", "signal_flow"]) {
           const selector = `.block-${type} > .dashboard-panel > .panel-content`, body = page.locator(selector);
+          assert.equal(await body.count(), 1, type + ": explicit fixture must render the panel");
           assert.equal(await body.evaluate(element => element.scrollHeight > element.clientHeight + 1), true, type + ": panel must retain overflowing content");
           await body.hover(); await page.mouse.wheel(0, 250);
           await page.waitForFunction(selector => document.querySelector(selector).scrollTop > 0, selector);

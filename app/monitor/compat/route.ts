@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   if (!isPublicHost(request)) return Response.json({ error: { code: "host_not_allowed" } }, { status: 403, headers: { "Cache-Control": "no-store" } });
-  const headers = { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", "X-Content-Type-Options": "nosniff" };
+  const headers = { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow, noarchive" };
   const fragment = new URL(request.url).searchParams.get("fragment") === "1";
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {

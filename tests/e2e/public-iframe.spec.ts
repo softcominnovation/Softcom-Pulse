@@ -7,7 +7,7 @@ let parentUrl: string;
 test.beforeAll(async ({ baseURL }) => {
   parent = createServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    response.end(`<!doctype html><iframe title="Pulse" src="${baseURL}/monitor" width="1366" height="768"></iframe>`);
+    response.end(`<!doctype html><iframe title="Pulse" src="${baseURL}/monitor?compat=0" width="1366" height="768"></iframe>`);
   });
   await new Promise<void>(resolve => parent.listen(0, "127.0.0.1", resolve));
   const address = parent.address();

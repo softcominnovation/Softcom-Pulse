@@ -20,7 +20,11 @@ button:focus, select:focus, a:focus, [tabindex]:focus { outline: 2px solid #aaa;
 .clock small { display: block; font-size: 9px; color: #aaa; margin-top: 3px; }
 .audio-controls input { width: 75px; vertical-align: middle; margin: 0 7px; }
 .audio-controls .control { font-size: 10px; padding: 7px; }
-.tv-mode .audio-controls { display: none; }
+.tv-mode .audio-controls input { width: 55px; }
+.tv-mode .brand-caption { display: none; }
+.tv-mode .pulse-brand { width: 210px; }
+.tv-mode .top-actions > * { margin-left: 4px; }
+.tv-mode .top-actions .control { padding: 7px; font-size: 11px; }
 main { padding: 8px 20px 12px; }
 .presentation-toolbar { display: table; width: 100%; padding: 9px 10px 12px; }
 .presentation-toolbar h1, .presentation-controls { display: table-cell; vertical-align: middle; }
@@ -129,6 +133,8 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
 .compat-toast.top-end { top: 20px; bottom: auto; }
 .compat-toast.header-center { top: 12px; bottom: auto; left: 50%; right: auto; width: 430px; max-width: 90%; transform: translateX(-50%); }
 .is-stale .status-pill { color: #aaa; background: #292929; }
+.is-stale .reading { opacity: .6; }
+.is-stale .metric-meter i { width: 0 !important; }
 .light, .light body { background: #fafafa; color: #171717; }
 .light .pulse-topbar { background: #f0f0f0; }
 .light .dashboard-panel, .light .dashboard-kpi, .light .modal-panel { background: #fff; border-color: #ccc; }

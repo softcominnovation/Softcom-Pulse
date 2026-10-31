@@ -1,6 +1,6 @@
 # Interface do dashboard
 
-O `/monitor` possui uma [camada de compatibilidade para TVs](monitor-compatibility.md), selecionada por navegador ou por `?compat=1`. Ela entrega os cards e dados públicos já no HTML e usa CSS/JavaScript clássicos para atualização e controles. A interface React permanece para navegadores modernos. A camada não amplia o acesso público nem altera cadastros; seus limites e a validação pendente no aparelho estão no guia.
+O `/monitor` possui uma [camada de compatibilidade para TVs](monitor-compatibility.md), selecionada por navegador, requisição de iframe ou por `?compat=1`. Ela entrega os cards e dados públicos já no HTML e usa CSS/JavaScript clássicos para atualização e controles. O acesso moderno direto permanece React; `?compat=0` permite comparar esse caminho também no iframe. A camada não amplia o acesso público nem altera cadastros; seus limites e a validação pendente no aparelho estão no guia.
 
 O sininho do cabeçalho abre a central de [notificações](notifications.md) em um Sheet Kobra. Histórico e leitura são compartilhados; apresentação pública permanece somente leitura. Avisos de eventos novos são temporários e sobrepostos, sem alterar a grade ou altura dos cards, inclusive em TV/fullscreen. Mute e volume zero silenciam também esses avisos. O bloco legado comentado e `showStatusBanner` permanecem preservados.
 

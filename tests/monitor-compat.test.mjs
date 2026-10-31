@@ -51,7 +51,7 @@ test("server reader gates Host, strips credentials and uses only public reads", 
       assert.ok(new URL(forwarded.url).pathname.startsWith("/api/public/"));
     }
     const count = calls.length;
-    for (const query of ["?screenId=bad", "?layout=wrong", "?tv=3", "?theme=wrong"]) assert.equal((await readCompatibleMonitor(request(query), reader)).status, 400);
+    for (const query of ["?screenId=bad", "?layout=wrong", "?tv=3", "?theme=wrong", "?tv=", "?tv=0&tv=1"]) assert.equal((await readCompatibleMonitor(request(query), reader)).status, 400);
     assert.equal((await readCompatibleMonitor(new Request("http://localhost/monitor", { headers: { Host: "other.test", "X-Forwarded-Host": "localhost" } }), reader)).status, 403);
     assert.equal(calls.length, count);
     const failed = await readCompatibleMonitor(request(""), async (_request, segments) => segments[0] === "settings" ? Response.json({ data: model.document }) : Response.json({ error: true }, { status: 503 }));
@@ -59,6 +59,10 @@ test("server reader gates Host, strips credentials and uses only public reads", 
     const mismatched = structuredClone(model.overview); mismatched.data.presentationRevision++;
     const outdated = await readCompatibleMonitor(request(""), async (_request, segments) => Response.json(segments[0] === "settings" ? { data: model.document } : mismatched));
     assert.equal(outdated.overview, null); assert.match(outdated.error, /apresentação mudou/);
+    for (const malformed of [{}, { ...model.overview, data: null }, { ...model.overview, data: { ...model.overview.data, blocks: null } }, { ...model.overview, refreshAfterMs: -1 }]) {
+      const invalid = await readCompatibleMonitor(request(""), async (_request, segments) => Response.json(segments[0] === "settings" ? { data: model.document } : malformed));
+      assert.equal(invalid.overview, null); assert.match(invalid.error, /atualizar os dados/);
+    }
   } finally {
     if (previous === undefined) delete process.env.PULSE_PUBLIC_HOSTS; else process.env.PULSE_PUBLIC_HOSTS = previous;
   }
@@ -116,6 +120,10 @@ test("availability retains every card and configured disk reading, including Sto
   assert.equal((html.match(/class="availability-card"/g) || []).length, cards.length);
   assert.match(html, /52%/); assert.match(html, /Redis configurado/); assert.match(html, /RX 150 kbit\/s/);
   assert.match(html, /content-sized/); assert.match(html, /max-height:130px/);
+  const identities = markup => Object.fromEntries([...markup.matchAll(/data-open-detail="([^"]+)" aria-label="([^"]+)"/g)].map(match => [match[1], match[2]]));
+  model.overview.data.blocks[0].data.cards.reverse();
+  assert.deepEqual(identities(renderCompatibleContent(model)), identities(html));
+  assert.ok(html.includes(`data-valid-until="${resource.metrics.diskUsagePercent.validUntil}"`));
 });
 
 test("classic browser assets remain parseable ES5 and avoid modern runtime dependencies", async () => {

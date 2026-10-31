@@ -25,7 +25,7 @@
       if (value) buffers[name] = value;
       for (var i = 0; i < callbacks.length; i++) callbacks[i](value);
     }
-    xhr.open('GET', '/sounds/notifications/' + name + '.wav', true);
+    xhr.open('GET', '/monitor/compat/audio/' + name, true);
     xhr.withCredentials = false; xhr.responseType = 'arraybuffer'; xhr.timeout = 8000;
     xhr.onload = function () {
       if (xhr.status !== 200 || !context) { finish(null); return; }

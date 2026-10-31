@@ -4,6 +4,8 @@
 
 `GET /monitor/compat` entrega HTML público renderizado no servidor; `?fragment=1` entrega `{html,state}` para atualização por XMLHttpRequest. A página reaproveita os handlers de apresentação/overview públicos, sem HTTP interno, sempre com identidade anônima e validação do `Host` original. Não há escrita, migração ou novo worker. Respostas permitidas são `no-store`, com CORS `*` sem credenciais para iframe isolado; erros de Host permanecem fechados. A seleção automática de `/monitor`, os parâmetros e os limites estão em [Compatibilidade de TVs](monitor-compatibility.md).
 
+O rewrite preserva a origem com `skipProxyUrlNormalize` e a URL original, evitando a conversão loopback para outro hostname. Iframes podem entrar diretamente no clássico; `compat=0` força React. `GET /monitor/compat/audio/:sound` fornece apenas os quatro WAVs Kobra existentes sob o mesmo gate público, sem mudar CORS de arquivos de áudio usados por outras rotas.
+
 ## Central de notificações
 
 As rotas `/api/monitoring/notifications` oferecem histórico, incidentes, detalhe, mudanças por cursor e leitura compartilhada no PostgreSQL. Consultas públicas usam `/api/public/monitoring/notifications`, com o gate de Host existente. `POST .../read` e `/api/settings/notifications` exigem editor; não há escrita pública nem consulta Zabbix nesses GETs. Política tem revisão própria, e PUT por alvo preserva as outras exceções. O corpo da política geral aceita até 512 KiB; as demais rotas continuam limitadas a 64 KiB. Contratos completos, paginação, 409 e projeção pública em [Notificações de serviços](notifications.md).

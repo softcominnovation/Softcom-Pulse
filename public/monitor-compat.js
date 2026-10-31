@@ -7,9 +7,9 @@
   if (!stateNode || !window.JSON || !window.XMLHttpRequest) return;
   var state = JSON.parse(stateNode.textContent || stateNode.innerText);
   var content = byId('compat-content'), modal = byId('compat-modal'), status = byId('compat-status');
-  var pollTimer, rotationTimer, activeRequest = null, pending = null, stopped = false;
+  var pollTimer, rotationTimer, clockTimer, activeRequest = null, pending = null, stopped = false;
   var rotating = state.autoStart && state.screens.length > 1, offset = Date.parse(state.serverTime) - Date.now();
-  var restoreFocus = null, oldOverflow = '', queryGeneration = 0;
+  var restoreFocus = null, oldOverflow = '', queryGeneration = 0, rotationDueAt = 0, failureCount = 0;
   var displayedScreenId = state.screenId;
   var activeScale = 1, supportsZoom = 'zoom' in byId('compat-shell').style;
   var layoutOverride = /(?:^|[?&])layout=/.test(window.location.search);
@@ -19,6 +19,21 @@
   document.documentElement.className = state.theme;
   function text(element, value) { if (element) element.textContent = value == null ? '' : String(value); }
   function each(nodes, callback) { for (var i = 0; i < nodes.length; i++) callback(nodes[i], i); }
+  function syncClock(serverTime) { var parsed = Date.parse(serverTime); if (isFinite(parsed)) offset = parsed - Date.now(); }
+  function expireEvidence() {
+    var now = Date.now() + offset;
+    each(document.querySelectorAll('[data-valid-until]'), function (element) {
+      var until = Date.parse(element.getAttribute('data-valid-until'));
+      if (!isFinite(until) || now <= until || element.getAttribute('data-expired') === 'true') return;
+      element.setAttribute('data-expired', 'true');
+      if (element.hasAttribute('data-live-status')) { element.className = 'status-pill tone-unknown'; text(element, 'Desatualizado'); }
+      else {
+        if (element.className.indexOf('metric-old') < 0) element.className += ' metric-old';
+        if (element.title.indexOf('Dado desatualizado') !== 0) element.title = 'Dado desatualizado · ' + (element.title || 'Confira a última leitura.');
+        each(element.querySelectorAll('.metric-meter i'), function (bar) { bar.style.width = '0%'; });
+      }
+    });
+  }
   function request(url, callback) {
     var xhr = new XMLHttpRequest(), finished = false;
     function finish(error, result) { if (finished) return; finished = true; callback(error, result, xhr.status); }
@@ -38,8 +53,25 @@
   function snapshotUrl() {
     return '/monitor/compat?fragment=1&screenId=' + encodeURIComponent(state.screenId) + (layoutOverride ? '&layout=' + state.layout : '') + '&tv=' + (state.tv ? '1' : '0') + '&theme=' + state.theme;
   }
+  function validSnapshot(result) {
+    var next = result && result.state;
+    if (!result || typeof result.html !== 'string' || !next || !Array.isArray(next.screens) || !next.screens.length || next.screens.length > 3) return false;
+    if (typeof next.revision !== 'number' || !isFinite(next.revision) || next.revision < 1 || typeof next.tv !== 'boolean') return false;
+    if (['overview', 'wall'].indexOf(next.layout) < 0 || ['dark', 'light'].indexOf(next.theme) < 0 || [100, 110, 120, 125].indexOf(next.scale) < 0) return false;
+    if (typeof next.intervalMs !== 'number' || !isFinite(next.intervalMs) || next.intervalMs < 5000 || next.intervalMs > 300000) return false;
+    if (typeof next.refreshAfterMs !== 'number' || !isFinite(next.refreshAfterMs) || next.refreshAfterMs < 5000 || next.refreshAfterMs > 60000 || !isFinite(Date.parse(next.serverTime))) return false;
+    if (!next.messages || typeof next.messages !== 'object' || Array.isArray(next.messages)) return false;
+    var selected = false;
+    for (var i = 0; i < next.screens.length; i++) {
+      if (!next.screens[i] || typeof next.screens[i].id !== 'string' || typeof next.screens[i].name !== 'string') return false;
+      if (next.screens[i].id === next.screenId) selected = true;
+    }
+    return selected;
+  }
   function warning(message) { text(status, message); status.hidden = !message; fit(); }
   function markStale() {
+    pending = null;
+    content.setAttribute('data-connection', 'stale');
     var evidence = content.querySelector('.compat-evidence');
     if (evidence && evidence.className.indexOf('is-stale') < 0) evidence.className += ' is-stale';
     each(content.querySelectorAll('[data-live-status]'), function (element) { element.className = 'status-pill tone-unknown'; text(element, 'Desatualizado'); });
@@ -48,18 +80,30 @@
   function refresh() {
     if (stopped || activeRequest) return;
     clearTimeout(pollTimer);
+    content.setAttribute('data-connection', 'updating');
     var generation = queryGeneration;
     activeRequest = request(snapshotUrl(), function (error, result) {
       if (stopped || generation !== queryGeneration) return;
       activeRequest = null;
-      if (error || !result || typeof result.html !== 'string' || !result.state) { state.screenId = displayedScreenId; byId('compat-screen').value = displayedScreenId; markStale(); }
-      else if (!modal.hidden) pending = result;
-      else applySnapshot(result);
-      pollTimer = setTimeout(refresh, error ? 20000 : state.refreshAfterMs);
+      var failed = error || !validSnapshot(result);
+      if (failed) {
+        failureCount++; rotationDueAt = 0;
+        state.screenId = displayedScreenId; byId('compat-screen').value = displayedScreenId; markStale();
+      } else {
+        failureCount = 0; syncClock(result.state.serverTime);
+        result.receivedAt = Date.now(); result.requestGeneration = generation;
+        if (!modal.hidden) { pending = result; content.setAttribute('data-connection', 'pending'); }
+        else applySnapshot(result);
+      }
+      armRotation();
+      var delay = failed ? Math.min(120000, state.refreshAfterMs * Math.pow(2, Math.min(failureCount, 3))) : state.refreshAfterMs;
+      pollTimer = setTimeout(refresh, delay);
     });
   }
   function applySnapshot(result) {
+    if (result.requestGeneration !== queryGeneration) return;
     var changed = result.state.revision !== state.revision;
+    if (result.state.screenId !== displayedScreenId || result.state.intervalMs !== state.intervalMs) rotationDueAt = 0;
     var focusDetail = document.activeElement && document.activeElement.getAttribute('data-open-detail');
     var scroll = {};
     function regionKey(element) {
@@ -72,6 +116,7 @@
       if (key && element.offsetHeight) scroll[key] = { top: element.scrollTop, left: element.scrollLeft, focus: document.activeElement === element };
     });
     content.innerHTML = result.html;
+    content.setAttribute('data-connection', content.querySelector('.is-stale') ? 'stale' : 'ready');
     if (focusDetail) each(content.querySelectorAll('[data-open-detail]'), function (element) { if (element.getAttribute('data-open-detail') === focusDetail) element.focus(); });
     each(content.querySelectorAll('.table-scroll, .host-card-grid, .availability-grid'), function (element) {
       var previous = scroll[regionKey(element)];
@@ -80,7 +125,6 @@
     state = result.state;
     displayedScreenId = state.screenId;
     if (state.screens.length < 2) rotating = false;
-    offset = Date.parse(state.serverTime) - Date.now();
     warning('');
     if (changed) {
       var select = byId('compat-screen');
@@ -89,16 +133,17 @@
     }
     byId('compat-screen').value = state.screenId;
     updateControls();
+    expireEvidence();
     fit();
   }
   function changeView() {
-    queryGeneration++;
+    queryGeneration++; pending = null;
     if (activeRequest) { activeRequest.abort(); activeRequest = null; }
     updateControls(); fit(); refresh();
   }
   function changeScreen(id) {
     if (id === state.screenId) return;
-    queryGeneration++;
+    queryGeneration++; pending = null;
     if (activeRequest) { activeRequest.abort(); activeRequest = null; }
     state.screenId = id; layoutOverride = false;
     byId('compat-screen').value = id;
@@ -106,13 +151,16 @@
   }
   function armRotation() {
     clearTimeout(rotationTimer);
-    if (!rotating || state.screens.length < 2 || !modal.hidden || document.hidden) return;
+    if (!rotating || state.screens.length < 2 || !modal.hidden || document.hidden || stopped) { rotationDueAt = 0; return; }
+    if (activeRequest || state.screenId !== displayedScreenId) return;
+    if (!rotationDueAt) rotationDueAt = Date.now() + state.intervalMs;
     rotationTimer = setTimeout(function () {
+      if (activeRequest) { armRotation(); return; }
       var index = 0;
-      each(state.screens, function (screen, position) { if (screen.id === state.screenId) index = position; });
+      each(state.screens, function (screen, position) { if (screen.id === displayedScreenId) index = position; });
+      rotationDueAt = 0;
       changeScreen(state.screens[(index + 1) % state.screens.length].id);
-      armRotation();
-    }, state.intervalMs);
+    }, Math.max(0, rotationDueAt - Date.now()));
   }
   function updateControls() {
     document.body.className = state.tv ? 'tv-mode' : '';
@@ -123,6 +171,8 @@
     each(document.querySelectorAll('[data-layout]'), function (element) { element.setAttribute('aria-pressed', element.getAttribute('data-layout') === state.layout ? 'true' : 'false'); });
     var fullscreen = document.fullscreenElement || document.webkitFullscreenElement;
     text(byId('compat-fullscreen'), fullscreen ? 'Sair da tela cheia' : 'Tela cheia');
+    text(byId('compat-theme'), state.theme === 'light' ? 'Tema claro' : 'Tema escuro');
+    byId('compat-theme').setAttribute('aria-pressed', state.theme === 'light' ? 'true' : 'false');
     var scale = state.tv || fullscreen ? state.scale / 100 : 1;
     var shell = byId('compat-shell'); activeScale = scale;
     if (supportsZoom) shell.style.zoom = scale;
@@ -155,13 +205,18 @@
     document.body.style.overflow = 'hidden';
     modal.hidden = false;
     modal.querySelector('button').focus();
+    expireEvidence();
     armRotation();
   }
   function closeModal() {
     modal.hidden = true;
     document.body.style.overflow = oldOverflow;
     if (restoreFocus && document.documentElement.contains(restoreFocus)) restoreFocus.focus();
-    if (pending) { var next = pending; pending = null; applySnapshot(next); }
+    if (pending) {
+      var next = pending; pending = null;
+      if (next.requestGeneration === queryGeneration && Date.now() - next.receivedAt <= state.refreshAfterMs + 12000) applySnapshot(next);
+      else { markStale(); refresh(); }
+    }
     armRotation();
   }
   function findAction(element) {
@@ -185,6 +240,12 @@
   byId('compat-screen').addEventListener('change', function () { rotating = false; updateControls(); changeScreen(this.value); armRotation(); });
   byId('compat-refresh').addEventListener('click', function (event) { event.preventDefault(); refresh(); });
   byId('compat-tv').addEventListener('click', function (event) { event.preventDefault(); state.tv = !state.tv; changeView(); });
+  byId('compat-theme').addEventListener('click', function () {
+    state.theme = state.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.className = state.theme;
+    try { localStorage.setItem('softcom-pulse-theme', state.theme); } catch (_error) { /* Keep the document preference. */ }
+    changeView();
+  });
   byId('compat-rotate').addEventListener('click', function () { rotating = !rotating && state.screens.length > 1; if (rotating) layoutOverride = false; updateControls(); armRotation(); });
   function pauseReading() { if (rotating) { rotating = false; updateControls(); armRotation(); } }
   content.addEventListener('wheel', pauseReading); content.addEventListener('touchstart', pauseReading); content.addEventListener('focusin', pauseReading);
@@ -206,6 +267,7 @@
     var date = new Date(Date.now() + offset - 3 * 3600000);
     function pad(value) { return value < 10 ? '0' + value : String(value); }
     text(byId('compat-clock'), pad(date.getUTCHours()) + ':' + pad(date.getUTCMinutes()) + ':' + pad(date.getUTCSeconds()));
+    expireEvidence();
   }
   document.addEventListener('keydown', function (event) {
     if (!modal.hidden && (event.key === 'Escape' || event.keyCode === 27)) { event.preventDefault(); closeModal(); return; }
@@ -225,8 +287,8 @@
   document.addEventListener('webkitfullscreenchange', function () { updateControls(); fit(); });
   document.addEventListener('visibilitychange', function () { armRotation(); if (!document.hidden) refresh(); });
   window.addEventListener('online', function () { refresh(); });
-  window.addEventListener('pagehide', function () { stopped = true; notificationGeneration++; notificationBusy = false; clearTimeout(pollTimer); clearTimeout(rotationTimer); if (activeRequest) { activeRequest.abort(); activeRequest = null; } });
-  window.addEventListener('pageshow', function (event) { if (event.persisted) { stopped = false; cursor = null; refresh(); pollNotifications(); armRotation(); } });
+  window.addEventListener('pagehide', function () { stopped = true; queryGeneration++; pending = null; notificationGeneration++; notificationBusy = false; clearTimeout(pollTimer); clearTimeout(rotationTimer); clearInterval(clockTimer); if (activeRequest) { activeRequest.abort(); activeRequest = null; } });
+  window.addEventListener('pageshow', function (event) { if (event.persisted) { stopped = false; cursor = null; clock(); clockTimer = setInterval(clock, 1000); refresh(); pollNotifications(); armRotation(); } });
 
   var cursor = null, notificationBusy = false, notificationTimer, deliveryRevision = null, notificationGeneration = 0;
   function notificationsLabel(data) {
@@ -308,7 +370,7 @@
     if (!cursor) {
       request('/api/public/monitoring/notifications?limit=1', function (error, data) {
         if (epoch !== notificationGeneration || stopped) return;
-        if (!error && !stopped) { cursor = data.syncCursor; deliveryRevision = data.runtime.deliveryRevision; offset = Date.parse(data.serverTime) - Date.now(); notificationsLabel(data); }
+        if (!error && !stopped) { cursor = data.syncCursor; deliveryRevision = data.runtime.deliveryRevision; syncClock(data.serverTime); notificationsLabel(data); }
         done();
       });
       return;
@@ -324,7 +386,7 @@
         if (changes.length > 5000) { cursor = null; resetVisuals(); done(); return; }
         if (data.hasMore) { next(); return; }
         if (counts) notificationsLabel({ counts: counts });
-        offset = Date.parse(latest.serverTime) - Date.now();
+        syncClock(latest.serverTime);
         var events = [], read = [], closed = [];
         each(changes, function (change) {
           if (change.payload.event) events.push(change.payload.event);
@@ -366,7 +428,8 @@
   }
   var audioScript = document.createElement('script'); audioScript.src = '/monitor-compat-audio.js'; audioScript.onload = installAudioControls; document.head.appendChild(audioScript);
   updateControls(); clock(); fit(); armRotation();
-  setInterval(clock, 1000);
+  content.setAttribute('data-monitor-controller', 'ready');
+  clockTimer = setInterval(clock, 1000);
   pollTimer = setTimeout(refresh, state.refreshAfterMs);
   pollNotifications();
 }());

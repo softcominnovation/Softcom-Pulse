@@ -10,10 +10,12 @@ Não existe garantia de funcionamento em qualquer TV desconhecida: TLS, suporte 
 
 ## Seleção da página
 
-- `proxy.ts` intercepta somente `GET`/`HEAD /monitor`. Chromium anterior a 111, Firefox anterior a 128, Safari/iOS anterior a 16.4 e agentes desconhecidos são encaminhados internamente para `/monitor/compat`, mantendo a URL e seus parâmetros.
-- `/monitor?compat=1` força a camada em qualquer navegador. `/monitor/compat` é a entrada direta para diagnóstico.
+- `proxy.ts` intercepta somente `GET`/`HEAD /monitor`. Requisições identificadas como iframe por `Sec-Fetch-Dest: iframe`, Chromium anterior a 111, Firefox anterior a 128, Safari/iOS anterior a 16.4 e agentes desconhecidos são encaminhados internamente para `/monitor/compat`, mantendo a URL e seus parâmetros.
+- `/monitor?compat=1` força a camada em qualquer navegador, inclusive TVs sem identificação confiável. `/monitor?compat=0` seleciona explicitamente a página React para comparação em navegador moderno. `/monitor/compat` é a entrada direta para diagnóstico.
 - A página moderna contém um bootstrap clássico independente dos bundles. Se o agente se apresenta como moderno, mas não fornece as APIs, a sintaxe e a cor CSS exigidas, ele redireciona para `compat=1`. Sem JavaScript, um `noscript` também oferece esse caminho.
 - As demais páginas autenticadas e subrotas de `/monitor` mantêm a implementação atual. Não foi rebaixado o alvo de compilação de todo o aplicativo.
+
+O rewrite usa `new URL(request.url)` e `skipProxyUrlNormalize: true`, opção suportada pelo Next desta versão. `NextURL` normaliza loopback (`127.0.0.1`/`[::1]`) para `localhost`; usar sua cópia como destino fazia a leitura retornar 403 quando somente o IP estava permitido. A combinação preserva a origem de entrada e impede o rewrite de virar uma chamada HTTP para outro hostname. O gate de Host continua estrito: não foram adicionados aliases à allowlist e não se confia em headers encaminhados para contorná-lo. A opção atua sobre o Proxy, cujo matcher permanece restrito a `/monitor`.
 
 ## Dados e segurança
 
@@ -28,9 +30,13 @@ Não há worker, consulta adicional ao Zabbix, tabela, migration, dependência n
 | `screenId=<uuid>` | Seleciona uma tela habilitada; uma referência válida que deixou de existir usa a primeira tela reproduzível |
 | `layout=overview\|wall`, `tv=0\|1`, `theme=dark\|light` | Preferências locais opcionais; não gravam configuração |
 
-Valores inválidos retornam 400. Host não permitido retorna 403. Não há métodos de escrita. Respostas do modo compatível em hosts permitidos liberam CORS `*`, sem credenciais, para a atualização no iframe com `Origin: null`; o gate continua anterior à leitura. O mesmo header foi adicionado somente aos arquivos públicos `/sounds/notifications/*`, necessários para decodificar WAV em origem isolada. APIs privadas não foram alteradas.
+Valores inválidos e parâmetros duplicados retornam 400. Host não permitido retorna 403. Não há métodos de escrita. Respostas do modo compatível em hosts permitidos liberam CORS `*`, sem credenciais, para a atualização no iframe com `Origin: null`; o gate continua anterior à leitura. O envelope do overview é validado antes de aceitar a leitura, sem descartar campos opcionais do payload original. APIs privadas não foram alteradas.
+
+`GET /monitor/compat/audio/:sound` fornece somente os quatro WAVs existentes (`notification`, `warning`, `error`, `success`), com gate de Host e CORS anônimo. Nomes diferentes retornam 404. Essa rota lê os arquivos já copiados em `public` para o runtime; não aceita um caminho de arquivo arbitrário. A regra global de CORS em `/sounds/notifications/*` foi removida, mantendo a extensão de áudio restrita ao namespace do monitor. O documento/fragmento também recebe `no-referrer` e `noindex`.
 
 A leitura inicial tem prazo de oito segundos. Falha inicial gera uma página de erro legível com nova tentativa, sem carregamento infinito. Falha ao atualizar conserva os valores e horários anteriores, sinaliza desatualização e retira a confirmação saudável. Divergência entre tela/revisão da apresentação e overview não é apresentada como uma combinação válida.
+
+Falhas sucessivas têm recuo limitado a 120 segundos; uma atualização válida restaura o intervalo do BFF. O botão Atualizar permite nova tentativa imediata. O cliente valida os metadados do fragmento antes de trocar conteúdo, e uma falha elimina qualquer atualização pendente de modal. Fechar o modal não reaplica um snapshot anterior ao erro nem redefine o relógio para a hora daquela resposta antiga.
 
 ## Cards, composição e interação
 
@@ -42,7 +48,11 @@ O split sem Storage conserva a proporção original de colunas `1.25:1` e, sem P
 
 O controlador ES5 usa XMLHttpRequest para atualizar somente o HTML do conteúdo. Não depende de Fetch, ResizeObserver, Intl ou armazenamento local. Não sobrepõe leituras; troca de tela descarta a resposta antiga. Preserva foco e rolagem das regiões internas, pausa alternância durante leitura/interação e não troca o corpo de um detalhe enquanto ele está aberto.
 
-Há seleção/alternância de telas, formatos, modo TV, fullscreen quando permitido e detalhes locais dos minicards. Esses detalhes usam o snapshot atual, sem gráficos de histórico ou edição. A central compatível consulta as últimas 30 notificações e o estado compartilhado de leitura; não marca eventos como lidos. As telas administrativas, navegação operacional completa e seus formulários continuam na aplicação moderna.
+A alternância aguarda a requisição em andamento e só inicia um novo prazo após a tela efetivamente apresentada; atualizações periódicas da mesma tela não reiniciam esse prazo. Isso evita cancelar repetidamente uma resposta mais lenta que o intervalo dos slides. A identidade dos minicards inclui tipo, bloco e chave estável do recurso, preservando o alvo do foco quando os cards mudam de ordem.
+
+Leituras/badges com `validUntil` conhecido carregam esse metadado no HTML. O relógio verifica expiração também nos detalhes abertos: mantém o valor antigo identificado, zera apenas a barra visual e retira confirmação de disponibilidade. Não inventa prazo quando a origem não o fornece. Diagnóstico não visível da leitura fica nos atributos `data-monitor-controller` e `data-connection` de `#compat-content`.
+
+Há seleção/alternância de telas, formatos, modo TV, tema claro/escuro, fullscreen quando permitido e detalhes locais dos minicards. Mute, volume e teste de som continuam acessíveis no modo TV. Esses detalhes usam o snapshot atual, sem gráficos de histórico ou edição. A central compatível consulta as últimas 30 notificações e o estado compartilhado de leitura; não marca eventos como lidos. As telas administrativas, navegação operacional completa e seus formulários continuam na aplicação moderna.
 
 Sem JavaScript, o HTML inicial ainda contém os cards e as leituras, e `noscript` agenda recarga completa conforme o intervalo. Alternância, atualização parcial, modais, sininho e áudio exigem JavaScript.
 
@@ -60,8 +70,13 @@ Nesta alteração, por solicitação explícita, **não foram instaladas depend�
 
 Foram preparados, sem execução:
 
-- `tests/monitor-compat.test.mjs`: seleção de agentes, fronteira pública/credenciais, erros, escape de HTML/JSON, tipos de bloco, conservação dos cards e análise da sintaxe ES5/CSS dos arquivos clássicos.
-- `tests/runtime/production.test.mjs`: servidor empacotado, seleção por UA, modo forçado, bootstrap, dados no HTML sem JS, origem isolada, storage bloqueado, detalhes, refresh, mute e restrições de acesso. A troca de UA nesse teste **não** emula o motor Chromium 83.
+- `tests/monitor-compat.test.mjs`: seleção de agentes, fronteira pública/credenciais, parâmetros duplicados, overview inválido, escape de HTML/JSON, tipos de bloco, conservação/identidade dos cards e análise da sintaxe ES5/CSS dos arquivos clássicos.
+- `tests/runtime/production.test.mjs`: servidor empacotado, loopback com allowlist exclusiva do IP, Host forjado, seleção por UA/iframe moderno, modo forçado, bootstrap, dados no HTML sem JS, origem isolada, storage bloqueado, detalhes, refresh, mute e WAVs. Cobre ainda sucesso pendente seguido de falha no modal, resposta inválida, expiração e alternância com leitura de seis segundos e intervalo de cinco. A troca de UA nesse teste **não** emula o motor Chromium 83.
+- Os testes de iframe React usam `compat=0`, para continuar exercitando esse caminho independentemente da seleção automática do clássico.
+
+O log de CI fornecido pelo desenvolvedor mostrou 63 integrações aprovadas e 7 de 8 testes runtime aprovados; o teste clássico falhou com 403 em `old-ua`. A correção de origem descrita acima responde a essa falha. O aviso `.env not found` não era a asserção que falhou: o teste prepara seu ambiente pelo processo filho. Esta revisão não foi executada novamente no CI pelo agente.
+
+Os recursos de pares Agent/VM e texto detalhado de limites existentes somente na versão mais recente não foram transplantados para esta versão. A entrada direta moderna continua React; `idlePresentation` e a central completa continuam fora da paridade clássica atual. A homologação visual/física e os checks completos permanecem pendentes, conforme a restrição de não instalar/executar nesta cópia.
 
 Para homologar no equipamento, usar primeiro a URL habitual `/monitor`; se a identificação do navegador for inadequada, comparar `/monitor?compat=1`. Confirmar cards e valores, horários, rolagem, duas telas quando configuradas, reconexão e mute/volume zero. Em iframe isolado, a atualização também precisa receber dados novos; terminar o indicador de carregamento não comprova o funcionamento. O teste real depende de uma versão do aplicativo que inclua estes arquivos e de acesso aos serviços já existentes.
 

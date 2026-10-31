@@ -147,4 +147,6 @@ O caminho clássico de `/monitor` não carrega os providers React. `public/monit
 
 A primeira interação confiável prepara o contexto e os buffers. Reprodução depende da permissão de áudio do navegador/WebView; o adapter não promete contornar autoplay. Storage bloqueado conserva preferências em memória, e Web Locks são opcionais. Snapshot inicial/ressincronização são silenciosos, não há repetição nem som adiado ao recuperar foco. Ausência de áudio não bloqueia os cards. Implementação, restrições e homologação em [Monitor compatível](monitor-compatibility.md).
 
+Os arquivos são lidos por `GET /monitor/compat/audio/:sound`, com allowlist dos quatro nomes e Host público permitido. Esse caminho atende CORS de origem opaca sem ampliar a política dos WAVs gerais. Os controles de mute e volume permanecem disponíveis no header do modo TV.
+
 Revisão por leitura de `sound.tsx`, `kobra-controls.tsx`, `toast.tsx`, providers e implementação instalada de `@web-kits/audio`. Não foi realizada uma nova sessão de teste auditivo ou alteração de preferências reais nesta documentação.

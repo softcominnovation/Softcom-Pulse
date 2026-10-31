@@ -22,16 +22,21 @@ export function escapeMonitorHtml(value: unknown) {
 const h = escapeMonitorHtml;
 function stamp(value: string | null | undefined) { return value && Number.isFinite(Date.parse(value)) ? timestamp(value) : "Sem horário disponível"; }
 function tone(value: string) { return ["good", "warn", "bad", "info", "unknown"].includes(value) ? value : "unknown"; }
-function badge(label: string, state = "unknown") { return `<span class="status-pill tone-${tone(state)}" data-live-status><i class="status-dot"></i>${h(label)}</span>`; }
+function earliestExpiry(...values: (string | null | undefined)[]) {
+  const times = values.filter((value): value is string => !!value && Number.isFinite(Date.parse(value)));
+  return times.sort((left, right) => Date.parse(left) - Date.parse(right))[0];
+}
+function expiry(value: string | null | undefined) { return value && Number.isFinite(Date.parse(value)) ? ` data-valid-until="${h(value)}"` : ""; }
+function badge(label: string, state = "unknown", validUntil?: string | null) { return `<span class="status-pill tone-${tone(state)}" data-live-status${expiry(validUntil)}><i class="status-dot"></i>${h(label)}</span>`; }
 function heading(title: string, state = "", icon = "▤") { return `<div class="panel-heading"><span class="panel-icon" aria-hidden="true">${h(icon)}</span><h2>${h(title)}</h2>${state ? `<span class="service-separator" aria-hidden="true">•</span>${state}` : ""}</div>`; }
 function panel(title: string, body: string, foot = "", state = "", icon = "▤") { return `<section class="dashboard-panel">${heading(title, state, icon)}<div class="panel-content">${body}</div>${foot ? `<footer class="panel-foot">${foot}</footer>` : ""}</section>`; }
 function empty(text: string) { return `<p class="panel-empty">${h(text)}</p>`; }
 function reading(label: string, metric: Metric | undefined, stale: boolean, now: number, series = "cpu") {
   const valid = currentMetric(metric, stale, now), old = isOld(metric, stale, now);
   const width = valid && metric?.unit === "percent" ? Math.min(100, Math.max(0, metric.value!)) : 0;
-  return `<div class="reading${old ? " metric-old" : ""}" title="${h(old ? "Dado desatualizado · " : "")}${h(stamp(metric?.observedAt))}"><span>${h(label)}</span><strong>${h(metricValue(metric))}</strong><span class="metric-meter ${series}"><i style="width:${width}%"></i></span></div>`;
+  return `<div class="reading${old ? " metric-old" : ""}"${expiry(metric?.validUntil)} title="${h(old ? "Dado desatualizado · " : "")}${h(stamp(metric?.observedAt))}"><span>${h(label)}</span><strong>${h(metricValue(metric))}</strong><span class="metric-meter ${series}"><i style="width:${width}%"></i></span></div>`;
 }
-function rawMetric(label: string, metric: Metric | undefined, stale: boolean, now: number) { return `<div class="reading${isOld(metric, stale, now) ? " metric-old" : ""}"><span>${h(label)}</span><strong>${h(metricValue(metric))}</strong></div>`; }
+function rawMetric(label: string, metric: Metric | undefined, stale: boolean, now: number) { return `<div class="reading${isOld(metric, stale, now) ? " metric-old" : ""}"${expiry(metric?.validUntil)} title="${h(stamp(metric?.observedAt))}"><span>${h(label)}</span><strong>${h(metricValue(metric))}</strong></div>`; }
 function percent(label: string, value: number | null, series = "cpu") {
   const known = value !== null && Number.isFinite(value);
   return `<div class="reading"><span>${h(label)}</span><strong>${known ? h(number(value, 1)) + "%" : "Sem dados"}</strong><span class="metric-meter ${series}"><i style="width:${known ? Math.min(100, Math.max(0, value!)) : 0}%"></i></span></div>`;
@@ -46,8 +51,8 @@ function table(headers: string[], rows: string[], visibleRows: number, label: st
 function cells(values: string[]) { return `<tr>${values.map(value => `<td>${value}</td>`).join("")}</tr>`; }
 function hostState(host: Host | VirtualMachine, stale: boolean, now: number) {
   if (evidenceExpired(host, stale, now)) return badge("Desatualizado");
-  if ("state" in host) return host.state === "running" ? badge("Em execução", "good") : host.state === "stopped" ? badge("Parada", "bad") : badge(host.state === "paused" ? "Pausada" : "Sem dados");
-  return host.availability === "reachable" ? badge("Disponível", "good") : host.availability === "unreachable" ? badge("Indisponível", "bad") : badge("Sem dados");
+  if ("state" in host) return host.state === "running" ? badge("Em execução", "good", host.evidence.validUntil) : host.state === "stopped" ? badge("Parada", "bad", host.evidence.validUntil) : badge(host.state === "paused" ? "Pausada" : "Sem dados", "unknown", host.evidence.validUntil);
+  return host.availability === "reachable" ? badge("Disponível", "good", host.evidence.validUntil) : host.availability === "unreachable" ? badge("Indisponível", "bad", host.evidence.validUntil) : badge("Sem dados");
 }
 function resourceReadings(item: ConfiguredResource, stale: boolean, now: number) {
   const p = item.config.presentation;
@@ -62,23 +67,24 @@ function resourceDetail(item: ConfiguredResource, stale: boolean, now: number) {
   const health = container && "showHealth" in p && p.showHealth ? healthStates[oldHealth ? "unknown" : container.health] : null;
   const healthReason = container ? healthReasons[oldHealth ? "stale" : container.healthReason ?? "observed"] : "";
   const extra = (p.showMemory ? rawMetric("RAM usada", item.metrics.memoryUsedBytes, stale, now) + rawMetric("RAM total", item.metrics.memoryTotalBytes, stale, now) : "") + (p.showDisk ? rawMetric("Disco total", item.metrics.diskTotalBytes, stale, now) + rawMetric("Leitura de disco", item.metrics.diskReadBytesPerSecond, stale, now) + rawMetric("Escrita de disco", item.metrics.diskWriteBytesPerSecond, stale, now) : "");
-  return `<p class="muted">${h(item.config.resourceType === "host" ? "Host" : "Container")}${item.config.critical ? " · Crítico para a operação" : ""} · ${h(item.config.zabbixHostKey)}</p>${!item.config.enabled ? `<p>Configuração desabilitada</p>` : ""}${!item.resolved ? `<p>${h(resolutionLabel(item))}</p>` : ""}${item.config.description ? `<p>${h(item.config.description)}</p>` : ""}${health ? `<p>${badge(health.label, health.tone)} ${h(healthReason)} · Health: ${h(stamp(container?.healthObservedAt))}</p>` : ""}<div class="metric-grid">${resourceReadings(item, stale, now)}${p.showNetwork ? rawMetric("RX", item.metrics.networkReceiveBitsPerSecond, stale, now) + rawMetric("TX", item.metrics.networkTransmitBitsPerSecond, stale, now) : ""}${p.showUptime ? rawMetric("Tempo ativo", item.metrics.uptimeSeconds, stale, now) : ""}</div>${extra ? `<div class="metric-grid storage-extra">${extra}</div>` : ""}<p class="muted">Leitura ${h(stamp(item.resource?.evidence.observedAt))}</p>`;
+  return `<p class="muted">${h(item.config.resourceType === "host" ? "Host" : "Container")}${item.config.critical ? " · Crítico para a operação" : ""} · ${h(item.config.zabbixHostKey)}</p>${!item.config.enabled ? `<p>Configuração desabilitada</p>` : ""}${!item.resolved ? `<p>${h(resolutionLabel(item))}</p>` : ""}${item.config.description ? `<p>${h(item.config.description)}</p>` : ""}${health ? `<p>${badge(health.label, health.tone, container?.healthValidUntil)} ${h(healthReason)} · Health: ${h(stamp(container?.healthObservedAt))}</p>` : ""}<div class="metric-grid">${resourceReadings(item, stale, now)}${p.showNetwork ? rawMetric("RX", item.metrics.networkReceiveBitsPerSecond, stale, now) + rawMetric("TX", item.metrics.networkTransmitBitsPerSecond, stale, now) : ""}${p.showUptime ? rawMetric("Tempo ativo", item.metrics.uptimeSeconds, stale, now) : ""}</div>${extra ? `<div class="metric-grid storage-extra">${extra}</div>` : ""}<p class="muted">Leitura ${h(stamp(item.resource?.evidence.observedAt))}</p>`;
 }
 function cardFrame(id: string, title: string, description: string | null, state: string, content: string, footer: string, detail: string) {
   return `<div class="card-wrap"><button type="button" class="availability-card" data-open-detail="${h(id)}" aria-label="Detalhes de ${h(title)}">${state}<strong class="availability-name">${h(title)}</strong><span class="availability-description">${h(description)}</span><span class="availability-content">${content}</span><span class="availability-footer">${footer}</span></button><div id="${h(id)}" class="detail-source" data-detail-title="${h(title)}">${detail}</div></div>`;
 }
-function miniCard(card: AvailabilityPanelCard, index: number, blockId: string, stale: boolean, now: number): string {
-  const id = `compat-detail-${blockId}-${index}`;
+function miniCard(card: AvailabilityPanelCard, blockId: string, stale: boolean, now: number): string {
+  const key = card.kind === "storage" ? card.item.configId ?? card.item.storageKey : card.item.id;
+  const id = `compat-detail-${blockId}-${card.kind}-${key}`;
   switch (card.kind) {
     case "resource": {
       const item = card.item, status = serviceAvailability(item, stale, now);
       const title = item.config.displayName ?? item.resource?.displayName ?? item.resource?.name ?? item.config.zabbixHostKey;
       const footer = item.config.presentation.showUptime && currentMetric(item.metrics.uptimeSeconds, stale, now) ? `Ativo ${metricValue(item.metrics.uptimeSeconds)}` : `Leitura ${stamp(item.resource?.evidence.observedAt)}`;
-      return cardFrame(id, title, item.config.description || item.linkedVmName || item.config.zabbixHostKey, badge(status.label, status.tone), `<span class="metric-grid">${resourceReadings(item, stale, now)}</span>`, `<span>${h(item.config.serviceType ?? "Host")}</span><strong>${h(footer)}</strong>`, resourceDetail(item, stale, now));
+      return cardFrame(id, title, item.config.description || item.linkedVmName || item.config.zabbixHostKey, badge(status.label, status.tone, item.resource?.evidence.validUntil), `<span class="metric-grid">${resourceReadings(item, stale, now)}</span>`, `<span>${h(item.config.serviceType ?? "Host")}</span><strong>${h(footer)}</strong>`, resourceDetail(item, stale, now));
     }
     case "storage": {
       const item = card.item, status = storageStatus({ ...item, stale: stale || item.stale }, now), network = item.selectedInterface;
-      return cardFrame(id, item.displayName, item.description ?? "Storage · Zabbix Agent", badge(status.label, status.tone), `<span class="metric-grid">${reading("CPU", item.metrics.cpuUsagePercent, stale || item.stale, now)}${reading("Disco", item.capacity.usagePercent, stale || item.stale, now, "disk")}</span>`, `<span>RX ${h(metricValue(network?.metrics.networkReceiveBitsPerSecond))}</span><strong>TX ${h(metricValue(network?.metrics.networkTransmitBitsPerSecond))}</strong>`, storagePanel(item, stale, now, 10));
+      return cardFrame(id, item.displayName, item.description ?? "Storage · Zabbix Agent", badge(status.label, status.tone, earliestExpiry(item.evidence.validUntil, item.classification.validUntil)), `<span class="metric-grid">${reading("CPU", item.metrics.cpuUsagePercent, stale || item.stale, now)}${reading("Disco", item.capacity.usagePercent, stale || item.stale, now, "disk")}</span>`, `<span>RX ${h(metricValue(network?.metrics.networkReceiveBitsPerSecond))}</span><strong>TX ${h(metricValue(network?.metrics.networkTransmitBitsPerSecond))}</strong>`, storagePanel(item, stale, now, 10));
     }
     case "external_service": {
       const item = card.item, status = item.paused ? { label: "Pausado", tone: "unknown" } : probeStatus(item.reason);
@@ -123,7 +129,7 @@ function storagePanel(item: StorageView | null, stale: boolean, now: number, vis
   const body = `<p class="muted storage-description">${h(item.description ?? "Storage")}</p><div class="metric-grid">${reading("CPU", item.metrics.cpuUsagePercent, old, now)}${reading("RAM", item.metrics.memoryUsagePercent, old, now, "memory")}${reading("Disco ocupado", item.capacity.usagePercent, old, now, "disk")}</div><div class="metric-grid storage-extra">${rawMetric("Usado", item.capacity.usedBytes, old, now)}${rawMetric("Total", item.capacity.totalBytes, old, now)}${rawMetric("Disponível", item.capacity.availableBytes, old, now)}${rawMetric("Tempo ativo", item.metrics.uptimeSeconds, old, now)}${rawMetric("Espera por I/O", item.metrics.ioWaitPercent, old, now)}</div>`;
   const rows = item.volumes.map(volume => cells([h(volume.name), reading("", volume.metrics.diskUsagePercent, old, now, "disk"), `${h(metricValue(volume.metrics.diskUsedBytes))} / ${h(metricValue(volume.metrics.diskTotalBytes))}`, h(metricValue(volume.availableBytes)), h(metricValue(volume.inodesFreePercent)), volume.readOnly?.value == null ? "Sem dados" : volume.readOnly.value ? "Somente leitura" : "Leitura e escrita"]));
   const traffic = network ? `<p class="storage-traffic">${h(network.name)} · RX ${h(metricValue(network.metrics.networkReceiveBitsPerSecond))} · TX ${h(metricValue(network.metrics.networkTransmitBitsPerSecond))}</p>` : "";
-  return panel(item.displayName, body + table(["Volume", "Ocupado", "Usado / total", "Disponível", "Inodes livres", "Acesso"], rows, visibleRows, "Volumes do Storage") + traffic, `<span>${h(item.capacity.label)}</span><span>Leitura ${h(stamp(item.evidence.observedAt))}</span>`, badge(status.label, status.tone), "▤");
+  return panel(item.displayName, body + table(["Volume", "Ocupado", "Usado / total", "Disponível", "Inodes livres", "Acesso"], rows, visibleRows, "Volumes do Storage") + traffic, `<span>${h(item.capacity.label)}</span><span>Leitura ${h(stamp(item.evidence.observedAt))}</span>`, badge(status.label, status.tone, earliestExpiry(item.evidence.validUntil, item.classification.validUntil)), "▤");
 }
 function signalPanel(data: SignalFlowBlockData, visibleRows: number) {
   const target = data.target;
@@ -150,14 +156,14 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
       const cards = resolved.cards;
       const split = model.layout === "overview" && model.screen.overviewGrid === "split";
       const visibleRows = split ? Math.max(2, options.visibleRows) : options.visibleRows;
-      return panel("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${visibleRows * 128 + 2}px">${cards.map((card, index) => miniCard(card, index, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM na infraestrutura · latência nas aplicações · faixa Signal/VPS", "", "◇");
+      return panel("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${visibleRows * 128 + 2}px">${cards.map(card => miniCard(card, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM na infraestrutura · latência nas aplicações · faixa Signal/VPS", "", "◇");
     }
     case "asgard_summary": return asgardPanel(block.data as AsgardSummary, configuration, stale, now);
     case "storage_summary": return storagePanel((block.data as { target: StorageView | null }).target, stale, now, effectiveOptions({ ...configuration, type: "storage_summary" }).visibleRows);
     case "signal_flow": return signalPanel(block.data as SignalFlowBlockData, effectiveOptions({ ...configuration, type: "signal_flow" }).visibleRows);
     case "resource_card": {
       const item = block.data as ConfiguredResource, status = serviceAvailability(item, stale, now);
-      return panel(item.config.displayName ?? item.resource?.displayName ?? item.resource?.name ?? item.config.zabbixHostKey, resourceDetail(item, stale, now), "", item.config.presentation.showStatus ? badge(status.label, status.tone) : "");
+      return panel(item.config.displayName ?? item.resource?.displayName ?? item.resource?.name ?? item.config.zabbixHostKey, resourceDetail(item, stale, now), "", item.config.presentation.showStatus ? badge(status.label, status.tone, item.resource?.evidence.validUntil) : "");
     }
     case "problems": {
       const options = effectiveOptions({ ...configuration, type: "problems" });
@@ -239,6 +245,7 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
       <span class="clock"><strong id="compat-clock">${h(stamp(new Date(model.now).toISOString()).split(", ").pop())}</strong><small>FORTALEZA · UTC−3</small></span>
       <a id="compat-tv" class="control" href="/monitor?compat=1&amp;tv=${model.tv ? "0" : "1"}" aria-pressed="${model.tv}">${model.tv ? "Sair do modo TV" : "Modo TV"}</a>
       <button class="control" id="compat-fullscreen" type="button">Tela cheia</button>
+      <button class="control" id="compat-theme" type="button" aria-pressed="${model.theme === "light"}">${model.theme === "light" ? "Tema claro" : "Tema escuro"}</button>
       <button class="control" id="compat-notifications" type="button" aria-label="Notificações"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg> <span id="compat-count">—</span></button>
     </div>
   </header>

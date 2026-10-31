@@ -148,7 +148,7 @@ test("public monitor supports isolated iframe origins and blocked storage in pro
       const parent = createHttpServer((request, response) => {
         const isolated = new URL(request.url, "http://localhost").searchParams.has("isolated");
         response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        response.end(`<!doctype html><iframe title="Pulse" ${isolated ? 'sandbox="allow-scripts"' : ""} src="${base}/monitor" width="1366" height="768"></iframe>`);
+        response.end(`<!doctype html><iframe title="Pulse" ${isolated ? 'sandbox="allow-scripts"' : ""} src="${base}/monitor?compat=0" width="1366" height="768"></iframe>`);
       });
       await new Promise(resolve => parent.listen(0, "127.0.0.1", resolve));
       try {
@@ -203,8 +203,9 @@ test("compatible monitor serves data without Next bundles, including opaque ifra
       });
       await new Promise(resolve => parent.listen(0, "127.0.0.1", resolve));
       try {
-        for (const mode of ["old-ua", "forced", "no-js", "isolated", "blocked-storage", "capability-fallback"]) {
-          const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, ...(mode === "forced" || mode === "capability-fallback" ? {} : { userAgent }), javaScriptEnabled: mode !== "no-js" });
+        for (const mode of ["old-ua", "forced", "no-js", "isolated", "iframe-modern", "blocked-storage", "capability-fallback"]) {
+          const modern = ["forced", "capability-fallback", "iframe-modern"].includes(mode);
+          const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, ...(modern ? {} : { userAgent }), javaScriptEnabled: mode !== "no-js" });
           try {
             if (mode === "blocked-storage") await context.addInitScript(() => {
               for (const key of ["localStorage", "sessionStorage"]) Object.defineProperty(window, key, { configurable: true, get() { throw new DOMException("Unavailable", "SecurityError"); } });
@@ -214,10 +215,11 @@ test("compatible monitor serves data without Next bundles, including opaque ifra
             const page = await context.newPage(), errors = [], requests = [];
             page.on("pageerror", error => errors.push(error.message));
             page.on("request", request => requests.push(request));
-            const url = mode === "isolated" ? `http://127.0.0.1:${parent.address().port}/` : base + "/monitor" + (mode === "forced" ? "?compat=1" : "");
+            const embedded = mode === "isolated" || mode === "iframe-modern";
+            const url = embedded ? `http://127.0.0.1:${parent.address().port}/` : base + "/monitor" + (mode === "forced" ? "?compat=1" : "");
             const response = await page.goto(url);
-            assert.equal(response.status(), 200, mode);
-            const surface = mode === "isolated" ? page.frameLocator('iframe[title="Pulse compatível"]') : page;
+            assert.equal(response.status(), 200, response.status() === 200 ? mode : `${mode}: ${(await response.text()).slice(0, 300)}`);
+            const surface = embedded ? page.frameLocator('iframe[title="Pulse compatível"]') : page;
             await surface.locator("#compat-content .dashboard-blocks").waitFor({ state: "visible" });
             await surface.getByRole("heading", { name: "Disponibilidade de Serviços", exact: true }).waitFor({ state: "visible" });
             assert.ok(await surface.locator(".availability-card").count() > 0, mode);
@@ -232,7 +234,7 @@ test("compatible monitor serves data without Next bundles, including opaque ifra
               const fragment = await refreshed;
               assert.equal(fragment.status(), 200, mode); assert.equal(fragment.headers()["cache-control"], "no-store");
               assert.ok((await fragment.json()).html.includes("Disponibilidade de Serviços"), mode);
-              if (mode === "isolated") {
+              if (embedded) {
                 assert.equal((await fragment.request().allHeaders()).origin, "null");
                 assert.equal(fragment.headers()["access-control-allow-origin"], "*");
               }
@@ -249,10 +251,95 @@ test("compatible monitor serves data without Next bundles, including opaque ifra
         const snapshot = await fetch(base + "/monitor/compat?fragment=1", { headers: { Origin: "null", Authorization: "Bearer ignored-private-token" } });
         assert.equal(snapshot.status, 200); assert.equal(snapshot.headers.get("access-control-allow-origin"), "*");
         assert.equal(snapshot.headers.get("access-control-allow-credentials"), null);
+        for (const path of ["/monitor?compat=1", "/monitor", "/monitor/compat?fragment=1"]) {
+          const blocked = await fetch(base + path, { headers: { Host: "not-allowed.test", "User-Agent": userAgent } });
+          assert.equal(blocked.status, 403, path); assert.equal(blocked.headers.get("access-control-allow-origin"), null, path);
+        }
+        for (const sound of ["notification", "warning", "error", "success"]) {
+          const audio = await fetch(base + "/monitor/compat/audio/" + sound, { headers: { Origin: "null" } });
+          assert.equal(audio.status, 200, sound); assert.equal(audio.headers.get("content-type"), "audio/wav");
+          assert.equal(audio.headers.get("access-control-allow-origin"), "*");
+          assert.equal(Buffer.from(await audio.arrayBuffer()).toString("ascii", 0, 4), "RIFF");
+        }
+        assert.equal((await fetch(base + "/monitor/compat/audio/unknown")).status, 404);
         const denied = await fetch(base + "/monitor/compat", { headers: { Host: "not-allowed.test" } });
         assert.equal(denied.status, 403); assert.equal(denied.headers.get("access-control-allow-origin"), null);
         assert.equal((await fetch(base + "/monitor/compat", { method: "POST" })).status, 405);
       } finally { await new Promise(resolve => parent.close(resolve)); }
+    });
+  } finally { await browser.close(); }
+});
+
+test("compatible controller preserves stale evidence and completes slow screen transitions", { timeout: 90000 }, async () => {
+  const browser = await chromium.launch();
+  try {
+    await withServer({ PULSE_DEMO_MODE: "1", PULSE_E2E: "", PULSE_PUBLIC_HOSTS: "127.0.0.1", DATABASE_URL: "postgresql://unused:unused@127.0.0.1:1/unused", REDIS_URL: "redis://127.0.0.1:1" }, async base => {
+      const initial = await (await fetch(base + "/monitor/compat?fragment=1")).json();
+      const fragmentUrl = url => url.pathname === "/monitor/compat" && url.searchParams.get("fragment") === "1";
+      const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+      try {
+        const page = await context.newPage(); let calls = 0;
+        await page.route(fragmentUrl, async route => {
+          calls++;
+          if (calls === 2) { await route.fulfill({ status: 503, json: { error: "unavailable" } }); return; }
+          if (calls === 4) { await route.fulfill({ json: { html: '<p id="invalid-marker">Resposta inválida</p>', state: {} } }); return; }
+          const body = structuredClone(initial); body.state.serverTime = new Date().toISOString();
+          if (calls === 1) body.html = '<p id="queued-marker">Leitura pendente</p>' + body.html;
+          else {
+            const until = new Date(Date.now() + 1500).toISOString();
+            body.html = `<div id="expiry-reading" class="reading" data-valid-until="${until}"><strong>25%</strong><span class="metric-meter"><i style="width:25%"></i></span></div><span id="expiry-status" class="status-pill tone-good" data-live-status data-valid-until="${until}">Disponível</span>` + body.html;
+          }
+          await route.fulfill({ json: body });
+        });
+        await page.goto(base + "/monitor?compat=1");
+        await page.waitForFunction(() => document.querySelector("#compat-content").getAttribute("data-monitor-controller") === "ready");
+        await page.locator(".availability-card").first().click();
+        await page.evaluate(() => document.getElementById("compat-refresh").click());
+        await page.waitForFunction(() => document.querySelector("#compat-content").getAttribute("data-connection") === "pending");
+        await page.evaluate(() => document.getElementById("compat-refresh").click());
+        await page.waitForFunction(() => document.querySelector("#compat-content").getAttribute("data-connection") === "stale");
+        await page.getByRole("button", { name: "Fechar", exact: true }).click();
+        assert.equal(await page.locator("#queued-marker").count(), 0);
+        assert.equal(await page.locator("#compat-status").isVisible(), true);
+        assert.equal(await page.locator(".compat-evidence.is-stale").count(), 1);
+        await page.getByRole("link", { name: "Atualizar", exact: true }).click();
+        await page.waitForFunction(() => document.getElementById("expiry-status")?.getAttribute("data-expired") === "true");
+        assert.equal(await page.locator("#expiry-status").textContent(), "Desatualizado");
+        assert.equal(await page.locator("#expiry-reading strong").textContent(), "25%");
+        assert.equal(await page.locator("#expiry-reading i").evaluate(element => element.style.width), "0%");
+        await page.getByRole("link", { name: "Atualizar", exact: true }).click();
+        await page.waitForFunction(() => document.querySelector("#compat-content").getAttribute("data-connection") === "stale");
+        assert.equal(await page.locator("#invalid-marker").count(), 0);
+        assert.equal(await page.locator("#expiry-reading strong").textContent(), "25%");
+        await page.getByRole("link", { name: "Atualizar", exact: true }).click();
+        await page.waitForFunction(() => document.querySelector("#compat-content").getAttribute("data-connection") === "ready");
+      } finally { await context.close(); }
+
+      const rotating = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+      try {
+        const page = await rotating.newPage(), secondId = initial.state.screens.find(screen => screen.id !== initial.state.screenId).id;
+        const second = await (await fetch(base + "/monitor/compat?fragment=1&screenId=" + secondId)).json();
+        const secondBlock = /data-block-id="([^"]+)"/.exec(second.html)[1];
+        await page.route(url => url.pathname === "/monitor" && url.searchParams.get("compat") === "1", async route => {
+          const response = await route.fetch(), html = await response.text();
+          const body = html.replace(/(<script id="compat-state" type="application\/json">)([\s\S]*?)(<\/script>)/, (_match, start, data, end) => {
+            const state = JSON.parse(data); state.intervalMs = 5000; state.autoStart = false;
+            return start + JSON.stringify(state).replace(/</g, "\\u003c") + end;
+          });
+          await route.fulfill({ response, body });
+        });
+        await page.route(fragmentUrl, async route => {
+          const id = new URL(route.request().url()).searchParams.get("screenId");
+          if (id === secondId) await delay(6000);
+          const body = structuredClone(id === secondId ? second : initial);
+          body.state.serverTime = new Date().toISOString(); body.state.intervalMs = 5000;
+          await route.fulfill({ json: body });
+        });
+        await page.goto(base + "/monitor?compat=1");
+        await page.getByRole("button", { name: "Alternar telas", exact: true }).click();
+        await page.locator(`[data-block-id="${secondBlock}"]`).waitFor({ state: "visible", timeout: 18000 });
+        assert.equal(await page.locator("#compat-screen").inputValue(), secondId);
+      } finally { await rotating.close(); }
     });
   } finally { await browser.close(); }
 });

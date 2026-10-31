@@ -141,4 +141,10 @@ Preservar chamadas Sonner existentes quando a tarefa não pede migração. Não 
 5. Não disparar alarmes em loop a partir do polling. Alarmes operacionais futuros precisam de contrato próprio: este listener fornece efeitos de UI.
 6. Se uma funcionalidade realmente precisar de efeito novo/opt-out, ampliar explicitamente o contrato compartilhado e atualizar este documento; esses recursos não existem apenas por atribuir um nome arbitrário no JSX.
 
+## 7. Monitor compatível de TV
+
+O caminho clássico de `/monitor` não carrega os providers React. `public/monitor-compat-audio.js` fornece somente o áudio operacional das notificações com os quatro WAVs Kobra existentes, mantendo `kobra-sound-muted`, `kobra-sound-volume`, volume zero, cooldown e chaves públicas de deduplicação. Usa Web Audio com um novo AudioBufferSourceNode por chegada; não adiciona outro player à página moderna nem emite sons por atualização de métricas. Os controles clássicos usam esse mesmo adaptador.
+
+A primeira interação confiável prepara o contexto e os buffers. Reprodução depende da permissão de áudio do navegador/WebView; o adapter não promete contornar autoplay. Storage bloqueado conserva preferências em memória, e Web Locks são opcionais. Snapshot inicial/ressincronização são silenciosos, não há repetição nem som adiado ao recuperar foco. Ausência de áudio não bloqueia os cards. Implementação, restrições e homologação em [Monitor compatível](monitor-compatibility.md).
+
 Revisão por leitura de `sound.tsx`, `kobra-controls.tsx`, `toast.tsx`, providers e implementação instalada de `@web-kits/audio`. Não foi realizada uma nova sessão de teste auditivo ou alteração de preferências reais nesta documentação.

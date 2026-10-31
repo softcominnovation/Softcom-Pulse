@@ -191,6 +191,72 @@ test("public monitor supports isolated iframe origins and blocked storage in pro
   } finally { await browser.close(); }
 });
 
+test("compatible monitor serves data without Next bundles, including opaque iframe and no-JS clients", { timeout: 90000 }, async t => {
+  // A spoofed UA verifies routing. Actual old-engine coverage still requires the target TV.
+  const userAgent = "Mozilla/5.0 (Linux; Android 10; TV) AppleWebKit/537.36 Version/4.0 Chrome/83.0.4103.120 Safari/537.36";
+  const browser = await chromium.launch();
+  try {
+    await withServer({ PULSE_DEMO_MODE: "1", PULSE_E2E: "", PULSE_PUBLIC_HOSTS: "127.0.0.1", DATABASE_URL: "postgresql://unused:unused@127.0.0.1:1/unused", REDIS_URL: "redis://127.0.0.1:1" }, async base => {
+      const parent = createHttpServer((_request, response) => {
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        response.end(`<!doctype html><iframe title="Pulse compatível" sandbox="allow-scripts" src="${base}/monitor" width="1366" height="768"></iframe>`);
+      });
+      await new Promise(resolve => parent.listen(0, "127.0.0.1", resolve));
+      try {
+        for (const mode of ["old-ua", "forced", "no-js", "isolated", "blocked-storage", "capability-fallback"]) {
+          const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, ...(mode === "forced" || mode === "capability-fallback" ? {} : { userAgent }), javaScriptEnabled: mode !== "no-js" });
+          try {
+            if (mode === "blocked-storage") await context.addInitScript(() => {
+              for (const key of ["localStorage", "sessionStorage"]) Object.defineProperty(window, key, { configurable: true, get() { throw new DOMException("Unavailable", "SecurityError"); } });
+              Object.defineProperty(document, "cookie", { configurable: true, get() { throw new DOMException("Unavailable", "SecurityError"); } });
+            });
+            if (mode === "capability-fallback") await context.addInitScript(() => { window.CSS.supports = () => false; });
+            const page = await context.newPage(), errors = [], requests = [];
+            page.on("pageerror", error => errors.push(error.message));
+            page.on("request", request => requests.push(request));
+            const url = mode === "isolated" ? `http://127.0.0.1:${parent.address().port}/` : base + "/monitor" + (mode === "forced" ? "?compat=1" : "");
+            const response = await page.goto(url);
+            assert.equal(response.status(), 200, mode);
+            const surface = mode === "isolated" ? page.frameLocator('iframe[title="Pulse compatível"]') : page;
+            await surface.locator("#compat-content .dashboard-blocks").waitFor({ state: "visible" });
+            await surface.getByRole("heading", { name: "Disponibilidade de Serviços", exact: true }).waitFor({ state: "visible" });
+            assert.ok(await surface.locator(".availability-card").count() > 0, mode);
+            const html = await surface.locator("#compat-content").innerHTML();
+            assert.ok(!html.includes(privateCanary), mode);
+            if (mode !== "no-js") {
+              await surface.locator(".availability-card").first().click();
+              await surface.getByRole("dialog").waitFor({ state: "visible" });
+              await surface.getByRole("button", { name: "Fechar", exact: true }).click();
+              const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/monitor/compat" && new URL(response.url()).searchParams.get("fragment") === "1");
+              await surface.getByRole("link", { name: "Atualizar", exact: true }).click();
+              const fragment = await refreshed;
+              assert.equal(fragment.status(), 200, mode); assert.equal(fragment.headers()["cache-control"], "no-store");
+              assert.ok((await fragment.json()).html.includes("Disponibilidade de Serviços"), mode);
+              if (mode === "isolated") {
+                assert.equal((await fragment.request().allHeaders()).origin, "null");
+                assert.equal(fragment.headers()["access-control-allow-origin"], "*");
+              }
+              const muted = surface.getByRole("button", { name: "Som ativo", exact: true });
+              await muted.click();
+              assert.equal(await surface.getByRole("button", { name: "Testar som", exact: true }).isDisabled(), true);
+            }
+            if (mode !== "capability-fallback") assert.ok(requests.every(request => !new URL(request.url()).pathname.startsWith("/_next/")), mode);
+            assert.ok(requests.every(request => !new URL(request.url()).pathname.startsWith("/api/") || request.method() === "GET" && new URL(request.url()).pathname.startsWith("/api/public/")), mode);
+            assert.deepEqual(errors, [], mode);
+            t.diagnostic(`Compatible public monitor loaded: ${mode}`);
+          } finally { await context.close(); }
+        }
+        const snapshot = await fetch(base + "/monitor/compat?fragment=1", { headers: { Origin: "null", Authorization: "Bearer ignored-private-token" } });
+        assert.equal(snapshot.status, 200); assert.equal(snapshot.headers.get("access-control-allow-origin"), "*");
+        assert.equal(snapshot.headers.get("access-control-allow-credentials"), null);
+        const denied = await fetch(base + "/monitor/compat", { headers: { Host: "not-allowed.test" } });
+        assert.equal(denied.status, 403); assert.equal(denied.headers.get("access-control-allow-origin"), null);
+        assert.equal((await fetch(base + "/monitor/compat", { method: "POST" })).status, 405);
+      } finally { await new Promise(resolve => parent.close(resolve)); }
+    });
+  } finally { await browser.close(); }
+});
+
 test("one standalone build accepts different public runtime settings", { timeout: 60000 }, async () => {
   const browser = await chromium.launch();
   try {

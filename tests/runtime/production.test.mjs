@@ -140,6 +140,57 @@ test("packaged collector publishes real Redis contracts, serves history and excl
   }
 });
 
+test("public monitor supports isolated iframe origins and blocked storage in production", { timeout: 60000 }, async t => {
+  const browser = await chromium.launch();
+  try {
+    // Next dev intentionally refuses opaque-origin asset requests; exercise the shipped server.
+    await withServer({ PULSE_DEMO_MODE: "1", PULSE_E2E: "", PULSE_PUBLIC_HOSTS: "127.0.0.1", DATABASE_URL: "postgresql://unused:unused@127.0.0.1:1/unused", REDIS_URL: "redis://127.0.0.1:1" }, async base => {
+      const parent = createHttpServer((request, response) => {
+        const isolated = new URL(request.url, "http://localhost").searchParams.has("isolated");
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        response.end(`<!doctype html><iframe title="Pulse" ${isolated ? 'sandbox="allow-scripts"' : ""} src="${base}/monitor" width="1366" height="768"></iframe>`);
+      });
+      await new Promise(resolve => parent.listen(0, "127.0.0.1", resolve));
+      try {
+        for (const mode of ["cross-origin", "blocked-storage", "isolated-origin"]) {
+          const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+          try {
+            if (mode === "blocked-storage") await context.addInitScript(origin => {
+              if (location.origin !== origin) return;
+              for (const key of ["localStorage", "sessionStorage"]) Object.defineProperty(window, key, {
+                configurable: true,
+                get() { throw new DOMException("Storage unavailable", "SecurityError"); },
+              });
+              Object.defineProperty(document, "cookie", { configurable: true, get() { throw new DOMException("Cookies unavailable", "SecurityError"); } });
+            }, base);
+            const page = await context.newPage(), errors = [], requests = [];
+            page.on("pageerror", error => errors.push(error.message));
+            page.on("request", request => { if (new URL(request.url()).pathname.startsWith("/api/")) requests.push(request); });
+            const configuration = page.waitForResponse(response => new URL(response.url()).pathname === "/api/public/settings/presentation", { timeout: 12000 });
+            const loaded = page.waitForResponse(response => new URL(response.url()).pathname === "/api/public/dashboard/overview", { timeout: 12000 });
+            await page.goto(`http://127.0.0.1:${parent.address().port}/${mode === "isolated-origin" ? "?isolated" : ""}`);
+            const response = await loaded;
+            assert.equal(response.status(), 200, mode);
+            assert.ok((await response.json()).data.blocks.length > 0, mode);
+            if (mode === "isolated-origin") {
+              assert.equal((await response.request().allHeaders()).origin, "null");
+              assert.equal(response.headers()["access-control-allow-origin"], "*");
+            }
+            const frame = page.frameLocator('iframe[title="Pulse"]');
+            await frame.locator(".dashboard-blocks:not([aria-busy=true])").waitFor({ state: "visible" });
+            const { data: settings } = await (await configuration).json();
+            assert.equal(await frame.getByRole("button", { name: settings.defaultTvMode ? "Sair do modo TV" : "Modo TV", exact: true }).getAttribute("aria-pressed"), String(settings.defaultTvMode), mode);
+            assert.equal(await frame.getByText("Carregando as telas configuradas…", { exact: true }).count(), 0, mode);
+            assert.deepEqual(errors, [], mode);
+            assert.ok(requests.every(request => request.method() === "GET" && new URL(request.url()).pathname.startsWith("/api/public/")), mode);
+            t.diagnostic(`Production iframe loaded: ${mode}`);
+          } finally { await context.close(); }
+        }
+      } finally { await new Promise(resolve => parent.close(resolve)); }
+    });
+  } finally { await browser.close(); }
+});
+
 test("one standalone build accepts different public runtime settings", { timeout: 60000 }, async () => {
   const browser = await chromium.launch();
   try {

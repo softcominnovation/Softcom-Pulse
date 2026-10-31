@@ -101,6 +101,10 @@ interface InstanceInventoryContextValue {
 
 const InstanceInventoryContext = createContext<InstanceInventoryContextValue | null>(null);
 
+function instanceStorage(): Storage | null {
+  try { return window.localStorage; } catch { return null; }
+}
+
 export function InstanceInventoryProvider({ children }: { children: ReactNode }) {
   const [definitions, setDefinitions] = useState<InstanceDefinition[]>(() =>
     resetInstanceDefinitions()
@@ -112,13 +116,13 @@ export function InstanceInventoryProvider({ children }: { children: ReactNode })
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      setDefinitions(readStoredInstances(window.localStorage));
+      setDefinitions(readStoredInstances(instanceStorage()));
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
-    writeStoredInstances(window.localStorage, definitions);
+    writeStoredInstances(instanceStorage(), definitions);
   }, [definitions]);
 
   useEffect(() => {

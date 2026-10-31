@@ -1,8 +1,36 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { isPublicHost, normalizePublicHost, publicHosts } from "../lib/server/auth/public-hosts.ts";
-import { publicResponse } from "../lib/server/bff.ts";
+import { BffError, protectedResponse, publicResponse } from "../lib/server/bff.ts";
 import { withoutProbeRecipe, withoutVpsAddress, withoutVpsKey, withoutVpsPrivate, publicGet } from "../lib/server/monitoring/public-handlers.ts";
+
+test("only anonymous GETs on allowed public hosts expose CORS, including errors", async () => {
+  const previous = process.env.PULSE_PUBLIC_HOSTS;
+  process.env.PULSE_PUBLIC_HOSTS = "localhost";
+  try {
+    const request = (headers = {}, method = "GET") => new Request("http://localhost/api/public/dashboard/overview", { method, headers: { Host: "localhost", Origin: "null", ...headers } });
+    const success = await publicResponse(request(), async () => ({ ok: true }));
+    assert.equal(success.headers.get("Access-Control-Allow-Origin"), "*");
+    assert.equal(success.headers.get("Access-Control-Allow-Credentials"), null);
+    assert.equal(success.headers.get("Cache-Control"), "no-store");
+    const failure = await publicResponse(request(), async () => { throw new BffError(503, "unavailable"); });
+    assert.equal(failure.status, 503);
+    assert.equal(failure.headers.get("Access-Control-Allow-Origin"), "*");
+    for (const [req, status] of [[request({ Host: "other.test" }), 403], [request({}, "POST"), 405]]) {
+      const denied = await publicResponse(req, async () => { assert.fail("Denied action must not run"); });
+      assert.equal(denied.status, status);
+      assert.equal(denied.headers.get("Access-Control-Allow-Origin"), null);
+    }
+    const authenticated = await publicResponse(request({ Authorization: "Bearer test" }), async () => ({ ok: true }));
+    assert.equal(authenticated.headers.get("Access-Control-Allow-Origin"), null);
+    const privateRead = await protectedResponse(request(), async () => ({ ok: true }));
+    assert.equal(privateRead.status, 401);
+    assert.equal(privateRead.headers.get("Access-Control-Allow-Origin"), null);
+  } finally {
+    if (previous === undefined) delete process.env.PULSE_PUBLIC_HOSTS;
+    else process.env.PULSE_PUBLIC_HOSTS = previous;
+  }
+});
 
 test("public hosts ignore blanks, scheme, path and port", () => {
   assert.equal(normalizePublicHost(" LocalHost:3000 "), "localhost");

@@ -19,6 +19,9 @@ export function installAuthInterceptors(api: AxiosInstance, auth: () => AuthCont
   api.interceptors.request.use(async (config: SessionRequest) => {
     if (typeof window !== "undefined" && isPublicPath(window.location.pathname)) {
       config.baseURL = "/api/public";
+      config.adapter = "fetch";
+      config.withCredentials = false;
+      config.withXSRFToken = false;
       const controller = auth();
       // Logged-in readers on /monitor still use the public BFF, but send the token so manager URLs can be revealed.
       if (controller.store.getState().status === "authenticated") await attachSession(config, controller);

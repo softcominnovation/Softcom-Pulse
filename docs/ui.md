@@ -55,6 +55,25 @@ Toque, rolagem ou foco no conteúdo pausam até Continuar. Aba oculta e diálogo
 
 Defaults de TV/autoStart valem na abertura. Depois disso, preferências locais não escrevem no PostgreSQL. Nova revisão é aplicada no limite do slide ou na retomada da leitura; aviso informa revisão pendente. Fora da reprodução, uma seleção manual pausada oferece “Aplicar configuração atualizada”. Tela removida/desabilitada é substituída imediatamente pela primeira apta, com aviso. Uma alteração remota nunca reinicia uma reprodução parada localmente.
 
+### Exibição em iframe
+
+O `/monitor` pode ser incorporado em outra origem, inclusive em iframe com origem isolada por `sandbox="allow-scripts"`. A incorporação mantém os layouts, a escala e os defaults de TV/alternância desta versão. As consultas públicas não dependem de cookies; suas permissões e o gate de host estão descritos no [BFF](bff.md).
+
+```html
+<iframe
+  src="https://pulse.softcomtecnologia.com/monitor"
+  title="Softcom Pulse"
+  sandbox="allow-scripts"
+  style="width: 100%; height: 100vh; border: 0"
+></iframe>
+```
+
+Usar a URL absoluta do ambiente desejado. Em outra máquina ou TV, `localhost` aponta para esse dispositivo, portanto usar a URL publicada do Pulse. Scripts precisam estar habilitados pelo iframe e pela página hospedeira. A permissão de fullscreen do iframe só é necessária se essa ação for utilizada.
+
+Se `localStorage` estiver bloqueado, o inventário WhatsApp conserva seu estado em memória e não interrompe os providers globais nem o carregamento do monitoramento. Tema e áudio mantêm seus fallbacks existentes; preferências locais sem persistência são perdidas ao recarregar. Mute, volume zero e a exigência de interação do navegador para desbloquear áudio continuam valendo.
+
+Validar a origem isolada usando o build de produção (`npm run build` seguido de `npm start`), não `npm run dev`: Next dev possui bloqueios próprios de origem dos assets e ferramentas de navegação que consultam cookies. Os testes de interface em `tests/e2e/public-iframe.spec.ts` cobrem iframe entre origens, armazenamento bloqueado e proteção das rotas; o teste `public monitor supports isolated iframe origins and blocked storage in production`, em `tests/runtime/production.test.mjs`, cobre também a origem opaca e cookies indisponíveis contra o standalone, com dados de demonstração e preservação do default de TV desta versão. O teste no browser específico da TV continua sendo uma validação separada.
+
 ## Entrada por inatividade
 
 A configuração aplicada `idlePresentation` habilita um temporizador local somente no dashboard autenticado da raiz com tela utilizável. Padrão desligado, 5 minutos; faixa de 1–120 minutos. Eventos de ponteiro, toque, teclado, foco e rolagem reiniciam o período. Mudanças no DOM por relógio/telemetria/slides e polling da mesma configuração não contam como interação. Aba oculta e diálogos abertos suspendem; a retomada usa o período completo. Troca das opções efetivas reinicia a rotina; desativação, navegação e logout cancelam listeners, observação de diálogos, prazo e aviso.

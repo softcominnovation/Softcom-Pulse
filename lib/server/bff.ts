@@ -24,16 +24,19 @@ export async function protectedResponse(request: Request, action: (editor: boole
   }
 }
 export async function publicResponse(request: Request, action: () => Promise<unknown>, status = 200) {
+  let response: Response;
   try {
     if (request.method !== "GET") throw new BffError(405, "method_not_allowed");
     if (!isPublicHost(request)) throw new BffError(403, "host_not_allowed");
     const body = await action();
-    return status === 204 ? new Response(null, { status, headers: { "Cache-Control": "no-store" } }) : authJson(body, status);
+    response = status === 204 ? new Response(null, { status, headers: { "Cache-Control": "no-store" } }) : authJson(body, status);
   } catch (error) {
-    if (error instanceof AuthError || error instanceof BffError) return authJson({ error: { code: error.code } }, error.status);
-    if (error instanceof ZodError) return authJson({ error: { code: "invalid_request", fields: error.issues.map(issue => ({ path: issue.path.map(String).join("."), message: "Valor inválido." })) } }, 400);
-    return authJson({ error: { code: "internal_error" } }, 500);
+    if (error instanceof AuthError || error instanceof BffError) response = authJson({ error: { code: error.code } }, error.status);
+    else if (error instanceof ZodError) response = authJson({ error: { code: "invalid_request", fields: error.issues.map(issue => ({ path: issue.path.map(String).join("."), message: "Valor inválido." })) } }, 400);
+    else response = authJson({ error: { code: "internal_error" } }, 500);
   }
+  if (request.method === "GET" && isPublicHost(request) && !request.headers.has("Authorization")) response.headers.set("Access-Control-Allow-Origin", "*");
+  return response;
 }
 export async function jsonBody(request: Request, maximumBytes = 65536) {
   if (!/^application\/json(?:\s*;|$)/i.test(request.headers.get("Content-Type") ?? "")) throw new BffError(400, "invalid_request");

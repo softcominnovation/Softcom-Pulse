@@ -26,6 +26,34 @@ function fixture(options = {}) {
   return { deps, transport, create: () => new AuthController(deps), raw: () => raw, write: value => { raw = value; }, rotations: () => rotations, resets: () => resets };
 }
 const credentials = { email: "test@example.test", senha: "fake" };
+
+for (const authenticated of [false, true]) test(`public fetch omits cookies and preserves optional bearer: ${authenticated}`, async () => {
+  const f = fixture(), auth = f.create();
+  if (authenticated) await auth.login(credentials);
+  else await auth.initialize();
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  let sent;
+  const api = axios.create({ env: {
+    Request: class extends Request {
+      constructor(input, init) { super(typeof input === "string" ? new URL(input, "http://localhost") : input, init); }
+    },
+    fetch: async input => { sent = input; return Response.json({ ok: true }); },
+  } });
+  installAuthInterceptors(api, () => auth);
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { pathname: "/monitor" } } });
+  try {
+    const response = await api.get("/dashboard/overview");
+    assert.equal(sent.url, "http://localhost/api/public/dashboard/overview");
+    assert.equal(sent.credentials, "omit");
+    assert.equal(response.config.withXSRFToken, false);
+    assert.equal(sent.headers.get("Authorization"), authenticated ? "Bearer v1.access.0" : null);
+    assert.deepEqual(response.data, { ok: true });
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow);
+    else delete globalThis.window;
+  }
+});
+
 test("two tabs and simultaneous callers rotate exactly once and persist before returning", async () => {
   const f = fixture(), a = f.create(), b = f.create();
   await a.login(credentials); await b.initialize();

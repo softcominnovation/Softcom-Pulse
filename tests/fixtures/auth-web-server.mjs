@@ -41,6 +41,7 @@ const child = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev",
   env: {
     ...process.env,
     PULSE_E2E: "1",
+    PULSE_PUBLIC_HOSTS: "127.0.0.1",
     // Real BFF writes in Playwright use these logins; empty allowlist would 403 every PUT/POST/PATCH/DELETE.
     PULSE_EDITOR_EMAILS: [process.env.PULSE_EDITOR_EMAILS, "infra@example.test", "dashboard@example.test"].filter(Boolean).join(","),
     DATABASE_URL: db.href,

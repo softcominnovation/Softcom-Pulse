@@ -1,17 +1,16 @@
 /* ES5 adapter for the existing Kobra WAVs, preferences and operational Web Audio playback. */
-/* eslint-disable no-var, prefer-const */
 (function () {
   'use strict';
   var context = null, buffers = {}, loading = {}, sources = [], preferences = {}, generation = 0;
   var names = ['notification', 'warning', 'error', 'success'], localClaims = {}, lastSound = 0;
-  function read(key) { try { preferences[key] = localStorage.getItem(key); } catch (_error) { /* Persistence is optional. */ } return preferences[key]; }
-  function write(key, value) { preferences[key] = value; try { localStorage.setItem(key, value); } catch (_error) { /* Keep the session preference. */ } }
+  function read(key) { try { preferences[key] = localStorage.getItem(key); } catch (_error) { void _error; /* Persistence is optional; ES5 requires the catch binding. */ } return preferences[key]; }
+  function write(key, value) { preferences[key] = value; try { localStorage.setItem(key, value); } catch (_error) { void _error; /* Keep the session preference. */ } }
   function muted() { return read('kobra-sound-muted') === '1'; }
   function volume() { var raw = read('kobra-sound-volume'), value = raw == null ? 0.5 : Number(raw); return isFinite(value) && value >= 0 && value <= 1 ? value : 0.5; }
   function silence() {
     generation++;
     for (var i = 0; i < sources.length; i++) {
-      try { sources[i].gain.gain.value = 0; sources[i].source.stop(0); } catch (_error) { /* Already ended. */ }
+      try { sources[i].gain.gain.value = 0; sources[i].source.stop(0); } catch (_error) { void _error; /* Already ended. */ }
     }
     sources = [];
   }
@@ -32,10 +31,10 @@
       try {
         var promise = context.decodeAudioData(xhr.response, function (value) { finish(value); }, function () { finish(null); });
         if (promise && promise.catch) promise.catch(function () { /* Callback handles rejection. */ });
-      } catch (_error) { finish(null); }
+      } catch (_error) { void _error; finish(null); }
     };
     xhr.onerror = xhr.ontimeout = function () { finish(null); };
-    try { xhr.send(null); } catch (_error) { finish(null); }
+    try { xhr.send(null); } catch (_error) { void _error; finish(null); }
   }
   function prepare() {
     try {
@@ -45,7 +44,7 @@
       if (context.resume) { var resume = context.resume(); if (resume && resume.catch) resume.catch(function () { /* No deferred alarm. */ }); }
       for (var i = 0; i < names.length; i++) buffer(names[i], function () { /* Warm the approved WAV cache. */ });
       return true;
-    } catch (_error) { return false; }
+    } catch (_error) { void _error; return false; }
   }
   function play(name, velocity, eligible, callback) {
     if (!context || names.indexOf(name) < 0 || muted() || volume() === 0 || !eligible()) { callback(false); return; }
@@ -61,14 +60,14 @@
           source.connect(gain); gain.connect(context.destination); sources.push(voice);
           source.onended = function () { var index = sources.indexOf(voice); if (index >= 0) sources.splice(index, 1); source.disconnect(); gain.disconnect(); };
           source.start(0); finish(true);
-        } catch (_error) { finish(false); }
+        } catch (_error) { void _error; finish(false); }
       });
     }
     try {
       var resumed = context.resume ? context.resume() : null;
       if (resumed && resumed.then) resumed.then(start, function () { finish(false); });
       else start();
-    } catch (_error) { finish(false); }
+    } catch (_error) { void _error; finish(false); }
   }
   function deliver(events, cooldown) {
     var cue = null, ids = [], i;
@@ -80,7 +79,7 @@
         var stored = JSON.parse(read('pulse-notification-claims:public') || '{}');
         if (stored && stored.ids && typeof stored.ids === 'object' && !Array.isArray(stored.ids)) claims = stored.ids;
         last = Math.max(last, Number(read('pulse-notification-last-sound')) || 0);
-      } catch (_error) { /* Use per-document claims. */ }
+      } catch (_error) { void _error; /* Use per-document claims. */ }
       var keys = Object.keys(claims);
       for (i = 0; i < keys.length; i++) if (now - claims[keys[i]] > 180000) delete claims[keys[i]];
       keys = Object.keys(localClaims);
@@ -108,7 +107,7 @@
         }).then(function () { clearTimeout(timeout); }, function (error) { clearTimeout(timeout); if (!attempted && error.name !== 'AbortError' && error.name !== 'TimeoutError') run(function () { /* Per-document fallback. */ }); });
         return;
       }
-    } catch (_error) { /* Opaque origins may refuse Web Locks. */ }
+    } catch (_error) { void _error; /* Opaque origins may refuse Web Locks. */ }
     run(function () { /* Playback has no pending replay. */ });
   }
   window.addEventListener('storage', function (event) { if (!event.key || event.key.indexOf('kobra-sound-') === 0) silence(); });

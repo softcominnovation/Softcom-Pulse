@@ -503,13 +503,17 @@ test("compatible monitor fills the iframe viewport across screens and small WebV
           if (legacy) await frame.evaluate(() => {
             // Emulate the CSS-zoom rectangle convention used by old Chromium, without
             // changing how this browser actually renders. Native rectangles remain the oracle.
-            Element.prototype.getBoundingClientRect = function () {
+            function effectiveCssZoom(element) {
               let zoom = 1;
-              for (let node = this; node instanceof Element; node = node.parentElement) {
+              for (let node = element; node instanceof Element; node = node.parentElement) {
                 const raw = getComputedStyle(node).zoom;
                 let value = parseFloat(raw); if (String(raw).includes("%")) value /= 100;
                 if (Number.isFinite(value) && value > 0) zoom *= value;
               }
+              return zoom;
+            }
+            Element.prototype.getBoundingClientRect = function () {
+              const zoom = effectiveCssZoom(this);
               const rect = window.__pulseNativeRect.call(this);
               return new DOMRect(rect.x / zoom, rect.y / zoom, rect.width / zoom, rect.height / zoom);
             };

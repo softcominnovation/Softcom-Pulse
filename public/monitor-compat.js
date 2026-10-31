@@ -1,5 +1,4 @@
 /* Compatibility entry point: intentionally uses ES5 syntax and native browser APIs. */
-/* eslint-disable no-var, prefer-const */
 (function () {
   'use strict';
   function byId(id) { return document.getElementById(id); }
@@ -14,7 +13,7 @@
   var activeScale = 1, fitting = false, lastViewportKey = '';
   var layoutOverride = /(?:^|[?&])layout=/.test(window.location.search);
   if (!/(?:^|[?&])theme=/.test(window.location.search)) {
-    try { var theme = localStorage.getItem('softcom-pulse-theme'); if (theme === 'dark' || theme === 'light') state.theme = theme; } catch (_error) { /* Keep the explicit/default theme. */ }
+    try { var theme = localStorage.getItem('softcom-pulse-theme'); if (theme === 'dark' || theme === 'light') state.theme = theme; } catch (_error) { void _error; /* Keep the explicit/default theme. */ }
   }
   document.documentElement.className = state.theme;
   function text(element, value) { if (element) element.textContent = value == null ? '' : String(value); }
@@ -339,7 +338,7 @@
   byId('compat-theme').addEventListener('click', function () {
     state.theme = state.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.className = state.theme;
-    try { localStorage.setItem('softcom-pulse-theme', state.theme); } catch (_error) { /* Keep the document preference. */ }
+    try { localStorage.setItem('softcom-pulse-theme', state.theme); } catch (_error) { void _error; /* Keep the document preference. */ }
     changeView();
   });
   byId('compat-rotate').addEventListener('click', function () { rotating = !rotating && state.screens.length > 1; if (rotating) layoutOverride = false; updateControls(); armRotation(); });
@@ -357,7 +356,7 @@
         promise = enter.call(document.documentElement);
       }
       if (promise && promise.catch) promise.catch(function () { warning('O aplicativo não permitiu a tela cheia. O modo TV continua disponível.'); });
-    } catch (error) { warning('O aplicativo não permitiu a tela cheia. O modo TV continua disponível.'); }
+    } catch (_error) { void _error; warning('O aplicativo não permitiu a tela cheia. O modo TV continua disponível.'); }
   });
   function clock() {
     var date = new Date(Date.now() + offset - 3 * 3600000);

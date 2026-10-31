@@ -104,6 +104,10 @@ Uma interação confiável prepara/resume o AudioContext. Não há alarme repeti
 
 Nesta alteração, por solicitação explícita, **não foram instaladas dependências nem executados testes ou build**. A revisão de sintaxe não substitui verificação de tipos, build, testes de execução ou homologação física.
 
+Na revisão posterior do CI, o lint interrompeu `npm run check` no teste de retângulos legados por `@typescript-eslint/no-this-alias`. A simulação passou a calcular o zoom em uma função que recebe o elemento, preservando o uso de `this` apenas na chamada do método original. Os avisos de catches e diretivas dos scripts clássicos também foram corrigidos, mantendo os bindings obrigatórios do ES5 e as regras de lint ativas. O import não utilizado de WhatsApp ficou comentado junto com a funcionalidade já reservada, sem remover seu código.
+
+Após essa correção, o ESLint analisou **434 arquivos: zero erros e zero avisos**. Foi usada a configuração do próprio projeto, com dependências já disponíveis cujas versões foram conferidas contra o lockfile; a versão do React foi informada em memória a partir do lockfile para substituir a autodetecção nesta cópia sem `node_modules`. Não houve instalação, alteração da configuração de lint ou escrita no projeto mais recente. Sintaxe dos testes e sintaxe ES5 dos três scripts clássicos também foram revistas. Typecheck, execução dos testes e build continuam sem execução local nesta cópia.
+
 Foram preparados, sem execução:
 
 - `tests/monitor-compat.test.mjs`: seleção de agentes, fronteira pública/credenciais, parâmetros duplicados, overview inválido, escape de HTML/JSON, tipos de bloco, conservação/identidade dos cards, SVGs/volume presentes no HTML inicial e análise da sintaxe ES5/CSS dos arquivos clássicos.

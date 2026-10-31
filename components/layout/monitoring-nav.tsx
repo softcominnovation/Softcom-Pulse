@@ -4,7 +4,7 @@ import {
   IconActivityHeartbeat,
   IconApps,
   IconBox,
-  IconBrandWhatsapp,
+  // IconBrandWhatsapp,
   IconCloud,
   IconLayersSubtract,
   IconLayoutGrid,

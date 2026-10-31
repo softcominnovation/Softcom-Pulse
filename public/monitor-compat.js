@@ -175,6 +175,14 @@
     byId('compat-theme').setAttribute('aria-pressed', state.theme === 'light' ? 'true' : 'false');
   }
   function elementZoom(element) {
+    // WebView 83 can report a native factor (observed as 1.5) as the root's
+    // computed zoom even with no CSS zoom declaration. It is already reflected
+    // in the iframe viewport and must not be multiplied into CSS geometry again.
+    if (element === document.documentElement) {
+      var declared = element.style.zoom, rootValue = parseFloat(declared);
+      if (String(declared).indexOf('%') >= 0) rootValue /= 100;
+      return isFinite(rootValue) && rootValue > 0 ? rootValue : 1;
+    }
     var style = window.getComputedStyle ? window.getComputedStyle(element) : element.currentStyle;
     var raw = style && style.zoom, value = parseFloat(raw);
     if (String(raw).indexOf('%') >= 0) value /= 100;

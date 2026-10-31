@@ -498,7 +498,10 @@ test("compatible monitor fills the iframe viewport across screens and small WebV
             if (size.width <= 960) assert.ok(geometry.scale < 1, label + ": small viewport needs automatic scale");
           }
         }
-        await frame.evaluate(() => { window.__pulseNativeRect = Element.prototype.getBoundingClientRect; });
+        await frame.evaluate(() => {
+          window.__pulseNativeRect = Element.prototype.getBoundingClientRect;
+          window.__pulseNativeStyle = window.getComputedStyle;
+        });
         for (const legacy of [false, true]) {
           if (legacy) await frame.evaluate(() => {
             // Emulate the CSS-zoom rectangle convention used by old Chromium, without
@@ -506,7 +509,7 @@ test("compatible monitor fills the iframe viewport across screens and small WebV
             function effectiveCssZoom(element) {
               let zoom = 1;
               for (let node = element; node instanceof Element; node = node.parentElement) {
-                const raw = getComputedStyle(node).zoom;
+                const raw = window.__pulseNativeStyle(node).zoom;
                 let value = parseFloat(raw); if (String(raw).includes("%")) value /= 100;
                 if (Number.isFinite(value) && value > 0) zoom *= value;
               }
@@ -517,7 +520,29 @@ test("compatible monitor fills the iframe viewport across screens and small WebV
               const rect = window.__pulseNativeRect.call(this);
               return new DOMRect(rect.x / zoom, rect.y / zoom, rect.width / zoom, rect.height / zoom);
             };
+            // Observed on WebView 83/DPR 1.5: an unstyled root reports computed zoom
+            // 1.5 although its viewport/geometry already use the document's CSS pixels.
+            window.getComputedStyle = function (element, pseudo) {
+              const style = window.__pulseNativeStyle(element, pseudo);
+              if (element !== document.documentElement || element.style.zoom) return style;
+              return new Proxy(style, { get(target, key) {
+                if (key === "zoom") return "1.5";
+                const value = Reflect.get(target, key, target);
+                return typeof value === "function" ? value.bind(target) : value;
+              } });
+            };
+            document.documentElement.style.removeProperty("zoom");
           });
+          if (legacy) {
+            await frame.waitForFunction(() => document.getElementById("compat-viewport").getAttribute("data-fit-rect-mode") === "legacy");
+            const initial = await frame.evaluate(() => {
+              const rect = window.__pulseNativeRect.call(document.getElementById("compat-shell"));
+              return { reported: getComputedStyle(document.documentElement).zoom, declared: document.documentElement.style.zoom, width: rect.width, height: rect.height, viewportWidth: innerWidth, viewportHeight: innerHeight, compensated: document.getElementById("compat-viewport").getAttribute("data-fit-zoom-x") };
+            });
+            assert.equal(initial.reported, "1.5"); assert.equal(initial.declared, "");
+            assert.equal(initial.compensated, "1", "native root zoom must not be counted as declared CSS zoom");
+            assert.ok(Math.abs(initial.width - initial.viewportWidth) < 2 && Math.abs(initial.height - initial.viewportHeight) < 2, "initial WebView sizing must fill the frame before manual zoom");
+          }
           const baseline = await frame.evaluate(() => ({ width: document.getElementById("compat-shell").offsetWidth, textHeight: window.__pulseNativeRect.call(document.querySelector(".panel-heading h2")).height }));
           // CSS zoom does not have to fire resize. It must change density, not leave a smaller canvas.
           for (const target of ["body", "root", "shell"]) {
@@ -554,7 +579,10 @@ test("compatible monitor fills the iframe viewport across screens and small WebV
             }
           }
         }
-        await frame.evaluate(() => { Element.prototype.getBoundingClientRect = window.__pulseNativeRect; });
+        await frame.evaluate(() => {
+          Element.prototype.getBoundingClientRect = window.__pulseNativeRect;
+          window.getComputedStyle = window.__pulseNativeStyle;
+        });
         // Simulate a WebView exposing a larger visual viewport after zooming out, without resize.
         await frame.evaluate(() => Object.defineProperty(window, "visualViewport", { configurable: true, value: { width: window.innerWidth / 0.7, height: window.innerHeight / 0.7, offsetLeft: 0, offsetTop: 0, scale: 0.7 } }));
         await frame.waitForFunction(() => Math.abs(Number(document.getElementById("compat-viewport").getAttribute("data-fit-width")) - window.innerWidth / 0.7) < 1);

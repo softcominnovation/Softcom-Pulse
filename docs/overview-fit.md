@@ -1,6 +1,6 @@
 # Encaixe da rota principal
 
-O caminho clássico de `/monitor` tem um [encaixe automático próprio](monitor-compatibility.md#encaixe-automático-na-área-visível): mede o viewport e o zoom do iframe/WebView, distribui a altura entre fileiras e reduz a escala local quando necessário. Mudanças de zoom mantêm o tamanho escolhido dos elementos e recalculam a área lógica para preencher a tela, inclusive sem evento resize. As regras abaixo continuam descrevendo a página React e a prévia; não foram alteradas por essa adaptação compatível.
+O caminho clássico de `/monitor` tem um [encaixe automático próprio](monitor-compatibility.md#encaixe-automático-na-área-visível): mede o viewport e o zoom CSS do próprio documento, distribui a altura entre fileiras e reduz a escala local quando necessário. Não conta como zoom escolhido o fator computado nativo que a WebView 83 informa na raiz sem declaração CSS. Mudanças de zoom do Pulse recalculam a área lógica, inclusive sem evento resize; o iframe precisa continuar ocupando a área disponível na página pai. O guia documenta o diagnóstico real e o utilitário manual que aplica a densidade ao contexto correto. As regras abaixo continuam descrevendo a página React e a prévia; não foram alteradas por essa adaptação compatível.
 
 ## Composições com Storage
 

@@ -114,6 +114,7 @@
   window.addEventListener('storage', function (event) { if (!event.key || event.key.indexOf('kobra-sound-') === 0) silence(); });
   window.addEventListener('pagehide', silence);
   window.PulseCompatibleAudio = {
+    supported: function () { return !!(window.AudioContext || window.webkitAudioContext); },
     prepare: prepare, deliver: deliver, muted: muted, volume: volume,
     setMuted: function (value) { write('kobra-sound-muted', value ? '1' : '0'); silence(); },
     setVolume: function (value) { write('kobra-sound-volume', String(Math.max(0, Math.min(1, value)))); silence(); },

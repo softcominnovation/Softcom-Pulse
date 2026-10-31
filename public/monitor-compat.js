@@ -11,13 +11,14 @@
   var rotating = state.autoStart && state.screens.length > 1, offset = Date.parse(state.serverTime) - Date.now();
   var restoreFocus = null, oldOverflow = '', queryGeneration = 0, rotationDueAt = 0, failureCount = 0;
   var displayedScreenId = state.screenId;
-  var activeScale = 1, supportsZoom = 'zoom' in byId('compat-shell').style;
+  var activeScale = 1, fitting = false;
   var layoutOverride = /(?:^|[?&])layout=/.test(window.location.search);
   if (!/(?:^|[?&])theme=/.test(window.location.search)) {
     try { var theme = localStorage.getItem('softcom-pulse-theme'); if (theme === 'dark' || theme === 'light') state.theme = theme; } catch (_error) { /* Keep the explicit/default theme. */ }
   }
   document.documentElement.className = state.theme;
   function text(element, value) { if (element) element.textContent = value == null ? '' : String(value); }
+  function controlLabel(id, value) { var element = byId(id); if (element) text(element.querySelector('[data-control-label]') || element, value); }
   function each(nodes, callback) { for (var i = 0; i < nodes.length; i++) callback(nodes[i], i); }
   function syncClock(serverTime) { var parsed = Date.parse(serverTime); if (isFinite(parsed)) offset = parsed - Date.now(); }
   function expireEvidence() {
@@ -164,38 +165,86 @@
   }
   function updateControls() {
     document.body.className = state.tv ? 'tv-mode' : '';
-    text(byId('compat-tv'), state.tv ? 'Sair do modo TV' : 'Modo TV');
+    controlLabel('compat-tv', state.tv ? 'Sair do modo TV' : 'Modo TV');
     byId('compat-tv').setAttribute('aria-pressed', state.tv ? 'true' : 'false');
-    text(byId('compat-rotate'), rotating ? 'Parar alternância' : 'Alternar telas');
+    controlLabel('compat-rotate', rotating ? 'Parar alternância' : 'Alternar telas');
     byId('compat-rotate').disabled = state.screens.length < 2;
     each(document.querySelectorAll('[data-layout]'), function (element) { element.setAttribute('aria-pressed', element.getAttribute('data-layout') === state.layout ? 'true' : 'false'); });
     var fullscreen = document.fullscreenElement || document.webkitFullscreenElement;
-    text(byId('compat-fullscreen'), fullscreen ? 'Sair da tela cheia' : 'Tela cheia');
-    text(byId('compat-theme'), state.theme === 'light' ? 'Tema claro' : 'Tema escuro');
+    controlLabel('compat-fullscreen', fullscreen ? 'Sair da tela cheia' : 'Tela cheia');
+    controlLabel('compat-theme', state.theme === 'light' ? 'Tema claro' : 'Tema escuro');
     byId('compat-theme').setAttribute('aria-pressed', state.theme === 'light' ? 'true' : 'false');
-    var scale = state.tv || fullscreen ? state.scale / 100 : 1;
-    var shell = byId('compat-shell'); activeScale = scale;
-    if (supportsZoom) shell.style.zoom = scale;
-    else if ('transform' in shell.style || 'webkitTransform' in shell.style) { shell.style.transform = shell.style.webkitTransform = 'scale(' + scale + ')'; shell.style.transformOrigin = shell.style.webkitTransformOrigin = '0 0'; shell.style.width = (100 / scale) + '%'; }
-    else activeScale = 1;
   }
   function fit() {
-    var rows = content.querySelectorAll('.compat-row'), flexible = [], reserved = 0, minimum = 0;
-    each(rows, function (row) {
-      row.style.height = '';
-      if (row.className.indexOf('content-sized') >= 0) reserved += row.offsetHeight;
-      else { flexible.push(row); minimum += parseInt(row.getAttribute('data-min-height'), 10) || 210; }
-    });
-    if ((window.innerWidth || document.documentElement.clientWidth) < 760 || !flexible.length) return;
-    var zoom = activeScale;
-    var height = (window.innerHeight || document.documentElement.clientHeight) / zoom;
-    var first = content.getBoundingClientRect().top / zoom;
-    var summaries = content.querySelectorAll('.compat-summary');
-    each(summaries, function (element) { reserved += element.offsetHeight + 5; });
-    var footer = content.querySelector('.dashboard-footer');
-    if (footer) reserved += footer.offsetHeight + 12;
-    var extra = Math.max(0, Math.floor((height - first - reserved - rows.length * 10 - minimum - 12) / flexible.length));
-    each(flexible, function (row) { row.style.height = ((parseInt(row.getAttribute('data-min-height'), 10) || 210) + extra) + 'px'; });
+    if (fitting || stopped) return;
+    var root = document.documentElement, shell = byId('compat-shell'), viewport = byId('compat-viewport');
+    var blocks = content.querySelector('.dashboard-blocks');
+    if (!viewport || !blocks || !('transform' in shell.style || 'webkitTransform' in shell.style)) return;
+    var rows, flexible, minimum, width, height, top;
+    function measure(scale) {
+      activeScale = scale;
+      shell.style.zoom = '';
+      shell.style.width = (width / scale) + 'px'; shell.style.height = (height / scale) + 'px';
+      shell.style.transformOrigin = shell.style.webkitTransformOrigin = '0 0';
+      shell.style.transform = shell.style.webkitTransform = 'scale(' + scale + ')';
+      flexible = []; minimum = 0;
+      each(rows, function (row) {
+        row.style.height = '';
+        if (row.className.indexOf('content-sized') < 0) {
+          var size = parseInt(row.getAttribute('data-min-height'), 10) || 210;
+          flexible.push({ element: row, minimum: size }); minimum += size;
+          row.style.height = size + 'px';
+        }
+      });
+      each(rows, function (row) { if (row.className.indexOf('content-sized') >= 0) minimum += row.offsetHeight; });
+      var footer = content.querySelector('.dashboard-footer');
+      var bottom = footer ? footer.getBoundingClientRect().bottom : blocks.getBoundingClientRect().bottom;
+      return blocks.clientHeight >= minimum + 1 && shell.scrollWidth <= shell.clientWidth + 1 && bottom <= top + height + 1;
+    }
+    function restoreFlow() {
+      root.removeAttribute('data-viewport-fit'); document.body.removeAttribute('data-viewport-fit');
+      shell.style.width = ''; shell.style.height = '';
+      shell.style.transform = shell.style.webkitTransform = '';
+      shell.style.transformOrigin = shell.style.webkitTransformOrigin = '';
+      each(rows, function (row) { row.style.height = ''; });
+      viewport.style.width = ''; viewport.style.height = ''; viewport.style.left = ''; viewport.style.top = '';
+      viewport.setAttribute('data-fit-state', 'unavailable'); activeScale = 1;
+    }
+    fitting = true;
+    try {
+      root.setAttribute('data-viewport-fit', 'true'); document.body.setAttribute('data-viewport-fit', 'true');
+      width = window.innerWidth || root.clientWidth; height = window.innerHeight || root.clientHeight;
+      var visual = window.visualViewport, left = 0; top = 0;
+      if (visual && visual.width > 0 && visual.height > 0) {
+        width = Math.min(width, visual.width); height = Math.min(height, visual.height);
+        left = visual.offsetLeft || 0; top = visual.offsetTop || 0;
+      }
+      if (!(width > 0 && height > 0)) return;
+      viewport.style.width = width + 'px'; viewport.style.height = height + 'px';
+      viewport.style.left = left + 'px'; viewport.style.top = top + 'px';
+      rows = blocks.querySelectorAll('.compat-row');
+      var preferred = state.tv || document.fullscreenElement || document.webkitFullscreenElement ? state.scale / 100 : 1;
+      // Keep the saved desktop columns even when the WebView exposes a small CSS viewport.
+      var maximum = Math.min(preferred, width / 1200);
+      var scale = maximum;
+      if (!measure(scale)) {
+        var low = maximum, high = maximum, attempts = 0, fits = false;
+        // Find a fitting interval first, then the largest fitting scale. No fixed 70% preset.
+        do { low /= 2; attempts++; fits = measure(low); } while (!fits && attempts < 8);
+        if (!fits) { restoreFlow(); return; }
+        for (var step = 0; step < 10; step++) {
+          var candidate = (low + high) / 2;
+          if (measure(candidate)) low = candidate; else high = candidate;
+        }
+        scale = low; measure(scale);
+      }
+      var extra = flexible.length ? Math.max(0, (blocks.clientHeight - minimum - 1) / flexible.length) : 0;
+      each(flexible, function (row) { row.element.style.height = (row.minimum + extra) + 'px'; });
+      viewport.scrollTop = 0; viewport.scrollLeft = 0;
+      viewport.setAttribute('data-fit-scale', String(activeScale));
+      viewport.setAttribute('data-fit-width', String(width)); viewport.setAttribute('data-fit-height', String(height));
+      viewport.setAttribute('data-fit-state', 'ready');
+    } finally { fitting = false; }
   }
   function openModal(title, html, trigger) {
     restoreFocus = trigger || document.activeElement;
@@ -283,17 +332,21 @@
     if (action) { event.preventDefault(); byId(action).click(); }
   });
   window.addEventListener('resize', fit);
+  window.addEventListener('orientationchange', fit);
+  window.addEventListener('load', fit);
+  if (window.visualViewport && window.visualViewport.addEventListener) window.visualViewport.addEventListener('resize', fit);
   document.addEventListener('fullscreenchange', function () { updateControls(); fit(); });
   document.addEventListener('webkitfullscreenchange', function () { updateControls(); fit(); });
-  document.addEventListener('visibilitychange', function () { armRotation(); if (!document.hidden) refresh(); });
+  document.addEventListener('visibilitychange', function () { armRotation(); if (!document.hidden) { fit(); refresh(); } });
   window.addEventListener('online', function () { refresh(); });
   window.addEventListener('pagehide', function () { stopped = true; queryGeneration++; pending = null; notificationGeneration++; notificationBusy = false; clearTimeout(pollTimer); clearTimeout(rotationTimer); clearInterval(clockTimer); if (activeRequest) { activeRequest.abort(); activeRequest = null; } });
-  window.addEventListener('pageshow', function (event) { if (event.persisted) { stopped = false; cursor = null; clock(); clockTimer = setInterval(clock, 1000); refresh(); pollNotifications(); armRotation(); } });
+  window.addEventListener('pageshow', function (event) { if (event.persisted) { stopped = false; cursor = null; clock(); fit(); clockTimer = setInterval(clock, 1000); refresh(); pollNotifications(); armRotation(); } });
 
   var cursor = null, notificationBusy = false, notificationTimer, deliveryRevision = null, notificationGeneration = 0;
   function notificationsLabel(data) {
     text(byId('compat-count'), data.counts.unreadCount);
     byId('compat-notifications').setAttribute('aria-label', 'Notificações: ' + data.counts.unreadCount + ' não lidas, ' + data.counts.activeCount + ' incidentes atuais');
+    fit();
   }
   function notificationList() {
     openModal('Notificações', '<p class="muted">Carregando notificações…</p>', byId('compat-notifications'));
@@ -405,28 +458,53 @@
   document.addEventListener('visibilitychange', function () { if (document.hidden) resetVisuals(); });
   window.addEventListener('pagehide', function () { clearTimeout(notificationTimer); resetVisuals(); });
   byId('compat-toast').addEventListener('click', function () { hideToast(); flushVisuals(); notificationList(); });
+  var audioInstalled = false, audioLoadTimer;
+  function audioUnavailable() {
+    if (audioInstalled) return;
+    clearTimeout(audioLoadTimer);
+    byId('compat-audio').setAttribute('aria-busy', 'false');
+    byId('compat-audio').setAttribute('data-audio-state', 'unavailable');
+    byId('compat-mute').setAttribute('aria-label', 'Som indisponível');
+    byId('compat-mute').title = 'Não foi possível carregar o controle de áudio. Recarregue a página para tentar novamente.';
+    byId('compat-volume-on').hidden = true; byId('compat-volume-off').hidden = false;
+    text(byId('compat-audio-status'), 'Áudio indisponível'); byId('compat-audio-status').hidden = false;
+    fit();
+  }
   function installAudioControls() {
     var audio = window.PulseCompatibleAudio;
-    if (!audio) return;
-    var controls = document.createElement('span'); controls.className = 'audio-controls';
-    controls.innerHTML = '<button type="button" class="control" id="compat-mute">Som</button><label for="compat-volume" class="sr-only">Volume</label><input type="range" id="compat-volume" min="0" max="100" step="5" aria-label="Volume"><button type="button" class="control" id="compat-test-sound">Testar som</button>';
-    byId('compat-notifications').parentNode.insertBefore(controls, byId('compat-notifications'));
+    if (!audio) { audioUnavailable(); return; }
+    if (audioInstalled) return;
+    audioInstalled = true; clearTimeout(audioLoadTimer);
+    var supported = audio.supported ? audio.supported() : !!(window.AudioContext || window.webkitAudioContext);
+    var controls = byId('compat-audio'), mute = byId('compat-mute'), volume = byId('compat-volume'), test = byId('compat-test-sound');
+    controls.setAttribute('aria-busy', 'false');
+    controls.setAttribute('data-audio-state', supported ? 'ready' : 'unsupported');
+    mute.disabled = false; volume.disabled = false;
+    text(byId('compat-audio-status'), supported ? '' : 'Sem suporte a áudio');
+    byId('compat-audio-status').hidden = supported;
     function sync() {
-      var muted = audio.muted() || audio.volume() === 0;
-      text(byId('compat-mute'), muted ? 'Som mudo' : 'Som ativo');
-      byId('compat-mute').setAttribute('aria-pressed', muted ? 'true' : 'false');
-      byId('compat-volume').value = Math.round(audio.volume() * 100);
-      byId('compat-test-sound').disabled = muted;
+      var value = audio.volume(), percent = Math.round(value * 100), muted = audio.muted() || value === 0;
+      mute.setAttribute('aria-label', muted ? 'Som mudo' : 'Som ativo');
+      mute.title = muted ? 'Ativar som' : 'Silenciar som';
+      mute.setAttribute('aria-pressed', muted ? 'true' : 'false');
+      byId('compat-volume-on').hidden = muted; byId('compat-volume-off').hidden = !muted;
+      volume.value = percent; volume.setAttribute('aria-valuetext', percent + '%');
+      text(byId('compat-volume-value'), percent + '%');
+      test.disabled = muted || !supported;
     }
-    byId('compat-mute').addEventListener('click', function () { var enabled = audio.muted() || audio.volume() === 0; if (enabled && audio.volume() === 0) audio.setVolume(0.5); audio.setMuted(!enabled); sync(); });
-    byId('compat-volume').addEventListener('input', function () { audio.setVolume(Number(this.value) / 100); sync(); });
-    byId('compat-test-sound').addEventListener('click', function () { audio.test(function (started) { warning(started ? 'Som de teste iniciado.' : 'O navegador não permitiu iniciar o som.'); }); });
+    mute.addEventListener('click', function () { var enabled = audio.muted() || audio.volume() === 0; if (enabled && audio.volume() === 0) audio.setVolume(0.5); audio.setMuted(!enabled); sync(); });
+    function changeVolume() { audio.setVolume(Number(volume.value) / 100); sync(); }
+    volume.addEventListener('input', changeVolume); volume.addEventListener('change', changeVolume);
+    test.addEventListener('click', function () { audio.test(function (started) { warning(started ? 'Som de teste iniciado.' : 'O navegador não permitiu iniciar o som.'); }); });
     function prepareAudio(event) { if (event.isTrusted) audio.prepare(); }
     document.addEventListener('click', prepareAudio, true); document.addEventListener('keydown', prepareAudio, true);
     window.addEventListener('storage', sync);
     sync(); fit();
   }
-  var audioScript = document.createElement('script'); audioScript.src = '/monitor-compat-audio.js'; audioScript.onload = installAudioControls; document.head.appendChild(audioScript);
+  var audioScript = document.createElement('script'); audioScript.src = '/monitor-compat-audio.js';
+  audioScript.onload = installAudioControls; audioScript.onerror = audioUnavailable;
+  audioLoadTimer = setTimeout(audioUnavailable, 8000);
+  document.head.appendChild(audioScript);
   updateControls(); clock(); fit(); armRotation();
   content.setAttribute('data-monitor-controller', 'ready');
   clockTimer = setInterval(clock, 1000);

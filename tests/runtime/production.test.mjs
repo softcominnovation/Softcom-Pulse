@@ -204,7 +204,7 @@ test("compatible monitor serves data without Next bundles, including opaque ifra
       });
       await new Promise(resolve => parent.listen(0, "127.0.0.1", resolve));
       try {
-        for (const mode of ["old-ua", "forced", "no-js", "isolated", "iframe-modern", "blocked-storage", "capability-fallback"]) {
+        for (const mode of ["old-ua", "forced", "no-js", "isolated", "iframe-modern", "blocked-storage", "capability-fallback", "blocked-audio", "no-web-audio"]) {
           const modern = ["forced", "capability-fallback", "iframe-modern"].includes(mode);
           const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, ...(modern ? {} : { userAgent }), javaScriptEnabled: mode !== "no-js" });
           try {
@@ -213,7 +213,11 @@ test("compatible monitor serves data without Next bundles, including opaque ifra
               Object.defineProperty(document, "cookie", { configurable: true, get() { throw new DOMException("Unavailable", "SecurityError"); } });
             });
             if (mode === "capability-fallback") await context.addInitScript(() => { window.CSS.supports = () => false; });
+            if (mode === "no-web-audio") await context.addInitScript(() => {
+              window.AudioContext = undefined; window.webkitAudioContext = undefined;
+            });
             const page = await context.newPage(), errors = [], requests = [];
+            if (mode === "blocked-audio") await page.route("**/monitor-compat-audio.js", route => route.abort());
             page.on("pageerror", error => errors.push(error.message));
             page.on("request", request => requests.push(request));
             const embedded = mode === "isolated" || mode === "iframe-modern";
@@ -224,6 +228,10 @@ test("compatible monitor serves data without Next bundles, including opaque ifra
             await surface.locator("#compat-content .dashboard-blocks").waitFor({ state: "visible" });
             await surface.getByRole("heading", { name: "Disponibilidade de Serviços", exact: true }).waitFor({ state: "visible" });
             assert.ok(await surface.locator(".availability-card").count() > 0, mode);
+            assert.ok(await surface.locator(".panel-icon svg[data-icon]").count() > 0, mode);
+            assert.equal(await surface.locator('#compat-tv svg[data-icon="tv"]').isVisible(), true, mode);
+            assert.equal(await surface.locator("#compat-volume").isVisible(), true, mode);
+            if (mode === "no-js") assert.equal(await surface.locator("#compat-volume").isDisabled(), true);
             const html = await surface.locator("#compat-content").innerHTML();
             assert.ok(!html.includes(privateCanary), mode);
             if (mode !== "no-js") {
@@ -239,9 +247,28 @@ test("compatible monitor serves data without Next bundles, including opaque ifra
                 assert.equal((await fragment.request().allHeaders()).origin, "null");
                 assert.equal(fragment.headers()["access-control-allow-origin"], "*");
               }
-              const muted = surface.getByRole("button", { name: "Som ativo", exact: true });
-              await muted.click();
-              assert.equal(await surface.getByRole("button", { name: "Testar som", exact: true }).isDisabled(), true);
+              if (mode === "blocked-audio") {
+                await surface.locator('#compat-audio[data-audio-state="unavailable"]').waitFor();
+                assert.equal(await surface.locator("#compat-volume").isDisabled(), true);
+                assert.equal(await surface.getByText("Áudio indisponível", { exact: true }).isVisible(), true);
+              } else {
+                await surface.getByRole("button", { name: "Som ativo", exact: true }).click();
+                assert.equal(await surface.locator('#compat-volume-off svg[data-icon="volumeOff"]').isVisible(), true);
+                assert.equal(await surface.getByRole("button", { name: "Testar som", exact: true }).isDisabled(), true);
+                await surface.getByRole("button", { name: "Som mudo", exact: true }).click();
+                await surface.locator("#compat-volume").evaluate(input => {
+                  input.value = "0"; input.dispatchEvent(new Event("input", { bubbles: true }));
+                });
+                assert.equal(await surface.getByRole("button", { name: "Som mudo", exact: true }).isVisible(), true);
+                assert.equal(await surface.locator("#compat-volume-value").textContent(), "0%");
+                assert.equal(await surface.getByRole("button", { name: "Testar som", exact: true }).isDisabled(), true);
+                if (mode === "no-web-audio") assert.equal(await surface.locator("#compat-audio").getAttribute("data-audio-state"), "unsupported");
+              }
+              await surface.locator("#compat-theme").click();
+              assert.equal(await surface.locator('#compat-theme svg[data-icon="sun"]').isVisible(), true);
+              if (await surface.locator("#compat-tv").getAttribute("aria-pressed") !== "true") await surface.locator("#compat-tv").click();
+              assert.equal(await surface.locator('#compat-tv svg[data-icon="tv"]').isVisible(), true);
+              assert.equal(await surface.locator("#compat-volume").isVisible(), true);
             }
             if (mode !== "capability-fallback") assert.ok(requests.every(request => !new URL(request.url()).pathname.startsWith("/_next/")), mode);
             assert.ok(requests.every(request => !new URL(request.url()).pathname.startsWith("/api/") || request.method() === "GET" && new URL(request.url()).pathname.startsWith("/api/public/")), mode);
@@ -345,6 +372,73 @@ test("compatible controller preserves stale evidence and completes slow screen t
         await page.locator(`[data-block-id="${secondBlock}"]`).waitFor({ state: "visible", timeout: 18000 });
         assert.equal(await page.locator("#compat-screen").inputValue(), secondId);
       } finally { await rotating.close(); }
+    });
+  } finally { await browser.close(); }
+});
+
+test("compatible monitor fills the iframe viewport across screens and small WebViews", { timeout: 90000 }, async () => {
+  const browser = await chromium.launch();
+  try {
+    await withServer({ PULSE_DEMO_MODE: "1", PULSE_E2E: "", PULSE_PUBLIC_HOSTS: "127.0.0.1", DATABASE_URL: "postgresql://unused:unused@127.0.0.1:1/unused", REDIS_URL: "redis://127.0.0.1:1" }, async base => {
+      const parent = createHttpServer((_request, response) => {
+        response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        // The frame is deliberately smaller than the display; Pulse must use its own viewport.
+        response.end(`<!doctype html><style>html,body{margin:0;height:100%;overflow:hidden}iframe{position:absolute;left:17px;top:23px;width:calc(100% - 34px);height:calc(100% - 46px);border:0}</style><iframe title="Monitor ajustado" sandbox="allow-scripts" src="${base}/monitor?compat=1"></iframe>`);
+      });
+      await new Promise(resolve => parent.listen(0, "127.0.0.1", resolve));
+      const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 2 });
+      try {
+        // The classic fallback must not require VisualViewport, which some TV engines lack.
+        await context.addInitScript(() => Object.defineProperty(window, "visualViewport", { configurable: true, value: undefined }));
+        const page = await context.newPage(), errors = [];
+        page.on("pageerror", error => errors.push(error.message));
+        await page.goto(`http://127.0.0.1:${parent.address().port}/`);
+        const surface = page.frameLocator('iframe[title="Monitor ajustado"]');
+        await surface.locator('#compat-viewport[data-fit-state="ready"]').waitFor();
+        const frame = page.frames().find(frame => frame.url().startsWith(base + "/monitor"));
+        assert.ok(frame);
+        const screens = await surface.locator("#compat-screen option").evaluateAll(options => options.map(option => option.value));
+        assert.ok(screens.length >= 2);
+        for (const size of [{ width: 1920, height: 1080 }, { width: 1280, height: 720 }, { width: 960, height: 540 }, { width: 640, height: 360 }, { width: 1920, height: 1080 }]) {
+          await page.setViewportSize(size);
+          for (const screenId of screens) {
+            if (await surface.locator("#compat-screen").inputValue() !== screenId) {
+              const response = page.waitForResponse(response => {
+                const url = new URL(response.url());
+                return url.pathname === "/monitor/compat" && url.searchParams.get("fragment") === "1" && url.searchParams.get("screenId") === screenId;
+              });
+              await surface.locator("#compat-screen").selectOption(screenId);
+              assert.equal((await response).status(), 200);
+            }
+            await frame.waitForFunction(() => {
+              const viewport = document.getElementById("compat-viewport");
+              return viewport?.getAttribute("data-fit-state") === "ready" && Number(viewport.getAttribute("data-fit-width")) === window.innerWidth && Number(viewport.getAttribute("data-fit-height")) === window.innerHeight && document.getElementById("compat-content").getAttribute("data-connection") !== "updating";
+            });
+            const geometry = await frame.evaluate(() => {
+              const bounds = element => { const rect = element.getBoundingClientRect(); return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, height: rect.height }; };
+              const rows = [...document.querySelectorAll(".compat-row")];
+              return {
+                width: window.innerWidth, height: window.innerHeight,
+                scrollWidth: document.scrollingElement.scrollWidth, scrollHeight: document.scrollingElement.scrollHeight,
+                footer: bounds(document.querySelector(".dashboard-footer")),
+                panels: [...document.querySelectorAll(".compat-cell > .dashboard-panel")].map(bounds),
+                rows: rows.map(bounds), flexible: rows.some(row => !row.classList.contains("content-sized")),
+                scale: Number(document.getElementById("compat-viewport").getAttribute("data-fit-scale")),
+              };
+            });
+            const label = `${size.width}x${size.height} / ${screenId}`;
+            assert.ok(geometry.scrollWidth <= geometry.width + 1 && geometry.scrollHeight <= geometry.height + 1, label + ": document overflow");
+            assert.ok(geometry.footer.bottom <= geometry.height + 1 && geometry.footer.bottom >= geometry.height - 24, label + ": footer outside viewport or unused height");
+            for (const panel of geometry.panels) {
+              assert.ok(panel.height > 0 && panel.left >= -1 && panel.right <= geometry.width + 1 && panel.bottom <= geometry.footer.top + 1, label + ": clipped panel");
+            }
+            for (let index = 1; index < geometry.rows.length; index++) assert.ok(geometry.rows[index].top >= geometry.rows[index - 1].bottom - 1, label + ": overlapping rows");
+            if (geometry.flexible) assert.ok(Math.abs(geometry.rows.at(-1).bottom - geometry.footer.top) <= 3, label + ": unused panel area");
+            if (size.width <= 960) assert.ok(geometry.scale < 1, label + ": small viewport needs automatic scale");
+          }
+        }
+        assert.deepEqual(errors, []);
+      } finally { await context.close(); await new Promise(resolve => parent.close(resolve)); }
     });
   } finally { await browser.close(); }
 });

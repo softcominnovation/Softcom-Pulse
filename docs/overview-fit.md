@@ -1,5 +1,7 @@
 # Encaixe da rota principal
 
+O caminho clássico de `/monitor` tem um [encaixe automático próprio](monitor-compatibility.md#encaixe-automático-na-área-visível): mede o viewport do iframe/WebView, distribui a altura entre fileiras e reduz a escala local quando necessário. As regras abaixo continuam descrevendo a página React e a prévia; não foram alteradas por essa adaptação compatível.
+
 ## Composições com Storage
 
 `storage_summary` usa `storageLayout` e `StorageComposition`, compartilhados pela raiz e pela prévia. O caminho anterior permanece sem Storage habilitado. Indicadores têm faixa própria; demais blocos entram em fileiras de 12 colunas, por UUID, ordem e larguras. Repetições não disputam áreas CSS por tipo.

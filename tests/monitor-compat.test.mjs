@@ -82,6 +82,26 @@ test("compatible document contains rendered data without Next assets, escapes HT
   assert.match(renderCompatibleContent(model), /Coleta indisponível/);
 });
 
+test("classic TV markup includes vector icons and volume even before scripts run", () => {
+  for (const tv of [false, true]) {
+    const model = fixture(); model.tv = tv;
+    const html = renderCompatiblePage(model, "Pulse");
+    assert.match(html, /id="compat-viewport">\s*<div id="compat-shell">/);
+    assert.doesNotMatch(html, /▤|◇|∿|⚠|<use\b|@font-face/);
+    assert.match(html, /class="panel-icon"[^>]*><svg\b/);
+    assert.match(html, /class="kpi-heading"><h2>Hosts monitorados<\/h2><svg\b/);
+    assert.match(html, /id="compat-tv"[^>]*><svg\b[^>]*data-icon="tv"/);
+    assert.match(html, /id="compat-volume-on"><svg\b[^>]*data-icon="volume"/);
+    assert.match(html, /id="compat-volume-off" hidden><svg\b[^>]*data-icon="volumeOff"/);
+    assert.match(html, /type="range" id="compat-volume"[^>]*min="0"[^>]*max="100"[^>]*disabled/);
+    for (const svg of html.matchAll(/<svg\b[^>]*>/g)) {
+      assert.match(svg[0], /xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+      assert.match(svg[0], /width="\d+" height="\d+" viewBox="0 0 24 24"/);
+      assert.match(svg[0], /stroke="currentColor"/);
+    }
+  }
+});
+
 test("each public block renders, retains per-block options, metric timestamps and read-only container policy", () => {
   for (const type of blockTypes) {
     const model = fixture(), source = model.overview.data, item = storage();

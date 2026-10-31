@@ -15,6 +15,7 @@ import type { CompatibleMonitor } from "./read.ts";
 import { notificationMessages } from "../../notifications/contracts.ts";
 import { mergeCardCpuRam, resolveCardCpuRam } from "../../monitoring/card-metrics.ts";
 import { healthReasons, healthStates, resolutionLabel, severities } from "../../services/presentation.ts";
+import { monitorIcon, type MonitorIcon } from "./icons.ts";
 
 export function escapeMonitorHtml(value: unknown) {
   return String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!);
@@ -28,8 +29,9 @@ function earliestExpiry(...values: (string | null | undefined)[]) {
 }
 function expiry(value: string | null | undefined) { return value && Number.isFinite(Date.parse(value)) ? ` data-valid-until="${h(value)}"` : ""; }
 function badge(label: string, state = "unknown", validUntil?: string | null) { return `<span class="status-pill tone-${tone(state)}" data-live-status${expiry(validUntil)}><i class="status-dot"></i>${h(label)}</span>`; }
-function heading(title: string, state = "", icon = "▤") { return `<div class="panel-heading"><span class="panel-icon" aria-hidden="true">${h(icon)}</span><h2>${h(title)}</h2>${state ? `<span class="service-separator" aria-hidden="true">•</span>${state}` : ""}</div>`; }
-function panel(title: string, body: string, foot = "", state = "", icon = "▤") { return `<section class="dashboard-panel">${heading(title, state, icon)}<div class="panel-content">${body}</div>${foot ? `<footer class="panel-foot">${foot}</footer>` : ""}</section>`; }
+function heading(title: string, state = "", icon: MonitorIcon = "server") { return `<div class="panel-heading"><span class="panel-icon" aria-hidden="true">${monitorIcon(icon)}</span><h2>${h(title)}</h2>${state ? `<span class="service-separator" aria-hidden="true">•</span>${state}` : ""}</div>`; }
+function panel(title: string, body: string, foot = "", state = "", icon: MonitorIcon = "server") { return `<section class="dashboard-panel">${heading(title, state, icon)}<div class="panel-content">${body}</div>${foot ? `<footer class="panel-foot">${foot}</footer>` : ""}</section>`; }
+function controlContent(icon: MonitorIcon, label: string) { return `${monitorIcon(icon)}<span data-control-label>${h(label)}</span>`; }
 function empty(text: string) { return `<p class="panel-empty">${h(text)}</p>`; }
 function reading(label: string, metric: Metric | undefined, stale: boolean, now: number, series = "cpu") {
   const valid = currentMetric(metric, stale, now), old = isOld(metric, stale, now);
@@ -106,13 +108,13 @@ function miniCard(card: AvailabilityPanelCard, blockId: string, stale: boolean, 
 }
 function summaryBlock(data: Summary, options: OptionsByType["summary"], stale: boolean) {
   const catalog = {
-    hosts: { label: "Hosts monitorados", value: data.hostsKnown, note: `${number(data.hostsReachable)} alcançáveis · ${number(data.vms)} VMs no hipervisor` },
-    containers_running: { label: "Containers em execução", value: data.containersRunning, note: `${number(data.containersTotal)} containers no total` },
-    containers_stopped: { label: "Containers parados", value: data.containersStopped, note: "Total informado pela origem" },
-    problems: { label: "Problemas ativos", value: data.problems, note: `${number(data.criticalAffected)} recursos críticos afetados` },
-    jobs_waiting: { label: "Jobs aguardando", value: data.jobsWaiting, note: data.jobsWaitingOldestSeconds == null ? "Sem idade informada" : `Mais antigo: ${metricValue({ value: data.jobsWaitingOldestSeconds, unit: "seconds", quality: "fresh", observedAt: null })}` },
-  };
-  return `<div class="dashboard-kpis">${options.indicators.map(key => { const item = catalog[key]; return `<article class="dashboard-kpi"><h2>${h(item.label)}</h2><p class="kpi-value">${h(number(item.value))}</p><p>${h(stale ? "Dados desatualizados · " : "")}${h(item.note)}</p></article>`; }).join("")}</div>`;
+    hosts: { icon: "server", label: "Hosts monitorados", value: data.hostsKnown, note: `${number(data.hostsReachable)} alcançáveis · ${number(data.vms)} VMs no hipervisor` },
+    containers_running: { icon: "box", label: "Containers em execução", value: data.containersRunning, note: `${number(data.containersTotal)} containers no total` },
+    containers_stopped: { icon: "stack", label: "Containers parados", value: data.containersStopped, note: "Total informado pela origem" },
+    problems: { icon: "warning", label: "Problemas ativos", value: data.problems, note: `${number(data.criticalAffected)} recursos críticos afetados` },
+    jobs_waiting: { icon: "activity", label: "Jobs aguardando", value: data.jobsWaiting, note: data.jobsWaitingOldestSeconds == null ? "Sem idade informada" : `Mais antigo: ${metricValue({ value: data.jobsWaitingOldestSeconds, unit: "seconds", quality: "fresh", observedAt: null })}` },
+  } as const;
+  return `<div class="dashboard-kpis">${options.indicators.map(key => { const item = catalog[key]; return `<article class="dashboard-kpi"><div class="kpi-heading"><h2>${h(item.label)}</h2>${monitorIcon(item.icon)}</div><p class="kpi-value">${h(number(item.value))}</p><p>${h(stale ? "Dados desatualizados · " : "")}${h(item.note)}</p></article>`; }).join("")}</div>`;
 }
 function asgardPanel(data: AsgardSummary, block: PresentationBlock, stale: boolean, now: number) {
   const options = effectiveOptions({ ...block, type: "asgard_summary" }), host = data.host;
@@ -124,23 +126,23 @@ function asgardPanel(data: AsgardSummary, block: PresentationBlock, stale: boole
   return panel(`${host.displayName ?? host.name} · armazenamento & VMs`, metrics + (rows.length ? table(["VM no Asgard", "Estado", "CPU", "RAM", ...(hasDisk ? ["Disco · hipervisor"] : [])], rows, options.visibleRows, "VMs dentro de ASGARD") : empty("Nenhuma VM corresponde ao filtro.")), `<span class="metric-legend"><span class="cpu">CPU</span><span class="memory">RAM</span><span class="disk">Disco</span></span><span>${number(data.vms.filter(vm => vm.state === "running" && !evidenceExpired(vm, stale, now)).length)} em execução de ${number(data.vms.length)} VMs</span>`, hostState(host, stale, now));
 }
 function storagePanel(item: StorageView | null, stale: boolean, now: number, visibleRows: number): string {
-  if (!item) return panel("Storage", empty("Nenhum Storage disponível para esta configuração."));
+  if (!item) return panel("Storage", empty("Nenhum Storage disponível para esta configuração."), "", "", "database");
   const old = stale || item.stale, status = storageStatus({ ...item, stale: old }, now), network = item.selectedInterface;
   const body = `<p class="muted storage-description">${h(item.description ?? "Storage")}</p><div class="metric-grid">${reading("CPU", item.metrics.cpuUsagePercent, old, now)}${reading("RAM", item.metrics.memoryUsagePercent, old, now, "memory")}${reading("Disco ocupado", item.capacity.usagePercent, old, now, "disk")}</div><div class="metric-grid storage-extra">${rawMetric("Usado", item.capacity.usedBytes, old, now)}${rawMetric("Total", item.capacity.totalBytes, old, now)}${rawMetric("Disponível", item.capacity.availableBytes, old, now)}${rawMetric("Tempo ativo", item.metrics.uptimeSeconds, old, now)}${rawMetric("Espera por I/O", item.metrics.ioWaitPercent, old, now)}</div>`;
   const rows = item.volumes.map(volume => cells([h(volume.name), reading("", volume.metrics.diskUsagePercent, old, now, "disk"), `${h(metricValue(volume.metrics.diskUsedBytes))} / ${h(metricValue(volume.metrics.diskTotalBytes))}`, h(metricValue(volume.availableBytes)), h(metricValue(volume.inodesFreePercent)), volume.readOnly?.value == null ? "Sem dados" : volume.readOnly.value ? "Somente leitura" : "Leitura e escrita"]));
   const traffic = network ? `<p class="storage-traffic">${h(network.name)} · RX ${h(metricValue(network.metrics.networkReceiveBitsPerSecond))} · TX ${h(metricValue(network.metrics.networkTransmitBitsPerSecond))}</p>` : "";
-  return panel(item.displayName, body + table(["Volume", "Ocupado", "Usado / total", "Disponível", "Inodes livres", "Acesso"], rows, visibleRows, "Volumes do Storage") + traffic, `<span>${h(item.capacity.label)}</span><span>Leitura ${h(stamp(item.evidence.observedAt))}</span>`, badge(status.label, status.tone, earliestExpiry(item.evidence.validUntil, item.classification.validUntil)), "▤");
+  return panel(item.displayName, body + table(["Volume", "Ocupado", "Usado / total", "Disponível", "Inodes livres", "Acesso"], rows, visibleRows, "Volumes do Storage") + traffic, `<span>${h(item.capacity.label)}</span><span>Leitura ${h(stamp(item.evidence.observedAt))}</span>`, badge(status.label, status.tone, earliestExpiry(item.evidence.validUntil, item.classification.validUntil)), "database");
 }
 function signalPanel(data: SignalFlowBlockData, visibleRows: number) {
   const target = data.target;
-  if (!target) return panel("Signal · fluxo de processamento", empty("Nenhum alvo Softcom Signal habilitado."), "", "", "∿");
+  if (!target) return panel("Signal · fluxo de processamento", empty("Nenhum alvo Softcom Signal habilitado."), "", "", "activity");
   const knowledge = target.checks?.knowledgeIndex;
   const jobs = knowledge && typeof knowledge === "object" && !Array.isArray(knowledge) ? knowledge as Record<string, unknown> : {};
   const count = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? number(value) : "—";
   const boxes = [["Em fila", jobs.jobsQueued], ["Rodando", jobs.jobsRunning], ["Pendentes", jobs.itemsPending]];
   const stats = `<div class="signal-jobs">${boxes.map(([label, value]) => `<div><strong>${h(count(value))}</strong><span>${h(label)}</span></div>`).join("")}${(target.flowKpis ?? []).map(item => `<div><strong class="tone-${tone(item.tone)}">${h(item.kpiLabel)}</strong><span>${h(item.displayName)}</span></div>`).join("")}</div>`;
   const pending = [["Saída · outbox na fila", target.outboxPending], ["Entrada · inbox na fila", target.inboxPending], ["Dead letter", target.outboxDead == null && target.inboxDead == null ? null : (target.outboxDead ?? 0) + (target.inboxDead ?? 0)]] as const;
-  return panel("Signal · fluxo de processamento", stats + `<p class="muted">${h(signalWorkersLabel(target.activeInstances, target.checkedAt))} · ${h(formatLatency(target.latencyMs))}</p>` + strip(target.strip, signalStateColor) + table(["Pipeline", "Quantidade"], pending.map(([label, value]) => cells([h(label), h(number(value))])), visibleRows, "Pipeline Signal"), `<span>${h(target.displayName)}</span><span>Leitura ${h(stamp(target.checkedAt))}</span>`, badge(signalStateLabel(target.state), signalStateTone(target.state)), "∿");
+  return panel("Signal · fluxo de processamento", stats + `<p class="muted">${h(signalWorkersLabel(target.activeInstances, target.checkedAt))} · ${h(formatLatency(target.latencyMs))}</p>` + strip(target.strip, signalStateColor) + table(["Pipeline", "Quantidade"], pending.map(([label, value]) => cells([h(label), h(number(value))])), visibleRows, "Pipeline Signal"), `<span>${h(target.displayName)}</span><span>Leitura ${h(stamp(target.checkedAt))}</span>`, badge(signalStateLabel(target.state), signalStateTone(target.state)), "activity");
 }
 function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock) {
   const payload = model.overview?.data.blocks.find(block => block.blockId === configuration.id && block.type === configuration.type);
@@ -156,7 +158,7 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
       const cards = resolved.cards;
       const split = model.layout === "overview" && model.screen.overviewGrid === "split";
       const visibleRows = split ? Math.max(2, options.visibleRows) : options.visibleRows;
-      return panel("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${visibleRows * 128 + 2}px">${cards.map(card => miniCard(card, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM na infraestrutura · latência nas aplicações · faixa Signal/VPS", "", "◇");
+      return panel("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${visibleRows * 128 + 2}px">${cards.map(card => miniCard(card, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM na infraestrutura · latência nas aplicações · faixa Signal/VPS", "", "box");
     }
     case "asgard_summary": return asgardPanel(block.data as AsgardSummary, configuration, stale, now);
     case "storage_summary": return storagePanel((block.data as { target: StorageView | null }).target, stale, now, effectiveOptions({ ...configuration, type: "storage_summary" }).visibleRows);
@@ -169,7 +171,7 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
       const options = effectiveOptions({ ...configuration, type: "problems" });
       const problems = selectProblems(block.data as Problem[], options);
       const rows = problems.map(problem => cells([badge(severities[problem.severity].label, severities[problem.severity].tone), `<strong>${h(problem.displayDescription ?? problem.description)}</strong><small>${h(problem.resourceDisplayName ?? problem.resource.hostKey)}</small>`, h(stamp(problem.startedAt))]));
-      return panel("Problemas ativos", rows.length ? table(["Severidade", "Problema", "Desde"], rows, options.visibleRows, "Problemas ativos") : empty("Nenhum problema ativo corresponde ao filtro."), `Última atualização: ${h(stamp(block.lastUpdated))}`, "", "⚠");
+      return panel("Problemas ativos", rows.length ? table(["Severidade", "Problema", "Desde"], rows, options.visibleRows, "Problemas ativos") : empty("Nenhum problema ativo corresponde ao filtro."), `Última atualização: ${h(stamp(block.lastUpdated))}`, "", "warning");
     }
     case "host_inventory": {
       const options = effectiveOptions({ ...configuration, type: "host_inventory" });
@@ -236,38 +238,47 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
   <noscript><meta http-equiv="refresh" content="${Math.ceil(model.refreshAfterMs / 1000)}"></noscript>
 </head>
 <body class="${model.tv ? "tv-mode" : ""}">
+<div id="compat-viewport">
 <div id="compat-shell">
   <a class="skip-link" href="#main">Ir para o conteúdo</a>
   <header class="pulse-topbar">
-    <div class="pulse-brand"><span class="pulse-brand-mark" aria-hidden="true"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg></span><strong>${h(appName)}</strong></div>
+    <div class="pulse-brand"><span class="pulse-brand-mark" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg></span><strong>${h(appName)}</strong></div>
     <span class="brand-caption">Central de monitoramento</span>
     <div class="top-actions">
       <span class="clock"><strong id="compat-clock">${h(stamp(new Date(model.now).toISOString()).split(", ").pop())}</strong><small>FORTALEZA · UTC−3</small></span>
-      <a id="compat-tv" class="control" href="/monitor?compat=1&amp;tv=${model.tv ? "0" : "1"}" aria-pressed="${model.tv}">${model.tv ? "Sair do modo TV" : "Modo TV"}</a>
-      <button class="control" id="compat-fullscreen" type="button">Tela cheia</button>
-      <button class="control" id="compat-theme" type="button" aria-pressed="${model.theme === "light"}">${model.theme === "light" ? "Tema claro" : "Tema escuro"}</button>
-      <button class="control" id="compat-notifications" type="button" aria-label="Notificações"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg> <span id="compat-count">—</span></button>
+      <a id="compat-tv" class="control" href="/monitor?compat=1&amp;tv=${model.tv ? "0" : "1"}" aria-pressed="${model.tv}">${controlContent("tv", model.tv ? "Sair do modo TV" : "Modo TV")}</a>
+      <button class="control" id="compat-fullscreen" type="button">${controlContent("maximize", "Tela cheia")}</button>
+      <button class="control" id="compat-theme" type="button" aria-pressed="${model.theme === "light"}">${controlContent("sun", model.theme === "light" ? "Tema claro" : "Tema escuro")}</button>
+      <span id="compat-audio" class="audio-controls" role="group" aria-label="Controles de som" aria-busy="true" data-audio-state="loading">
+        <button type="button" class="control" id="compat-mute" aria-label="Som carregando" aria-pressed="false" title="Aguardando o controle de áudio" disabled><span id="compat-volume-on">${monitorIcon("volume")}</span><span id="compat-volume-off" hidden>${monitorIcon("volumeOff")}</span><span data-control-label>Som</span></button>
+        <label for="compat-volume" class="sr-only">Volume</label><input type="range" id="compat-volume" min="0" max="100" step="5" value="50" aria-label="Volume" disabled><span id="compat-volume-value" class="volume-value">—</span>
+        <button type="button" class="control" id="compat-test-sound" title="Testar som" aria-label="Testar som" disabled>${monitorIcon("play")}</button>
+        <small id="compat-audio-status" class="audio-status" role="status">Áudio carregando</small>
+        <noscript><small>Ative JavaScript para controlar o som.</small></noscript>
+      </span>
+      <button class="control" id="compat-notifications" type="button" aria-label="Notificações">${monitorIcon("bell")} <span id="compat-count">—</span></button>
     </div>
   </header>
   <main id="main">
     <div class="presentation-toolbar">
       <h1>Toda a operação. Um só lugar.</h1>
       <div class="presentation-controls">
-        <a class="control layout-control" href="/monitor?compat=1&amp;layout=overview" data-layout="overview">1 · Visão geral</a>
-        <a class="control layout-control" href="/monitor?compat=1&amp;layout=wall" data-layout="wall">2 · Tela completa</a>
-        <button class="control" id="compat-rotate" type="button">${model.document.rotation.autoStart ? "Parar alternância" : "Alternar telas"}</button>
+        <a class="control layout-control" href="/monitor?compat=1&amp;layout=overview" data-layout="overview">${controlContent("dashboard", "1 · Visão geral")}</a>
+        <a class="control layout-control" href="/monitor?compat=1&amp;layout=wall" data-layout="wall">${controlContent("maximize", "2 · Tela completa")}</a>
+        <button class="control" id="compat-rotate" type="button">${controlContent("refresh", model.document.rotation.autoStart ? "Parar alternância" : "Alternar telas")}</button>
         <label for="compat-screen" class="sr-only">Tela</label>
         <select id="compat-screen" class="control">${model.screens.map(screen => `<option value="${h(screen.id)}"${screen.id === model.screen.id ? " selected" : ""}>${h(screen.name)}</option>`).join("")}</select>
-        <a id="compat-refresh" class="control" href="/monitor?compat=1">Atualizar</a>
+        <a id="compat-refresh" class="control" href="/monitor?compat=1">${controlContent("refresh", "Atualizar")}</a>
       </div>
     </div>
     <p id="compat-status" class="compat-warning" role="status" hidden></p>
     <div id="compat-content">${renderCompatibleContent(model)}</div>
   </main>
 </div>
+</div>
 <div id="compat-modal" class="compat-modal" role="dialog" aria-modal="true" aria-labelledby="compat-modal-title" hidden>
   <div class="modal-backdrop" data-close-modal></div>
-  <section class="modal-panel"><header><h2 id="compat-modal-title">Detalhes</h2><button type="button" class="control" data-close-modal aria-label="Fechar">×</button></header><div id="compat-modal-body"></div></section>
+  <section class="modal-panel"><header><h2 id="compat-modal-title">Detalhes</h2><button type="button" class="control" data-close-modal aria-label="Fechar">${monitorIcon("close")}</button></header><div id="compat-modal-body"></div></section>
 </div>
 <button type="button" id="compat-toast" class="compat-toast" hidden></button>
 <div id="compat-announcement" class="sr-only" role="status" aria-live="polite"></div>

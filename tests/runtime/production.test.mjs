@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
 import { zabbixFixture } from "../fixtures/zabbix.mjs";
+import { getWithHost } from "../fixtures/http-host.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import pg from "pg";
 import { createClient } from "redis";
@@ -252,8 +253,10 @@ test("compatible monitor serves data without Next bundles, including opaque ifra
         assert.equal(snapshot.status, 200); assert.equal(snapshot.headers.get("access-control-allow-origin"), "*");
         assert.equal(snapshot.headers.get("access-control-allow-credentials"), null);
         for (const path of ["/monitor?compat=1", "/monitor", "/monitor/compat?fragment=1"]) {
-          const blocked = await fetch(base + path, { headers: { Host: "not-allowed.test", "User-Agent": userAgent } });
+          const blocked = await getWithHost(base + path, "not-allowed.test", { "User-Agent": userAgent, "X-Forwarded-Host": "127.0.0.1", Origin: "null" });
+          assert.equal(blocked.sentHost, "not-allowed.test", path);
           assert.equal(blocked.status, 403, path); assert.equal(blocked.headers.get("access-control-allow-origin"), null, path);
+          assert.equal(JSON.parse(blocked.body).error.code, "host_not_allowed", path);
         }
         for (const sound of ["notification", "warning", "error", "success"]) {
           const audio = await fetch(base + "/monitor/compat/audio/" + sound, { headers: { Origin: "null" } });
@@ -262,8 +265,10 @@ test("compatible monitor serves data without Next bundles, including opaque ifra
           assert.equal(Buffer.from(await audio.arrayBuffer()).toString("ascii", 0, 4), "RIFF");
         }
         assert.equal((await fetch(base + "/monitor/compat/audio/unknown")).status, 404);
-        const denied = await fetch(base + "/monitor/compat", { headers: { Host: "not-allowed.test" } });
+        const denied = await getWithHost(base + "/monitor/compat", "not-allowed.test");
         assert.equal(denied.status, 403); assert.equal(denied.headers.get("access-control-allow-origin"), null);
+        const deniedAudio = await getWithHost(base + "/monitor/compat/audio/notification", "not-allowed.test");
+        assert.equal(deniedAudio.status, 403); assert.equal(deniedAudio.headers.get("access-control-allow-origin"), null);
         assert.equal((await fetch(base + "/monitor/compat", { method: "POST" })).status, 405);
       } finally { await new Promise(resolve => parent.close(resolve)); }
     });

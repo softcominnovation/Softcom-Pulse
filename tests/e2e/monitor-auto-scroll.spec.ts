@@ -68,15 +68,30 @@ test("polling preserves monitor scroll and its automatic events do not postpone 
 });
 
 for (const autoScrollOnLoad of [true, false]) test(`saved scroll startup ${autoScrollOnLoad} overrides reduced motion and keeps the manual control`, async ({ page }) => {
+  await page.clock.install();
   const region = await monitor(page, { autoScrollOnLoad, reducedMotion: "reduce" });
   await expect(page.getByRole("button", { name: autoScrollOnLoad ? "Pausar rolagem automática" : "Retomar rolagem automática", exact: true })).toBeVisible();
-  if (autoScrollOnLoad) await expect.poll(() => region.evaluate(element => element.scrollTop)).toBeGreaterThan(12);
-  else { await page.waitForTimeout(2800); expect(await region.evaluate(element => element.scrollTop)).toBe(0); }
+  await page.clock.runFor(3500);
+  if (autoScrollOnLoad) expect(await region.evaluate(element => element.scrollTop)).toBeGreaterThan(12);
+  else expect(await region.evaluate(element => element.scrollTop)).toBe(0);
   if (autoScrollOnLoad) await page.getByRole("button", { name: "Pausar rolagem automática", exact: true }).click();
-  const position = await region.evaluate(element => element.scrollTop);
   await page.getByRole("button", { name: "Sair do modo TV", exact: true }).click();
+  await region.focus(); await region.press("End");
+  await page.clock.runFor(1000);
+  const position = await region.evaluate(element => element.scrollTop);
+  expect(position).toBeGreaterThan(12);
+  expect(await region.evaluate(element => element.scrollHeight - element.clientHeight - element.scrollTop)).toBeLessThanOrEqual(1);
+  await page.clock.runFor(2000);
+  expect(await region.evaluate(element => element.scrollTop)).toBe(position);
   await page.getByRole("button", { name: "Retomar rolagem automática", exact: true }).click();
-  await expect.poll(() => region.evaluate(element => element.scrollTop), { timeout: 6000 }).toBeGreaterThan(position + 12);
+  await expect(page.getByRole("button", { name: "Pausar rolagem automática", exact: true })).toBeVisible();
+  let returned = 0;
+  for (let elapsed = 0; elapsed < 12000 && returned <= 12; elapsed += 250) {
+    await page.clock.runFor(250);
+    returned = position - await region.evaluate(element => element.scrollTop);
+  }
+  expect(returned).toBeGreaterThan(12);
+  await expect(page.getByRole("button", { name: "Modo TV", exact: true })).toBeVisible();
   expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
   expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
 });

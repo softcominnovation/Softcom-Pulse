@@ -8,7 +8,7 @@ import { compatibleMonitorState, renderCompatibleContent, renderCompatiblePage }
 import { compatibleNotificationPayload } from "../lib/server/monitor-compat/notifications.ts";
 import { compatibleAssetUrl } from "../lib/server/monitor-compat/assets.ts";
 import { createHash } from "node:crypto";
-import { initialPublicMonitorZoom } from "../lib/server/monitor-compat/settings.ts";
+import { initialPublicMonitorSettings } from "../lib/server/monitor-compat/settings.ts";
 import { buildDemoHosts, buildDemoOverview, buildDemoPresentation } from "../lib/server/monitoring/demo-data.ts";
 import { monitorFixture } from "./fixtures/monitor-compat.mjs";
 
@@ -17,14 +17,26 @@ test("classic routing detects old engines without downgrading supported browsers
   for (const ua of ["Chrome/145.0", "Firefox/128.0", "Version/16.4 Safari/605"]) assert.equal(needsCompatibleMonitor(ua), false, ua);
 });
 
-test("monitor reads its initial zoom anonymously and falls back safely when settings fail", async () => {
-  const model = monitorFixture(); model.document.publicMonitorZoomPercent = 70;
-  assert.equal(await initialPublicMonitorZoom('allowed.test', async request => {
+test("monitor reads initial zoom and scroll anonymously and falls back safely when settings fail", async () => {
+  const model = monitorFixture(); model.document.publicMonitorZoomPercent = 70; model.document.publicMonitorAutoScrollOnLoad = false;
+  assert.deepEqual(await initialPublicMonitorSettings('allowed.test', async request => {
     assert.equal(request.headers.get('host'), 'allowed.test');
     assert.equal(request.headers.has('cookie'), false); assert.equal(request.headers.has('authorization'), false);
     return Response.json({ data: model.document });
-  }), 70);
-  for (const reader of [async () => new Response('', { status: 403 }), async () => Response.json({ data: {} }), async () => { throw Error('offline'); }]) assert.equal(await initialPublicMonitorZoom('allowed.test', reader), 100);
+  }), { publicMonitorZoomPercent: 70, publicMonitorAutoScrollOnLoad: false });
+  for (const reader of [async () => new Response('', { status: 403 }), async () => Response.json({ data: {} }), async () => { throw Error('offline'); }]) assert.deepEqual(await initialPublicMonitorSettings('allowed.test', reader), { publicMonitorZoomPercent: 100, publicMonitorAutoScrollOnLoad: true });
+});
+
+test("classic initial scroll follows the shared setting before the controller loads", () => {
+  const model = monitorFixture();
+  for (const enabled of [false, true]) {
+    model.document.publicMonitorAutoScrollOnLoad = enabled;
+    assert.equal(compatibleMonitorState(model).autoScrollOnLoad, enabled);
+    const button = renderCompatiblePage(model, 'Pulse').match(/<button[^>]+id="compat-auto-scroll"[^>]*>/)?.[0];
+    assert.ok(button);
+    assert.ok(button.includes(`aria-label="${enabled ? 'Pausar' : 'Retomar'} rolagem automática"`));
+    assert.ok(button.includes(`aria-pressed="${!enabled}"`));
+  }
 });
 
 test("classic SSR applies configured zoom before scripts and ignores the TV scale", () => {

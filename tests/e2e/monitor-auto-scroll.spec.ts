@@ -2,14 +2,15 @@ import { test, expect, type Page } from "@playwright/test";
 import { overview, presentation } from "../fixtures/dashboard";
 import { effectiveOptions } from "../../lib/config/presentation";
 
-async function monitor(page: Page, count = 1, idle = false) {
+async function monitor(page: Page, { count = 1, idle = false, autoScrollOnLoad = true, reducedMotion = "no-preference" }: { count?: number; idle?: boolean; autoScrollOnLoad?: boolean; reducedMotion?: "reduce" | "no-preference" } = {}) {
   const document = presentation(count, 1);
   document.schemaVersion = 2;
+  document.publicMonitorAutoScrollOnLoad = autoScrollOnLoad;
   document.idlePresentation = { enabled: idle, afterMinutes: 1, requestFullscreen: false };
   for (const screen of document.screens) for (const block of screen.blocks) block.options = effectiveOptions({ type: block.type });
   await page.route("**/api/public/settings/presentation", route => route.fulfill({ json: { data: document } }));
   await page.route("**/api/public/dashboard/overview*", route => route.fulfill({ json: overview(document, new URL(route.request().url()).searchParams.get("screenId") ?? undefined) }));
-  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.emulateMedia({ reducedMotion });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/monitor?compat=0");
   const region = page.locator(".vm-table-scroll[data-monitor-auto-scroll]").first();
@@ -40,7 +41,7 @@ test("monitor scrolls overflowing panels in both directions, pauses manually and
 });
 
 test("automatic scrolling survives screen changes without pausing rotation and stops on leaving monitor", async ({ page }) => {
-  const region = await monitor(page, 2);
+  const region = await monitor(page, { count: 2 });
   await page.getByRole("button", { name: "Alternar telas", exact: true }).click();
   await expect.poll(() => region.evaluate(element => element.scrollTop)).toBeGreaterThan(12);
   await expect(page.getByText("Alternância pausada para leitura", { exact: true })).toHaveCount(0);
@@ -53,7 +54,7 @@ test("automatic scrolling survives screen changes without pausing rotation and s
 
 test("polling preserves monitor scroll and its automatic events do not postpone inactivity", async ({ page }) => {
   await page.clock.install();
-  const region = await monitor(page, 1, true);
+  const region = await monitor(page, { idle: true });
   await page.getByRole("button", { name: "Sair do modo TV", exact: true }).click();
   await page.clock.runFor(3500);
   await page.clock.fastForward(15500);
@@ -66,15 +67,16 @@ test("polling preserves monitor scroll and its automatic events do not postpone 
   await expect(page.getByRole("button", { name: "Sair do modo TV", exact: true })).toBeVisible();
 });
 
-test("reduced motion starts paused and the user can explicitly enable monitor scrolling without TV mode", async ({ page }) => {
-  const region = await monitor(page);
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await expect(page.getByRole("button", { name: "Retomar rolagem automática", exact: true })).toBeVisible();
+for (const autoScrollOnLoad of [true, false]) test(`saved scroll startup ${autoScrollOnLoad} overrides reduced motion and keeps the manual control`, async ({ page }) => {
+  const region = await monitor(page, { autoScrollOnLoad, reducedMotion: "reduce" });
+  await expect(page.getByRole("button", { name: autoScrollOnLoad ? "Pausar rolagem automática" : "Retomar rolagem automática", exact: true })).toBeVisible();
+  if (autoScrollOnLoad) await expect.poll(() => region.evaluate(element => element.scrollTop)).toBeGreaterThan(12);
+  else { await page.waitForTimeout(2800); expect(await region.evaluate(element => element.scrollTop)).toBe(0); }
+  if (autoScrollOnLoad) await page.getByRole("button", { name: "Pausar rolagem automática", exact: true }).click();
   const position = await region.evaluate(element => element.scrollTop);
-  await page.waitForTimeout(700);
-  expect(await region.evaluate(element => element.scrollTop)).toBe(position);
   await page.getByRole("button", { name: "Sair do modo TV", exact: true }).click();
   await page.getByRole("button", { name: "Retomar rolagem automática", exact: true }).click();
   await expect.poll(() => region.evaluate(element => element.scrollTop), { timeout: 6000 }).toBeGreaterThan(position + 12);
+  expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches)).toBe(true);
   expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
 });

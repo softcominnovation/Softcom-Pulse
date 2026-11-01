@@ -220,7 +220,8 @@ test("current classic cards fill native layout, scroll complete bodies and keep 
 
 
 test("classic monitor auto-scroll preserves manual reading, refresh positions and opaque iframe bounds", { timeout: 60000 }, async () => {
-  const fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', 'tests/fixtures/monitor-compat.mjs'], { cwd: fileURLToPath(root), encoding: 'utf8' }));
+  let fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', 'tests/fixtures/monitor-compat.mjs'], { cwd: fileURLToPath(root), encoding: 'utf8' }));
+  const pausedFixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', 'tests/fixtures/monitor-compat.mjs', '100', 'false'], { cwd: fileURLToPath(root), encoding: 'utf8' }));
   await shipped(async base => {
     let parentAddress;
     const parent = createServer((request, response) => {
@@ -231,7 +232,7 @@ test("classic monitor auto-scroll preserves manual reading, refresh positions an
     });
     parentAddress = await listen(parent);
     const browser = await chromium.launch();
-    const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: 'no-preference', userAgent: oldUa });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: 'reduce', userAgent: oldUa });
     try {
       const page = await context.newPage(), errors = [];
       page.on('pageerror', error => { errors.push(error.message); console.error('Classic scrolling page error:', error.message); });
@@ -272,8 +273,18 @@ test("classic monitor auto-scroll preserves manual reading, refresh positions an
       assert.ok(Math.abs(bounds.width - 1280) < 2 && Math.abs(bounds.height - 720) < 2, JSON.stringify(bounds));
       assert.equal(await frame.locator('#compat-content').evaluate(element => element.ownerDocument.scrollingElement.scrollTop), 0);
       assert.equal(await frame.locator('#compat-modal [data-monitor-auto-scroll]').count(), 0);
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
       await page.emulateMedia({ reducedMotion: 'reduce' });
+      await frame.getByRole('button', { name: 'Pausar rolagem automática', exact: true }).waitFor();
+      fixture = pausedFixture;
+      const reloaded = page.waitForResponse(response => response.url() === parentAddress + '/monitor?compat=1');
+      await frame.locator('#compat-content').evaluate(() => location.reload()); await reloaded;
       await frame.getByRole('button', { name: 'Retomar rolagem automática', exact: true }).waitFor();
+      await region.waitFor(); await delay(2800);
+      assert.equal(await top(), 0, 'Disabled startup stays paused even with overflowing content');
+      await frame.getByRole('button', { name: 'Retomar rolagem automática', exact: true }).click();
+      for (let attempt = 0; attempt < 40 && await top() <= 12; attempt++) await delay(100);
+      assert.ok(await top() > 12, 'The manual button can resume a disabled startup in reduced motion');
       assert.deepEqual(errors, []);
     } finally { await context.close(); await browser.close(); await new Promise(resolve => parent.close(resolve)); }
   });

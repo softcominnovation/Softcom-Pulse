@@ -42,5 +42,9 @@ export function monitorFixture() {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const model = monitorFixture();
   if (process.argv[2]) model.document = presentationDocumentSchema.parse({ ...model.document, publicMonitorZoomPercent: Number(process.argv[2]), displayScalePercent: 125 });
+  if (process.argv[3] !== undefined) {
+    if (!['true', 'false'].includes(process.argv[3])) throw Error('Invalid scroll startup fixture');
+    model.document.publicMonitorAutoScrollOnLoad = process.argv[3] === 'true';
+  }
   process.stdout.write(JSON.stringify({ page: renderCompatiblePage(model, "Pulse de teste"), snapshot: { html: renderCompatibleContent(model), state: compatibleMonitorState(model) } }));
 }

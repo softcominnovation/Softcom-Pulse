@@ -197,6 +197,8 @@ Reutilizar `transition-ring`, `focus-field` e as animações dos componentes. O 
 
 O toast Kobra usa `motion`, empilhamento e `dissolve` em `lib/smoky-dissolve.ts`; tooltips usam transições próprias e Caption com Torph. Esses efeitos pertencem aos componentes compartilhados. Evitar copiar seu código para telas novas. `prefers-reduced-transparency` tem tratamento específico para tooltips e toasts em `kobra.css`.
 
+Exceção explícita solicitada para o telão: a rolagem interna da rota exata `/monitor` segue a configuração compartilhada **Iniciar rolagem automática no /monitor** (padrão ligado), inclusive quando a TV informa movimento reduzido. O botão Rolagem permite pausar/retomar a sessão. Essa opção não modifica o tratamento de movimento reduzido nas demais animações nem a política de sons; consulte [Compatibilidade do monitor](monitor-compatibility.md#rolagem-automática-dos-painéis).
+
 Novas mensagens usam pt-BR, nomes acessíveis para botões de ícone e sucesso apenas após confirmação da ação. Reutilizar o toast Kobra para feedback com som; Sonner permanece disponível para os fluxos anteriores e não emite `kobra:toast`. Não disparar ambos para o mesmo resultado.
 
 ## 7. Roteiro para próximas implementações

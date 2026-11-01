@@ -232,7 +232,7 @@ export function renderCompatibleContent(model: CompatibleMonitor) {
 }
 
 export function compatibleMonitorState(model: CompatibleMonitor) {
-  return { screenId: model.screen.id, screens: model.screens.map(screen => ({ id: screen.id, name: screen.name })), revision: model.document.revision, layout: model.layout, tv: model.tv, theme: model.theme, scale: 100, zoomPercent: model.document.publicMonitorZoomPercent, autoStart: model.document.rotation.autoStart, intervalMs: model.document.rotation.intervalSeconds * 1000, refreshAfterMs: model.refreshAfterMs, serverTime: new Date(model.now).toISOString(), messages: notificationMessages, tabIcons: { normal: pulseTabIcon, alert: pulseAlertTabIcon }, audioAdapterUrl: compatibleAssetUrl("monitor-compat-audio.js") };
+  return { screenId: model.screen.id, screens: model.screens.map(screen => ({ id: screen.id, name: screen.name })), revision: model.document.revision, layout: model.layout, tv: model.tv, theme: model.theme, scale: 100, zoomPercent: model.document.publicMonitorZoomPercent, autoScrollOnLoad: model.document.publicMonitorAutoScrollOnLoad, autoStart: model.document.rotation.autoStart, intervalMs: model.document.rotation.intervalSeconds * 1000, refreshAfterMs: model.refreshAfterMs, serverTime: new Date(model.now).toISOString(), messages: notificationMessages, tabIcons: { normal: pulseTabIcon, alert: pulseAlertTabIcon }, audioAdapterUrl: compatibleAssetUrl("monitor-compat-audio.js") };
 }
 function scriptData(value: unknown) { return JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, character => "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0")); }
 
@@ -276,7 +276,7 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
         <a class="control layout-control" href="/monitor?compat=1&amp;layout=overview" data-layout="overview">${controlContent("dashboard", "1 · Visão geral")}</a>
         <a class="control layout-control" href="/monitor?compat=1&amp;layout=wall" data-layout="wall">${controlContent("maximize", "2 · Tela completa")}</a>
         <button class="control" id="compat-rotate" type="button">${controlContent("refresh", model.document.rotation.autoStart ? "Parar alternância" : "Alternar telas")}</button>
-        <button class="control" id="compat-auto-scroll" type="button" aria-label="Pausar rolagem automática" aria-pressed="false" disabled>${controlContent("pause", "Rolagem")}</button>
+        <button class="control" id="compat-auto-scroll" type="button" aria-label="${model.document.publicMonitorAutoScrollOnLoad ? "Pausar" : "Retomar"} rolagem automática" aria-pressed="${!model.document.publicMonitorAutoScrollOnLoad}" disabled>${controlContent("pause", "Rolagem")}</button>
         <label for="compat-screen" class="sr-only">Tela</label>
         <select id="compat-screen" class="control">${model.screens.map(screen => `<option value="${h(screen.id)}"${screen.id === model.screen.id ? " selected" : ""}>${h(screen.name)}</option>`).join("")}</select>
         <a id="compat-refresh" class="control" href="/monitor?compat=1">${controlContent("refresh", "Atualizar")}</a>

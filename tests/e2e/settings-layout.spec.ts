@@ -12,6 +12,7 @@ test("reading save preserves invalid drafts elsewhere and advances revision for 
   await page.getByLabel("Intervalo da alternância (segundos)").fill("1");
   await page.getByLabel("Tamanho dos elementos no telão").selectOption("125");
   await page.getByLabel("Zoom inicial do /monitor (%)").fill("70");
+  await page.getByLabel("Iniciar rolagem automática no /monitor", { exact: true }).uncheck();
   await page.getByLabel("Tempo sem interação (minutos)").fill("7");
   await page.getByLabel("Entrar no modo TV após inatividade", { exact: true }).check();
   await page.getByRole("button", { name: readingSave, exact: true }).click();
@@ -19,6 +20,7 @@ test("reading save preserves invalid drafts elsewhere and advances revision for 
   expect(state.document.screens).toEqual(original.screens); expect(state.document.rotation).toEqual(original.rotation);
   expect(state.document.displayScalePercent).toBe(125); expect(state.document.idlePresentation.afterMinutes).toBe(7);
   expect(state.document.publicMonitorZoomPercent).toBe(70);
+  expect(state.document.publicMonitorAutoScrollOnLoad).toBe(false);
   await expect(page.getByLabel("Nome da tela", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Intervalo da alternância (segundos)")).toHaveValue("1");
   await page.getByLabel("Nome da tela", { exact: true }).fill("Operação revisada");
@@ -28,6 +30,7 @@ test("reading save preserves invalid drafts elsewhere and advances revision for 
   expect(state.writes[1].body.expectedRevision).toBe(2);
   expect(state.document.screens[0].name).toBe("Operação revisada");
   await page.reload();
+  await expect(page.getByLabel("Iniciar rolagem automática no /monitor", { exact: true })).not.toBeChecked();
   await expect(page.getByLabel("Tamanho dos elementos no telão")).toHaveValue("125");
   await expect(page.getByLabel("Zoom inicial do /monitor (%)")).toHaveValue("70");
   await expect(page.getByLabel("Tempo sem interação (minutos)")).toHaveValue("7");

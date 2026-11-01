@@ -57,6 +57,7 @@
     var next = result && result.state;
     if (!result || typeof result.html !== 'string' || !next || !Array.isArray(next.screens) || !next.screens.length || next.screens.length > 3) return false;
     if (typeof next.revision !== 'number' || !isFinite(next.revision) || next.revision < 1 || typeof next.tv !== 'boolean') return false;
+    if (next.autoScrollOnLoad !== undefined && typeof next.autoScrollOnLoad !== 'boolean') return false;
     if (['overview', 'wall'].indexOf(next.layout) < 0 || ['dark', 'light'].indexOf(next.theme) < 0 || [100, 110, 120, 125].indexOf(next.scale) < 0) return false;
     if (typeof next.intervalMs !== 'number' || !isFinite(next.intervalMs) || next.intervalMs < 5000 || next.intervalMs > 300000) return false;
     if (typeof next.refreshAfterMs !== 'number' || !isFinite(next.refreshAfterMs) || next.refreshAfterMs < 5000 || next.refreshAfterMs > 60000 || !isFinite(Date.parse(next.serverTime))) return false;
@@ -566,8 +567,7 @@
   document.head.appendChild(audioScript);
   updateControls(); clock(); applyDensity(); armRotation();
   if (window.PulseMonitorAutoScroll) {
-    var scrollPreference = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
-    var scrollPaused = !!(scrollPreference && scrollPreference.matches), scrollButton = byId('compat-auto-scroll');
+    var scrollPaused = state.autoScrollOnLoad === false, scrollButton = byId('compat-auto-scroll');
     autoScroll = window.PulseMonitorAutoScroll.attach(content, { paused: scrollPaused });
     function updateScrollControl() {
       scrollButton.disabled = false;
@@ -575,8 +575,6 @@
       scrollButton.setAttribute('aria-label', scrollPaused ? 'Retomar rolagem automática' : 'Pausar rolagem automática');
     }
     scrollButton.addEventListener('click', function () { scrollPaused = !scrollPaused; autoScroll.setPaused(scrollPaused); updateScrollControl(); });
-    function reducedMotion() { if (scrollPreference.matches) { scrollPaused = true; autoScroll.setPaused(true); updateScrollControl(); } }
-    if (scrollPreference && scrollPreference.addListener) scrollPreference.addListener(reducedMotion);
     updateScrollControl();
   }
   window.addEventListener('resize', syncViewport);

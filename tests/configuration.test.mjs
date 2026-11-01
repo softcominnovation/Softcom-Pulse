@@ -83,14 +83,31 @@ test("presentation limits, IDs, references and rotation are strict", () => {
 });
 test("reading save stores TV mode and rotation, and keeps the last rotation when the interval is invalid", () => {
   const { settings: confirmed } = settings();
-  const saved = withReadingPlayback(confirmed, { defaultTvMode: true, rotation: { autoStart: true, intervalSeconds: 30 }, displayScalePercent: 125, publicMonitorZoomPercent: 70 });
+  const saved = withReadingPlayback(confirmed, { defaultTvMode: true, rotation: { autoStart: true, intervalSeconds: 30 }, displayScalePercent: 125, publicMonitorZoomPercent: 70, publicMonitorAutoScrollOnLoad: false });
   assert.equal(saved.defaultTvMode, true);
   assert.deepEqual(saved.rotation, { autoStart: true, intervalSeconds: 30 });
   assert.equal(saved.displayScalePercent, 125);
   assert.equal(saved.publicMonitorZoomPercent, 70);
+  assert.equal(saved.publicMonitorAutoScrollOnLoad, false);
+  assert.deepEqual(saved.screens, confirmed.screens);
   const kept = withReadingPlayback(confirmed, { defaultTvMode: true, rotation: { autoStart: true, intervalSeconds: 1 } });
   assert.equal(kept.defaultTvMode, true);
   assert.deepEqual(kept.rotation, confirmed.rotation);
+  assert.equal(kept.publicMonitorAutoScrollOnLoad, confirmed.publicMonitorAutoScrollOnLoad);
+});
+
+test("monitor scroll starts enabled in legacy documents and accepts only an explicit boolean", () => {
+  const base = settings(); delete base.settings.publicMonitorAutoScrollOnLoad;
+  assert.equal(presentationWriteSchema.parse(base).settings.publicMonitorAutoScrollOnLoad, true);
+  assert.equal(base.settings.publicMonitorAutoScrollOnLoad, undefined);
+  for (const value of [false, true]) {
+    base.settings.publicMonitorAutoScrollOnLoad = value;
+    assert.equal(presentationWriteSchema.parse(base).settings.publicMonitorAutoScrollOnLoad, value);
+  }
+  for (const value of [null, 0, 1, 'false', 'true']) {
+    base.settings.publicMonitorAutoScrollOnLoad = value;
+    assert.equal(presentationWriteSchema.safeParse(base).success, false);
+  }
 });
 test("public monitor zoom defaults to 100 for old documents and rejects invalid percentages", () => {
   const base = settings(); delete base.settings.publicMonitorZoomPercent;

@@ -696,6 +696,28 @@ test("v2 writes validate scope/options, preserve revisions and repair resource d
   await deleteResource(config.id); const repaired = (await getPresentation()).data;
   assert.equal(repaired.revision, current.revision + 1); assert.deepEqual(repaired.screens[0].blocks[0].options, effectiveOptions({ type: "summary" }));
 });
+test("monitor scroll startup defaults without rewriting legacy data and persists both values with revision checks", async () => {
+  const legacy = initialV2(randomUUID); delete legacy.publicMonitorAutoScrollOnLoad;
+  await getDatabase().query("UPDATE pulse_settings SET value=$1::jsonb WHERE key='dashboardPresentation'", [JSON.stringify(legacy)]);
+  const loaded = await (await handlers.presentationGet(request())).json();
+  assert.equal(loaded.data.publicMonitorAutoScrollOnLoad, true);
+  assert.equal(loaded.data.revision, legacy.revision);
+  assert.deepEqual((await getDatabase().query("SELECT value FROM pulse_settings WHERE key='dashboardPresentation'")).rows[0].value, legacy);
+  const { revision, ...settings } = loaded.data;
+  for (const [index, value] of [false, true].entries()) {
+    const saved = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision + index, settings: { ...settings, publicMonitorAutoScrollOnLoad: value } }));
+    assert.equal(saved.status, 200);
+    assert.equal((await saved.json()).data.publicMonitorAutoScrollOnLoad, value);
+    assert.equal((await getPresentation()).data.publicMonitorAutoScrollOnLoad, value);
+    assert.deepEqual((await getPresentation()).data.screens, legacy.screens);
+  }
+  const conflict = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision, settings: { ...settings, publicMonitorAutoScrollOnLoad: false } }));
+  assert.equal(conflict.status, 409);
+  const invalid = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision + 2, settings: { ...settings, publicMonitorAutoScrollOnLoad: 'false' } }));
+  assert.equal(invalid.status, 400);
+  assert.equal((await getPresentation()).data.publicMonitorAutoScrollOnLoad, true);
+});
+
 test("reading scale defaults without a database rewrite and persists through the revision-protected BFF", async () => {
   const legacy = initialV2(randomUUID); delete legacy.displayScalePercent;
   await getDatabase().query("UPDATE pulse_settings SET value=$1::jsonb WHERE key='dashboardPresentation'", [JSON.stringify(legacy)]);

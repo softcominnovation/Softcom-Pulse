@@ -98,10 +98,12 @@ function PresentationForm({ saved, resources, hosts, reload, availabilityCatalog
           <input type="number" min={50} max={150} step={1} {...form.register("publicMonitorZoomPercent", { valueAsNumber: true })} />
         </Field>
       </div><div className="admin-checks admin-reading-checks">
+        <Check label="Iniciar rolagem automática no /monitor"><input type="checkbox" {...form.register("publicMonitorAutoScrollOnLoad")} /></Check>
         <Check label="Entrar no modo TV após inatividade"><input type="checkbox" {...form.register("idlePresentation.enabled")} /></Check>
         <Check label="Tentar tela cheia ao entrar automaticamente"><input type="checkbox" {...form.register("idlePresentation.requestFullscreen")} /></Check>
         <Check label="Exibir faixa de status do monitoramento"><input type="checkbox" {...form.register("showStatusBanner")} /></Check>
       </div></fieldset>
+      <p className="admin-muted">No /monitor, a rolagem começa conforme esta escolha, inclusive em TVs com movimento reduzido. Vale na próxima abertura ou recarga; o botão Rolagem continua disponível para pausar ou retomar apenas naquela sessão.</p>
       <p className="admin-muted">A faixa de status (atualização, falha e horário da coleta) fica oculta por padrão. Só aparece no dashboard quando esta opção estiver marcada e salva.</p>
       <p className="admin-muted">A entrada por inatividade funciona somente no dashboard principal. A contagem fica suspensa com a aba oculta ou um diálogo aberto. O navegador pode exigir um clique para concluir a tela cheia; nesse caso, o modo TV entra e aparece um botão para continuar.</p>
       <FullscreenHelp />

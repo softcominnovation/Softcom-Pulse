@@ -99,9 +99,22 @@ test("existing resource preferences remain editable without discovery and keep t
 test("pending saves prevent duplicate submission and admin routes require a session", async ({ page }) => {
   await page.goto("/admin/recursos"); await expect(page).toHaveURL(/\/login/);
   const state = await adminFixture(page); await signIn(page); await page.goto("/admin/configuracoes");
+  let submitted = 0;
+  await page.route("**/api/settings/presentation", async route => {
+    if (route.request().method() === "PUT") { submitted++; await new Promise(resolve => setTimeout(resolve, 300)); }
+    await route.fallback();
+  });
   let release!: () => void; state.wait = new Promise(resolve => { release = resolve; });
   await page.getByRole("button", { name: "Salvar apresentação" }).click(); await expect(page.getByRole("button", { name: "Salvando…" })).toBeDisabled();
-  expect(state.writes).toHaveLength(1); release(); state.wait = null; await expect.poll(() => state.document.revision).toBe(2);
+  await expect.poll(() => state.writes.length).toBe(1);
+  await page.getByRole("form", { name: "Configurações da apresentação", exact: true }).evaluate(async (form: HTMLFormElement) => {
+    form.requestSubmit(); form.requestSubmit();
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  });
+  expect(submitted).toBe(1); expect(state.writes).toHaveLength(1);
+  release(); state.wait = null; await expect.poll(() => state.document.revision).toBe(2);
+  await expect(page.getByRole("button", { name: "Salvar apresentação", exact: true })).toBeEnabled();
+  expect(state.writes).toHaveLength(1);
 });
 test("touch resources and zoomed confirmations retain fields, actions and keyboard focus", async ({ page }) => {
   const state = await adminFixture(page); await page.setViewportSize({ width: 390, height: 844 }); await signIn(page); await page.goto("/admin/recursos");

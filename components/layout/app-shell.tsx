@@ -45,18 +45,20 @@ export function AppShell({
   dashboard = false,
   publicRead = false,
   nav = true,
+  publicMonitor = false,
 }: {
   children: ReactNode;
   dashboard?: boolean;
   publicRead?: boolean;
   nav?: boolean;
+  publicMonitor?: boolean;
 }) {
   const tvMode = useUiStore((state) => state.tvMode);
   const isFullscreen = useUiStore((state) => state.isFullscreen);
   const displayScalePercent = useUiStore((state) => state.displayScalePercent);
   const status = useAuthStore((state) => state.status);
   const presentationActive = dashboard && (tvMode || isFullscreen);
-  const scale = presentationActive ? displayScalePercent : 100;
+  const scale = presentationActive && !publicMonitor ? displayScalePercent : 100;
   const normalChrome = !tvMode && !isFullscreen;
   const showLogin = publicRead && status !== "authenticated" && normalChrome;
 

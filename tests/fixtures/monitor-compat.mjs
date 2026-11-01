@@ -41,5 +41,6 @@ export function monitorFixture() {
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const model = monitorFixture();
+  if (process.argv[2]) model.document = presentationDocumentSchema.parse({ ...model.document, publicMonitorZoomPercent: Number(process.argv[2]), displayScalePercent: 125 });
   process.stdout.write(JSON.stringify({ page: renderCompatiblePage(model, "Pulse de teste"), snapshot: { html: renderCompatibleContent(model), state: compatibleMonitorState(model) } }));
 }

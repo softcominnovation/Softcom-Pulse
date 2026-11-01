@@ -57,3 +57,5 @@ A prévia em configurações avisa quando a composição precisa de rolagem na a
 ## Apresentação pública compatível
 
 O renderer clássico de `/monitor` usa uma [composição CSS própria](monitor-compatibility.md#composição-e-rolagem), limitada àquele documento, sem alterar o encaixe React descrito acima. Não transporta o algoritmo antigo de sensores/transformação. Compensa apenas zoom CSS explicitamente definido na raiz do iframe, expandindo o viewport lógico e mantendo a composição flex; não deduz zoom por densidade da tela. Mantém regiões roláveis e pode rolar a composição quando os mínimos não cabem, preservando os dados e a legenda.
+
+A rota exata `/monitor` usa `publicMonitorZoomPercent` (50–150, padrão 100) e mantém `--dashboard-scale` em 1, inclusive em TV/fullscreen. O frame React expande largura/altura lógica inversamente ao zoom; o clássico faz a compensação equivalente. Quando CSS zoom não existe, o fator explícito pode ser aplicado por transform, sem estimar escala por DPR. A raiz autenticada e as demais rotas mantêm os fatores atuais. Consulte [configuração do zoom inicial](monitor-compatibility.md#zoom-inicial-do-monitor).

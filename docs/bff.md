@@ -274,3 +274,7 @@ O [guia de alertas das VMs com Agent](vm-agent-alerts.md) documenta limites perc
 ## Adaptadores de apresentação do monitor compatível
 
 `GET /monitor/compat` e `?fragment=1` usam os leitores públicos atuais dentro do processo, sem credenciais. `GET /monitor/compat/notifications/[[...segments]]` conserva histórico, cursores, incidentes e eventos de uso atuais, acrescentando o texto de apresentação por `notificationText`. `GET /monitor/compat/audio/:sound` serve apenas os quatro WAVs operacionais existentes. Todos mantêm o gate de Host e o acesso anônimo sem credenciais; não há escrita, worker ou migration adicional. Consulte [Compatibilidade do monitor](monitor-compatibility.md).
+
+### Zoom inicial da rota pública
+
+O documento de `/settings/presentation` e sua projeção `/public/settings/presentation` incluem `publicMonitorZoomPercent`: inteiro entre 50 e 150, default 100 quando omitido em documentos anteriores. Integra o JSON `dashboardPresentation` existente, com a mesma revisão/permissão de gravação. O save de leitura também preserva esse campo sem incorporar rascunhos de composição. Não há rota, migration ou worker novo. Somente `/monitor` consome esse zoom e ignora a ampliação `displayScalePercent`; as outras rotas continuam com sua escala habitual.

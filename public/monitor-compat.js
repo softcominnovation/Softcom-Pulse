@@ -118,7 +118,9 @@
     content.innerHTML = result.html;
     content.setAttribute('data-connection', content.querySelector('.is-stale') ? 'stale' : 'ready');
     if (focusDetail) each(content.querySelectorAll('[data-open-detail]'), function (element) { if (element.getAttribute('data-open-detail') === focusDetail) element.focus(); });
+    var previousZoom = state.zoomPercent;
     state = result.state;
+    if (state.zoomPercent !== previousZoom) document.documentElement.style.zoom = state.zoomPercent + '%';
     displayedScreenId = state.screenId;
     if (state.screens.length < 2) rotating = false;
     warning('');
@@ -178,7 +180,9 @@
   var viewportKey = '';
   function syncViewport() {
     var root = document.documentElement, viewport = byId('compat-viewport');
-    var declared = root.style.zoom || '', zoom = parseFloat(declared);
+    var initialStyle = byId('compat-initial-zoom');
+    if (initialStyle && initialStyle.textContent) initialStyle.textContent = '';
+    var declared = root.style.zoom || (state.zoomPercent + '%'), zoom = parseFloat(declared);
     if (declared.indexOf('%') !== -1) zoom /= 100;
     if (!isFinite(zoom) || zoom <= 0) zoom = 1;
     var width = window.innerWidth || root.clientWidth, height = window.innerHeight || root.clientHeight;
@@ -189,28 +193,32 @@
       root.setAttribute('data-monitor-zoom', 'true');
       viewport.style.width = width / zoom + 'px';
       viewport.style.height = height / zoom + 'px';
+      var nativeZoom = window.CSS && window.CSS.supports ? window.CSS.supports('zoom', '1') : 'zoom' in root.style;
+      viewport.style.transform = nativeZoom ? '' : 'scale(' + zoom + ')';
+      viewport.style.transformOrigin = nativeZoom ? '' : 'top left';
     } else {
       root.removeAttribute('data-monitor-zoom');
       viewport.style.width = ''; viewport.style.height = '';
+      viewport.style.transform = ''; viewport.style.transformOrigin = '';
     }
   }
   function applyDensity() {
     syncViewport();
-    var fullscreen = document.fullscreenElement || document.webkitFullscreenElement;
-    var ratio = state.tv || fullscreen ? state.scale / 100 : 1;
+    var ratio = 1;
     var fonts = [['.panel-heading h2', 13], ['.availability-name', 12], ['.availability-description', 10], ['.availability-footer', 9], ['.reading', 10], ['.reading strong', 11], ['.panel-foot', 9], ['.dashboard-kpi h2', 12], ['.dashboard-kpi .kpi-value', 28], ['table', 10], ['.presentation-toolbar h1', 20]];
     var rules = '';
     each(fonts, function (font) { rules += font[0] + '{font-size:' + Math.round(font[1] * ratio * 100) / 100 + 'px;}'; });
     var style = byId('compat-density');
     if (style && style.textContent !== rules) style.textContent = rules;
   }
-  function openModal(title, html, trigger) {
+  function openModal(title, html, trigger, kind) {
     if (modal.hidden) {
       restoreFocus = trigger || document.activeElement;
       oldOverflow = document.body.style.overflow;
       document.body.style.overflow = 'hidden';
     }
     text(byId('compat-modal-title'), title);
+    modal.setAttribute('data-modal-kind', kind || 'details');
     byId('compat-modal-body').innerHTML = html;
     modal.hidden = false;
     modal.querySelector('button').focus();
@@ -517,26 +525,33 @@
     if (audioInstalled) return;
     audioInstalled = true; clearTimeout(audioLoadTimer);
     var supported = audio.supported ? audio.supported() : !!(window.AudioContext || window.webkitAudioContext);
-    var controls = byId('compat-audio'), mute = byId('compat-mute'), volume = byId('compat-volume'), test = byId('compat-test-sound');
+    var controls = byId('compat-audio'), mute = byId('compat-mute'), settings = byId('compat-sound-settings');
     controls.setAttribute('aria-busy', 'false');
     controls.setAttribute('data-audio-state', supported ? 'ready' : 'unsupported');
-    mute.disabled = false; volume.disabled = false;
+    mute.disabled = false; settings.disabled = false;
     text(byId('compat-audio-status'), supported ? '' : 'Sem suporte a áudio');
     byId('compat-audio-status').hidden = supported;
     function sync() {
+      var volume = byId('compat-volume'), test = byId('compat-test-sound');
       var value = audio.volume(), percent = Math.round(value * 100), muted = audio.muted() || value === 0;
       mute.setAttribute('aria-label', muted ? 'Som mudo' : 'Som ativo');
       mute.title = muted ? 'Ativar som' : 'Silenciar som';
       mute.setAttribute('aria-pressed', muted ? 'true' : 'false');
       byId('compat-volume-on').hidden = muted; byId('compat-volume-off').hidden = !muted;
-      volume.value = percent; volume.setAttribute('aria-valuetext', percent + '%');
+      if (volume) { volume.value = percent; volume.setAttribute('aria-valuetext', percent + '%'); }
       text(byId('compat-volume-value'), percent + '%');
-      test.disabled = muted || !supported;
+      if (test) test.disabled = muted || !supported;
+      text(modal.querySelector('.compat-sound-state'), muted ? 'Sons silenciados' : 'Sons ativados · Kobra Sound');
     }
     mute.addEventListener('click', function () { var enabled = audio.muted() || audio.volume() === 0; if (enabled && audio.volume() === 0) audio.setVolume(0.5); audio.setMuted(!enabled); sync(); });
-    function changeVolume() { audio.setVolume(Number(volume.value) / 100); sync(); }
-    volume.addEventListener('input', changeVolume); volume.addEventListener('change', changeVolume);
-    test.addEventListener('click', function () { audio.test(function (started) { warning(started ? 'Som de teste iniciado.' : 'O navegador não permitiu iniciar o som.'); }); });
+    settings.addEventListener('click', function () {
+      openModal('Sons da interface', byId('compat-audio-template').innerHTML, settings, 'sound');
+      var volume = byId('compat-volume'), test = byId('compat-test-sound');
+      function changeVolume() { audio.setVolume(Number(volume.value) / 100); sync(); }
+      volume.addEventListener('input', changeVolume); volume.addEventListener('change', changeVolume);
+      test.addEventListener('click', function () { audio.test(function (started) { text(modal.querySelector('.compat-sound-state'), started ? 'Som de teste iniciado.' : 'O navegador não permitiu iniciar o som.'); }); });
+      sync();
+    });
     function prepareAudio(event) { if (event.isTrusted) audio.prepare(); }
     document.addEventListener('click', prepareAudio, true); document.addEventListener('keydown', prepareAudio, true);
     window.addEventListener('storage', sync);

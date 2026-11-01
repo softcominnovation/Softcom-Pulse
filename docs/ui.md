@@ -157,3 +157,5 @@ O modal de notificações do Storage separa **Alerta de disco** de **Entrega e s
 ## Apresentação compatível do monitor público
 
 A entrada `/monitor` também dispõe de HTML/CSS/scripts clássicos para TVs e iframes restritos. Seleção, funcionalidades atuais, composição nativa, rolagem, notificações e limites estão em [Compatibilidade do monitor](monitor-compatibility.md). O aplicativo React e suas telas administrativas permanecem com os componentes e regras atuais.
+
+Em Configurações → Leitura no telão, **Zoom inicial do /monitor (%)** aceita 50–150%, com padrão 100 e salvamento compartilhado. Somente `/monitor` usa essa proporção e mantém a escala TV em 100%; o campo de tamanho do telão continua atendendo às outras rotas. No clássico, mute e ajustes ficam compactos no header, com volume e teste no modal “Sons da interface”.

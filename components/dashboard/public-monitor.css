@@ -1,0 +1,22 @@
+.public-monitor-frame { width: 100%; height: 100dvh; overflow: hidden; }
+.public-monitor-stage { width: calc(100vw / var(--public-monitor-zoom)); height: calc(100dvh / var(--public-monitor-zoom)); overflow: auto; }
+.public-monitor-stage > .dashboard-shell { min-height: 100%; }
+@supports (zoom: 1) { .public-monitor-stage { zoom: var(--public-monitor-zoom); } }
+@supports not (zoom: 1) { .public-monitor-stage { transform: scale(var(--public-monitor-zoom)); transform-origin: top left; } }
+@media (min-width: 1201px) and (min-height: 480px) {
+  .public-monitor-stage > .dashboard-shell { height: 100%; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .public-monitor-stage .pulse-topbar { flex-shrink: 0; }
+  .public-monitor-stage .dashboard-main { display: flex; flex: 1; min-height: 0; align-items: stretch; }
+  .public-monitor-stage .dashboard { display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 0; }
+  .public-monitor-stage .dashboard > :not(.dashboard-blocks) { flex-shrink: 0; }
+  .public-monitor-stage .dashboard-blocks { flex: 1; min-height: 0; overflow: auto; align-content: stretch; }
+  .public-monitor-stage .balanced .dashboard-blocks:not(.overview-split) { grid-template-rows: max-content max-content; grid-auto-rows: minmax(0, 1fr); }
+  .public-monitor-stage .balanced .dashboard-blocks.overview-split { grid-template-rows: max-content minmax(0, 1fr); }
+  .public-monitor-stage .balanced .overview-split-grid { height: 100%; grid-template-rows: max-content minmax(0, 1fr); }
+  .public-monitor-stage .dashboard-panel { min-height: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+  .public-monitor-stage .panel-heading, .public-monitor-stage .panel-foot { flex-shrink: 0; }
+  .public-monitor-stage .problem-list, .public-monitor-stage .asgard-content, .public-monitor-stage .asgard-machines, .public-monitor-stage .signal-flow-body, .public-monitor-stage .vm-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+  .public-monitor-stage .storage-composition-row { flex: 1 1 0; min-height: 0; }
+  .public-monitor-stage .storage-composition-scroll .storage-composition-row { flex: 0 0 auto; min-height: calc(var(--row-minimum) * 1px); }
+  .public-monitor-stage .storage-composition-row-content, .public-monitor-stage .storage-composition-scroll .storage-composition-row-content { flex: 0 0 auto; min-height: 0; }
+}

@@ -75,6 +75,7 @@ for (const width of [390, 1366]) test(`Storage disk warning uses the card volume
   await expect(dialog.getByText("Esta configuração foi alterada", { exact: false })).toBeVisible(); await expect(limit).toHaveValue("75");
   await page.keyboard.press("Escape"); await expect(trigger).toBeFocused(); await trigger.click(); await expect(limit).toHaveValue("75");
   state.conflict = false; await dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true }).click(); await expect.poll(() => state.writes.length).toBe(1);
+  await expect(dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true })).toBeEnabled();
   expect(state.writes[0].diskWarningPercent).toBe(75); expect(state.writes[0].filesystemKeys).toEqual([state.items[0].volumes[0].key]);
   for (const key of ["displayName", "description", "critical", "dashboardEnabled", "displayOrder", "networkInterfaceKey"] as const) expect(state.writes[0][key]).toEqual(original[key]);
   await dialog.getByRole("tab", { name: "Entrega e sons", exact: true }).click();
@@ -84,6 +85,7 @@ for (const width of [390, 1366]) test(`Storage disk warning uses the card volume
   await dialog.screenshot({ path: `.cache/storage-validation/notifications-disk-${width}.png` });
   await page.keyboard.press("Escape"); await trigger.click(); await expect(limit).toHaveValue("75");
   await enabled.uncheck(); await dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true }).click(); await expect.poll(() => state.writes.length).toBe(2);
+  await expect(dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true })).toBeEnabled();
   expect(state.writes.at(-1)!.diskWarningPercent).toBeNull();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
@@ -158,14 +160,24 @@ test("Storage notifications reload a changed configuration before enabling a dis
   await config.getByRole("button", { name: "Salvar Storage", exact: true }).click(); await expect(config).toHaveCount(0);
   await trigger.click(); await expect(dialog).toContainText("Archive Renamed");
   const enabled = dialog.getByLabel("Alertar ocupação do disco", { exact: true });
-  await enabled.check(); await dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true }).click();
-  await expect.poll(() => state.writes.length).toBe(2); expect(state.writes[1].displayName).toBe("Archive Renamed");
-  await page.keyboard.press("Escape"); state.items[0].stale = true;
+  const save = dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true });
+  let releaseWrite = () => {};
+  state.writeResponseBarrier = new Promise<void>(resolve => { releaseWrite = resolve; });
+  try {
+    await enabled.check(); await save.click();
+    await expect.poll(() => state.writes.length).toBe(2); expect(state.writes[1].displayName).toBe("Archive Renamed");
+    await expect(dialog.getByRole("button", { name: "Salvando…", exact: true })).toBeDisabled();
+    await page.keyboard.press("Escape"); await expect(dialog).toBeVisible();
+  } finally { releaseWrite(); state.writeResponseBarrier = null; }
+  await expect(save).toBeEnabled();
+  await page.keyboard.press("Escape"); await expect(dialog).toBeHidden(); await expect(trigger).toBeFocused();
+  state.items[0].stale = true;
   await page.evaluate(() => window.dispatchEvent(new Event("pulse:preferences-changed")));
   await trigger.click(); await expect(dialog.getByText("Descoberta indisponível ou antiga.", { exact: false })).toBeVisible();
   await expect(enabled).toBeEnabled(); await enabled.uncheck();
   await dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true }).click();
   await expect.poll(() => state.writes.length).toBe(3); expect(state.writes[2].diskWarningPercent).toBeNull();
+  await expect(save).toBeEnabled();
   await expect(enabled).toBeDisabled(); expect(notifications.writes).toBe(0);
 });
 

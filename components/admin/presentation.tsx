@@ -64,7 +64,7 @@ function PresentationForm({ saved, resources, hosts, reload, availabilityCatalog
     const { revision, ...base } = confirmed, draft = form.getValues();
     const parsed = presentationSettingsSchema.safeParse(withReadingPlayback(base, draft));
     setReadingError("");
-    if (!parsed.success) { setReadingError(parsed.error.issues.some(issue => issue.path.includes("autoStart")) ? "A alternância automática exige duas telas habilitadas com blocos." : "Escolha um tamanho válido e informe um tempo inteiro entre 1 e 120 minutos."); return; }
+    if (!parsed.success) { setReadingError(parsed.error.issues.some(issue => issue.path.includes("autoStart")) ? "A alternância automática exige duas telas habilitadas com blocos." : "Escolha um tamanho válido, zoom inteiro entre 50 e 150% e tempo inteiro entre 1 e 120 minutos."); return; }
     try {
       const result = await mutation.run(async signal => parseDocument((await api.put("/settings/presentation", { expectedRevision: revision, settings: parsed.data }, { signal })).data));
       if (result) { setConfirmed(result); toast.success("Modo TV, alternância e leitura do telão salvos. A composição das telas continua no rascunho."); }
@@ -88,11 +88,14 @@ function PresentationForm({ saved, resources, hosts, reload, availabilityCatalog
     </div></section>
     <section className="dashboard-panel admin-reading" aria-label="Leitura no telão"><div className="panel-heading"><h2>Leitura no telão</h2></div><div className="admin-form">
       <fieldset disabled={mutation.busy}><div className="admin-fields admin-reading-fields">
-        <Field label="Tamanho dos elementos no telão" hint="Aplicado uma única vez no dashboard em modo TV ou tela cheia. A navegação normal mantém 100%." action={<Button type="button" onClick={() => form.setValue("displayScalePercent", defaultDisplayScalePercent, { shouldDirty: true })}>Restaurar tamanho padrão</Button>}>
+        <Field label="Tamanho dos elementos no telão" hint="Aplicado no dashboard em modo TV ou tela cheia. Não se aplica ao /monitor, que usa o zoom próprio abaixo." action={<Button type="button" onClick={() => form.setValue("displayScalePercent", defaultDisplayScalePercent, { shouldDirty: true })}>Restaurar tamanho padrão</Button>}>
           <select {...form.register("displayScalePercent", { valueAsNumber: true })}>{displayScaleOptions.map(value => <option key={value} value={value}>{value}%{value === defaultDisplayScalePercent ? " · padrão" : ""}</option>)}</select>
         </Field>
         <Field label="Tempo sem interação (minutos)" hint="De 1 a 120 minutos. Padrão: 5 minutos. Mouse, toque, teclado e rolagem reiniciam a contagem.">
           <input type="number" min={1} max={120} step={1} {...form.register("idlePresentation.afterMinutes", { valueAsNumber: true })} />
+        </Field>
+        <Field label="Zoom inicial do /monitor (%)" hint="De 50 a 150%. Padrão: 100%. Compartilhado entre as telas do /monitor, preservando o autoajuste. Não altera o zoom do navegador nem as outras rotas.">
+          <input type="number" min={50} max={150} step={1} {...form.register("publicMonitorZoomPercent", { valueAsNumber: true })} />
         </Field>
       </div><div className="admin-checks admin-reading-checks">
         <Check label="Entrar no modo TV após inatividade"><input type="checkbox" {...form.register("idlePresentation.enabled")} /></Check>

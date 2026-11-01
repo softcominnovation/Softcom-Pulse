@@ -83,14 +83,28 @@ test("presentation limits, IDs, references and rotation are strict", () => {
 });
 test("reading save stores TV mode and rotation, and keeps the last rotation when the interval is invalid", () => {
   const { settings: confirmed } = settings();
-  const saved = withReadingPlayback(confirmed, { defaultTvMode: true, rotation: { autoStart: true, intervalSeconds: 30 }, displayScalePercent: 125 });
+  const saved = withReadingPlayback(confirmed, { defaultTvMode: true, rotation: { autoStart: true, intervalSeconds: 30 }, displayScalePercent: 125, publicMonitorZoomPercent: 70 });
   assert.equal(saved.defaultTvMode, true);
   assert.deepEqual(saved.rotation, { autoStart: true, intervalSeconds: 30 });
   assert.equal(saved.displayScalePercent, 125);
+  assert.equal(saved.publicMonitorZoomPercent, 70);
   const kept = withReadingPlayback(confirmed, { defaultTvMode: true, rotation: { autoStart: true, intervalSeconds: 1 } });
   assert.equal(kept.defaultTvMode, true);
   assert.deepEqual(kept.rotation, confirmed.rotation);
 });
+test("public monitor zoom defaults to 100 for old documents and rejects invalid percentages", () => {
+  const base = settings(); delete base.settings.publicMonitorZoomPercent;
+  assert.equal(presentationWriteSchema.parse(base).settings.publicMonitorZoomPercent, 100);
+  for (const value of [50, 70, 100, 125, 150]) {
+    base.settings.publicMonitorZoomPercent = value;
+    assert.equal(presentationWriteSchema.parse(base).settings.publicMonitorZoomPercent, value);
+  }
+  for (const value of [0, 49, 151, 70.5, null, '70']) {
+    base.settings.publicMonitorZoomPercent = value;
+    assert.equal(presentationWriteSchema.safeParse(base).success, false);
+  }
+});
+
 test("unknown metrics remain null, observed zero remains zero, and DTOs strip internal identifiers", () => {
   const at = new Date().toISOString();
   assert.equal(metricSchema.parse({ value: 0, unit: "percent", quality: "fresh", observedAt: at }).value, 0);

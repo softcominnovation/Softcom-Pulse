@@ -84,6 +84,12 @@ for (const enabled of [false, true]) test(`authenticated TV default ${enabled} s
 
 test("public services hide container inventory and menu omits Recursos", async ({ page }) => {
   await mockPublicShell(page);
+  const scriptWarnings: string[] = [];
+  page.on("console", message => { if (message.text().includes("Encountered a script tag")) scriptWarnings.push(message.text()); });
+  await page.route("**/monitor-compat-bootstrap.js*", async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: 'document.documentElement.setAttribute("data-monitor-bootstrap-ran", "true");\n' + await response.text() });
+  });
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto("/monitor/servicos");
   await expect(page.getByRole("heading", { name: "Softcom Signal" })).toBeVisible();
@@ -92,6 +98,12 @@ test("public services hide container inventory and menu omits Recursos", async (
   const labels = await page.locator(".monitoring-nav a").evaluateAll(nodes => nodes.map(node => node.textContent?.trim()));
   expect(labels).toEqual(["Visão geral", "Infraestrutura", "VPS", "Serviços", "Aplicações"]);
   expect(labels).not.toContain("Recursos");
+  await page.getByRole("link", { name: "Visão geral", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-monitor-bootstrap-ran", "true");
+  const bootstrap = page.locator('script[src*="/monitor-compat-bootstrap.js"]');
+  await expect(bootstrap).toHaveCount(1);
+  expect(await bootstrap.evaluate(element => (element as HTMLScriptElement).async)).toBe(true);
+  expect(scriptWarnings).toEqual([]);
 });
 
 test("public Ver serviços keeps only the VM name and login notice", async ({ page }) => {

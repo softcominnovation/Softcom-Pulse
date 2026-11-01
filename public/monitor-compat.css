@@ -23,12 +23,10 @@ button:focus, select:focus, a:focus, [tabindex]:focus { outline: 2px solid #aaa;
 .clock { text-align: right; margin-right: 5px; }
 .clock strong { font: bold 20px monospace; }
 .clock small { display: block; font-size: 9px; color: #aaa; margin-top: 3px; }
-.audio-controls { display: inline-flex; flex-wrap: wrap; align-items: center; max-width: 100%; padding: 3px; border: 1px solid #303030; border-radius: 9px; }
-.audio-controls input { width: 75px; min-width: 55px; vertical-align: middle; margin: 0 7px; }
-.audio-controls .control { font-size: 10px; padding: 7px; }
-.audio-controls .volume-value { font: 10px monospace; min-width: 34px; margin-right: 5px; }
+.audio-controls { display: inline-flex; align-items: center; padding: 2px; border: 1px solid #303030; border-radius: 9px; }
+.audio-controls .control { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 5px; background: transparent; border: 0; border-radius: 6px; }
+.audio-controls .compat-icon { width: 16px; height: 16px; }
 .audio-status { font-size: 10px; color: #aaa; margin: 0 5px; }
-.tv-mode .audio-controls input { width: 55px; }
 .tv-mode .brand-caption { display: none; }
 .tv-mode .pulse-brand { width: 210px; }
 .tv-mode .top-actions > * { margin-left: 4px; }
@@ -137,6 +135,17 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
 .modal-panel { position: relative; background: #191919; border: 1px solid #3b3b3b; border-radius: 18px; max-width: 1050px; margin: 30px auto; box-shadow: 0 15px 60px #000; }
 .modal-panel > header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #333; }
 .modal-panel > header h2 { margin: 0; font-size: 18px; }
+.compat-modal[data-modal-kind="sound"] .modal-panel { max-width: 420px; border-radius: 24px; }
+.compat-sound-form > * { margin: 0 0 18px; }
+.compat-sound-form p { color: #a3a3a3; line-height: 1.5; }
+.compat-sound-form label { display: block; }
+.compat-sound-form output { float: right; font-variant-numeric: tabular-nums; }
+.compat-sound-form input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 5px; border-radius: 5px; background: #737373; cursor: pointer; }
+.compat-sound-form input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border: 2px solid #eee; border-radius: 50%; background: #191919; }
+.compat-sound-form input[type="range"]::-moz-range-thumb { width: 10px; height: 10px; border: 2px solid #eee; border-radius: 50%; background: #191919; }
+.light .compat-sound-form input[type="range"]::-webkit-slider-thumb { border-color: #171717; background: #fafafa; }
+.light .compat-sound-form input[type="range"]::-moz-range-thumb { border-color: #171717; background: #fafafa; }
+.light .compat-sound-form p { color: #555; }
 #compat-modal-body { padding: 20px; max-height: 72vh; overflow: auto; }
 .notification-entry { border: 1px solid #353535; border-radius: 9px; padding: 12px; margin-bottom: 9px; }
 .notification-entry strong, .notification-entry small { display: block; }
@@ -167,7 +176,7 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
 @media (max-width: 760px) { .compat-row, .compat-cell { display: block; width: 100% !important; height: auto !important; } .compat-row { padding: 0 5px; } .compat-cell { margin: 8px 0; } .card-wrap { width: 50%; } .dashboard-kpis { display: block; } .dashboard-kpi { display: inline-block; width: 48%; margin: 1%; } .pulse-topbar, .pulse-brand { display: block; width: 100%; } .top-actions { width: 100%; justify-content: flex-start; margin-top: 12px; } .clock { display: none; } main { padding: 5px; } .dashboard-footer { display: block; line-height: 18px; } .metric-grid { border-spacing: 5px 0; } .storage-extra { display: block; } .storage-extra > .reading { display: inline-block; width: 48%; } .compat-modal { padding: 7px; } .modal-panel { margin: 8px auto; } #compat-modal-body { padding: 10px; } }
 
 
-/* Native flex layout; explicit root CSS zoom expands the viewport without scaling the canvas. */
+/* Native flex layout; only the explicit zoom preference expands the logical viewport. */
 @media (min-width: 761px) and (min-height: 480px) {
   html, body, #compat-viewport, #compat-shell { height: 100%; min-height: 0; width: 100%; }
   html, body { overflow: hidden; }

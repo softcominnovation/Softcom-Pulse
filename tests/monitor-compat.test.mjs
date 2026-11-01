@@ -8,12 +8,32 @@ import { compatibleMonitorState, renderCompatibleContent, renderCompatiblePage }
 import { compatibleNotificationPayload } from "../lib/server/monitor-compat/notifications.ts";
 import { compatibleAssetUrl } from "../lib/server/monitor-compat/assets.ts";
 import { createHash } from "node:crypto";
+import { initialPublicMonitorZoom } from "../lib/server/monitor-compat/settings.ts";
 import { buildDemoHosts, buildDemoOverview, buildDemoPresentation } from "../lib/server/monitoring/demo-data.ts";
 import { monitorFixture } from "./fixtures/monitor-compat.mjs";
 
 test("classic routing detects old engines without downgrading supported browsers", () => {
   for (const ua of ["Chrome/83.0", "Firefox/127.0", "Version/16.3 Safari/605", "TV Browser", ""]) assert.equal(needsCompatibleMonitor(ua), true, ua);
   for (const ua of ["Chrome/145.0", "Firefox/128.0", "Version/16.4 Safari/605"]) assert.equal(needsCompatibleMonitor(ua), false, ua);
+});
+
+test("monitor reads its initial zoom anonymously and falls back safely when settings fail", async () => {
+  const model = monitorFixture(); model.document.publicMonitorZoomPercent = 70;
+  assert.equal(await initialPublicMonitorZoom('allowed.test', async request => {
+    assert.equal(request.headers.get('host'), 'allowed.test');
+    assert.equal(request.headers.has('cookie'), false); assert.equal(request.headers.has('authorization'), false);
+    return Response.json({ data: model.document });
+  }), 70);
+  for (const reader of [async () => new Response('', { status: 403 }), async () => Response.json({ data: {} }), async () => { throw Error('offline'); }]) assert.equal(await initialPublicMonitorZoom('allowed.test', reader), 100);
+});
+
+test("classic SSR applies configured zoom before scripts and ignores the TV scale", () => {
+  const model = monitorFixture(); model.document.publicMonitorZoomPercent = 70; model.document.displayScalePercent = 125;
+  const html = renderCompatiblePage(model, 'Pulse');
+  assert.match(html, /style="zoom:70%"/); assert.match(html, /width:142\.857/);
+  assert.equal(compatibleMonitorState(model).scale, 100);
+  assert.equal(compatibleMonitorState(model).zoomPercent, 70);
+  assert.doesNotMatch(html.match(/<span id="compat-audio"[\s\S]*?<\/noscript>\s*<\/span>/)?.[0] ?? '', /type="range"|compat-test-sound/);
 });
 
 test("classic reader uses current public handlers without forwarding cookies or Authorization", async () => {

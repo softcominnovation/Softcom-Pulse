@@ -7,7 +7,7 @@ A entrada `/monitor` conserva a aplicação React para navegadores modernos e of
 - `/monitor?compat=1`: força a apresentação clássica. `/monitor/compat` é sua entrada direta.
 - `/monitor?compat=0`: mantém React, inclusive para comparação e cobertura do iframe moderno.
 - A seleção automática atende iframe (`Sec-Fetch-Dest: iframe`), Chromium anterior a 111, Firefox anterior a 128, Safari/iOS anterior a 16.4 e agentes desconhecidos.
-- O bootstrap clássico verifica as capacidades necessárias se o navegador declara um UA moderno inadequado. Sem JavaScript, o HTML React oferece a entrada clássica por `noscript`.
+- O bootstrap clássico verifica as capacidades necessárias se o navegador declara um UA moderno inadequado. Sem JavaScript, o HTML React oferece a entrada clássica por `noscript`. No renderer React, esse arquivo externo usa `async` para participar do gerenciamento de recursos do React também na navegação interna; não trocar por um script `defer` inserido como componente. O renderer clássico continua com seus scripts HTML próprios. Consulte [scripts no React](https://react.dev/reference/react-dom/components/script).
 - O matcher do Proxy limita-se ao `/monitor`; subrotas existentes permanecem com sua implementação atual.
 
 WebView 83 falhava ao interpretar `??=` e blocos estáticos de classe nos bundles atuais. A solução clássica não carrega esses bundles para mostrar os dados: o servidor entrega o HTML completo, CSS convencional e scripts ES5 com XMLHttpRequest. Não há rebaixamento global de JavaScript, React, Tailwind ou bibliotecas do restante do app.
@@ -39,9 +39,19 @@ O renderer adapta a projeção atual dos dez tipos de bloco e seis famílias de 
 - Storage usa capacidade/volumes selecionados, disponibilidade e RX/TX atuais. Não soma volumes novamente nem identifica Storage por hostname/IP.
 - Amostras antigas mantêm seus horários e indicação de desatualização. Evidência expirada retira a confirmação saudável; uma nova consulta não renova a amostra.
 - Ícones são SVGs inline com paths locais Tabler, namespace e dimensões explícitos. Não dependem de fontes de símbolos, hidratação React ou sprites externos.
-- Mute, volume e teste estão no HTML inicial. Falha do adaptador informa indisponibilidade sem remover o componente nem impedir o restante da página.
+- O HTML inicial contém mute e “Ajustar sons” com ícones compactos, além do template do modal. Volume/percentual/teste ficam no modal “Sons da interface”. Falha do adaptador informa indisponibilidade sem impedir o restante da página.
 
-O modo TV inicia ligado, como no `/monitor` moderno, e pode ser desligado localmente. A preferência compartilhada de escala continua sendo lida da apresentação; o clássico adapta tamanho de fonte, sem gravar outra configuração.
+O modo TV inicia ligado, como no `/monitor` moderno, e pode ser desligado localmente. A rota exata `/monitor` mantém escala de elementos em 100%, inclusive em TV/fullscreen: não aplica `displayScalePercent`. Esse campo continua funcionando nas demais rotas como antes.
+
+## Zoom inicial do monitor
+
+Em **Configurações → Leitura no telão → Zoom inicial do /monitor (%)**, informe um inteiro de 50 a 150 e clique em **Salvar leitura do telão** (ou salve a apresentação completa). Padrão: 100. Por exemplo, 70% reduz o conteúdo e conserva o preenchimento do viewport. O valor é compartilhado entre os dispositivos que abrem `/monitor`; não controla o menu de zoom do navegador.
+
+O campo `publicMonitorZoomPercent` integra o JSON `dashboardPresentation` existente no PostgreSQL e sua revisão otimista. Documentos antigos recebem 100 na leitura. Não há migration, nova rota, novo worker ou alteração de permissão. O save de leitura conserva a composição ainda não salva, como antes.
+
+O clássico entrega o zoom e a área inicial no HTML/CSS, inclusive sem JS; depois acompanha mudanças da configuração e viewport. O renderer React recebe o valor pela leitura pública anônima no servidor e aplica a proporção em um frame exclusivo antes da hidratação. Uma falha nessa leitura inicial mantém 100 e os estados de erro atuais. Atualizações de apresentação ajustam o frame sem gravar preferências locais. Ao sair da rota, o frame deixa de existir e não deixa zoom na raiz do documento. A escala TV de 110/120/125% não é somada a esse zoom.
+
+A avaliação de CSS variables/calc isoladamente não comprova compatibilidade do aplicativo inteiro: Next.js, Tailwind e bibliotecas têm seus próprios requisitos. O fallback clássico permanece necessário. [CSS zoom](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/zoom) altera o conteúdo/layout e [CSS.supports](https://developer.mozilla.org/en-US/docs/Web/API/CSS/supports_static) detecta o recurso disponível; não se deduz suporte por densidade da tela.
 
 ## Composição e rolagem
 
@@ -49,7 +59,7 @@ O dashboard React e seu encaixe existente não foram substituídos. Na apresenta
 
 ASGARD, Signal, Storage e tabelas longas têm corpo rolável por teclado, toque ou roda. Conteúdo não é reduzido a altura zero para aparentar encaixe. Quando os mínimos das fileiras não cabem, a composição também pode rolar dentro da área disponível, conservando a legenda e a página. O controlador preserva foco/rolagem após atualizações. Disponibilidade conserva o tamanho dos minicards e seu limite de linhas.
 
-O clássico não infere zoom por DPR ou estilo computado, não usa sensores e não aplica `transform: scale()`. Na WebView 83, o zoom computado da raiz pode incluir densidade nativa sem declaração CSS; tratá-lo como zoom manual encolhia a tela.
+O clássico não infere zoom por DPR ou estilo computado e não usa sensores. Com suporte nativo aplica CSS zoom; sem suporte, usa apenas `transform: scale()` com o fator explicitamente configurado e a área lógica inversa, sem calibrador automático. Na WebView 83, o zoom computado da raiz pode incluir densidade nativa sem declaração CSS; tratá-lo como zoom manual encolhia a tela.
 
 Para o zoom aplicado pelo ADB a `document.documentElement.style.zoom` **dentro do iframe**, o controlador expande a largura e a altura lógica do viewport por `innerWidth / zoom` e `innerHeight / zoom`. Em 1280×720 com 70%, são aproximadamente 1829×1029 pixels CSS; o zoom reduz fontes/cards e o flex continua preenchendo toda a área visível. A mudança é observada sem recarga, assim como resize/orientação. Em 100%, as medidas adicionais são removidas. A compensação inclui as camadas de modal/toast e mantém a rolagem dos corpos. Não altera o zoom escolhido nem o documento pai.
 
@@ -88,3 +98,9 @@ Na validação local de 31/10/2026, `npm run check` passou com TypeScript, 254 t
 Ao ampliar tipos de card ou contratos públicos, atualizar a apresentação compatível e suas fixtures. Não importar schemas/Prisma da cópia antiga nem remover campos novos para fazê-la aceitar um banco recente. Os 503 de `cardMetrics`/`usage` vistos naquela cópia eram incompatibilidades entre versões, não uma solução a portar para este app.
 
 A revisão de zoom de 31/10/2026 também foi conferida por ADB numa TV com WebView 83, DPR 1,5 e iframe 1280×720: início sem zoom explícito, 50/70/100/125%, duas telas, overview/wall e modal preencheram o viewport. O app hospedeiro permaneceu com zoom 100%; somente a raiz do `/monitor` recebeu zoom. Isso registra o equipamento efetivamente testado, sem prometer compatibilidade com todo motor proprietário.
+
+Monitor 01 encerrada pelo responsável em 31/10/2026, commit `acc08ba`, após validação física descrita acima. A evolução do zoom inicial e do volume pertence à etapa complementar Monitor 02.
+
+Monitor 02: a configuração nova afeta somente `/monitor`; o editor apenas grava o valor no documento compartilhado. No clássico, o controle compacto conserva o adaptador de áudio, armazenamento, mute, zero, deduplicação e interrupção existentes. Não se tenta carregar o componente React na WebView que exige o renderer clássico.
+
+Verificação Monitor 02 (31/10/2026): lint/TypeScript, 258 unitários, build e oito cenários selecionados de runtime passaram; nove testes de UI em ambiente isolado cobriram persistência real, primeiro HTML com zoom 70%, responsividade e separação entre escala privada e pública. O encaixe React também foi conferido em 1280×720. Na WebView 83 física, o cabeçalho compacto e o modal de som foram verificados em zoom manual de 70%, sem alterar a configuração compartilhada nem as preferências de áudio do responsável.

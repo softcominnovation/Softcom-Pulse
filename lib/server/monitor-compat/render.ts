@@ -232,18 +232,20 @@ export function renderCompatibleContent(model: CompatibleMonitor) {
 }
 
 export function compatibleMonitorState(model: CompatibleMonitor) {
-  return { screenId: model.screen.id, screens: model.screens.map(screen => ({ id: screen.id, name: screen.name })), revision: model.document.revision, layout: model.layout, tv: model.tv, theme: model.theme, scale: model.document.displayScalePercent, autoStart: model.document.rotation.autoStart, intervalMs: model.document.rotation.intervalSeconds * 1000, refreshAfterMs: model.refreshAfterMs, serverTime: new Date(model.now).toISOString(), messages: notificationMessages, tabIcons: { normal: pulseTabIcon, alert: pulseAlertTabIcon }, audioAdapterUrl: compatibleAssetUrl("monitor-compat-audio.js") };
+  return { screenId: model.screen.id, screens: model.screens.map(screen => ({ id: screen.id, name: screen.name })), revision: model.document.revision, layout: model.layout, tv: model.tv, theme: model.theme, scale: 100, zoomPercent: model.document.publicMonitorZoomPercent, autoStart: model.document.rotation.autoStart, intervalMs: model.document.rotation.intervalSeconds * 1000, refreshAfterMs: model.refreshAfterMs, serverTime: new Date(model.now).toISOString(), messages: notificationMessages, tabIcons: { normal: pulseTabIcon, alert: pulseAlertTabIcon }, audioAdapterUrl: compatibleAssetUrl("monitor-compat-audio.js") };
 }
 function scriptData(value: unknown) { return JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, character => "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0")); }
 
 export function renderCompatiblePage(model: CompatibleMonitor, appName: string) {
   const state = compatibleMonitorState(model);
+  const zoom = model.document.publicMonitorZoomPercent, extent = 10000 / zoom;
   return `<!doctype html>
-<html lang="pt-BR" class="${model.theme}">
+<html lang="pt-BR" class="${model.theme}" style="zoom:${zoom}%"${zoom === 100 ? "" : ' data-monitor-zoom="true"'}>
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#191919"><title>${h(appName)}</title>
   <link id="compat-tab-icon" rel="icon" href="${h(pulseTabIcon)}"><link rel="stylesheet" href="${h(compatibleAssetUrl("monitor-compat.css"))}">
+  <style id="compat-initial-zoom">@media(min-width:761px) and (min-height:480px){html[data-monitor-zoom] #compat-viewport{width:${extent}vw;height:${extent}vh}}@supports not (zoom:1){html[data-monitor-zoom] #compat-viewport{transform:scale(${zoom / 100});transform-origin:top left}}</style>
   <noscript><meta http-equiv="refresh" content="${Math.ceil(model.refreshAfterMs / 1000)}"></noscript>
 </head>
 <body class="${model.tv ? "tv-mode" : ""}">
@@ -259,9 +261,8 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
       <button class="control" id="compat-fullscreen" type="button">${controlContent("maximize", "Tela cheia")}</button>
       <button class="control" id="compat-theme" type="button" aria-pressed="${model.theme === "light"}">${controlContent("sun", model.theme === "light" ? "Tema claro" : "Tema escuro")}</button>
       <span id="compat-audio" class="audio-controls" role="group" aria-label="Controles de som" aria-busy="true" data-audio-state="loading">
-        <button type="button" class="control" id="compat-mute" aria-label="Som carregando" aria-pressed="false" title="Aguardando o controle de áudio" disabled><span id="compat-volume-on">${monitorIcon("volume")}</span><span id="compat-volume-off" hidden>${monitorIcon("volumeOff")}</span><span data-control-label>Som</span></button>
-        <label for="compat-volume" class="sr-only">Volume</label><input type="range" id="compat-volume" min="0" max="100" step="5" value="50" aria-label="Volume" disabled><span id="compat-volume-value" class="volume-value">—</span>
-        <button type="button" class="control" id="compat-test-sound" title="Testar som" aria-label="Testar som" disabled>${monitorIcon("play")}</button>
+        <button type="button" class="control" id="compat-mute" aria-label="Som carregando" aria-pressed="false" title="Aguardando o controle de áudio" disabled><span id="compat-volume-on">${monitorIcon("volume")}</span><span id="compat-volume-off" hidden>${monitorIcon("volumeOff")}</span></button>
+        <button type="button" class="control" id="compat-sound-settings" aria-label="Ajustar sons" title="Volume e teste de áudio" disabled>${monitorIcon("settings")}</button>
         <small id="compat-audio-status" class="audio-status" role="status">Áudio carregando</small>
         <noscript><small>Ative JavaScript para controlar o som.</small></noscript>
       </span>
@@ -292,6 +293,7 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
 <div id="compat-announcement" class="sr-only" role="status" aria-live="polite"></div>
 </div>
 <script id="compat-state" type="application/json">${scriptData(state)}</script>
+<template id="compat-audio-template"><div class="compat-sound-form"><p>Volume e mute pertencem a este dispositivo.</p><p class="compat-sound-state" role="status"></p><label for="compat-volume">Volume <output id="compat-volume-value">50%</output></label><input type="range" id="compat-volume" min="0" max="100" step="5" value="50" aria-label="Volume"><p>Notificações usam os sons oficiais do Kobra. Volume zero silencia todos os sons.</p><button type="button" class="control" id="compat-test-sound">${monitorIcon("volume")} Testar som</button></div></template>
 <style id="compat-density"></style>
 <script src="${h(compatibleAssetUrl("monitor-compat.js"))}" defer></script>
 </body></html>`;

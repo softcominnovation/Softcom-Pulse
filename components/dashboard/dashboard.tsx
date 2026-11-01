@@ -31,7 +31,7 @@ function hasOldEvidence(value: unknown, now: number): boolean {
   if ("validUntil" in value && typeof value.validUntil === "string" && Date.parse(value.validUntil) < now) return true;
   return Object.values(value).some(child => typeof child === "object" && hasOldEvidence(child, now));
 }
-export function Dashboard({ initialTvMode }: { initialTvMode?: boolean } = {}) {
+export function Dashboard({ initialTvMode, onPresentation }: { initialTvMode?: boolean; onPresentation?: (document: PresentationDocument) => void } = {}) {
   const [store] = useState(createPlayerStore), player = useStore(store);
   const [now, setNow] = useState(0);
   useEffect(() => {
@@ -48,6 +48,9 @@ export function Dashboard({ initialTvMode }: { initialTvMode?: boolean } = {}) {
   useEffect(() => {
     if (player.document) useUiStore.getState().setDisplayScalePercent(player.document.displayScalePercent);
   }, [player.document]);
+  useEffect(() => {
+    if (player.document) onPresentation?.(player.document);
+  }, [player.document, onPresentation]);
   const configuration = usePoll<PresentationDocument>("presentation", loadConfiguration, configurationDelay, "Não foi possível atualizar as configurações do dashboard.");
   const refreshConfiguration = configuration.refresh;
   const screen = playableScreens(player.document).find(item => item.id === player.screenId);

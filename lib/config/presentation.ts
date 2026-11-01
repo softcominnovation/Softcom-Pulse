@@ -71,6 +71,7 @@ const screenSchema = z.strictObject({
 const fields = {
   schemaVersion: z.union([z.literal(1), z.literal(2)]), defaultTvMode: z.boolean().default(false),
   displayScalePercent: displayScaleSchema.default(defaultDisplayScalePercent),
+  publicMonitorZoomPercent: z.number().int().min(50).max(150).default(100),
   // Hidden unless explicitly enabled in admin; legacy documents omit the field and stay hidden.
   showStatusBanner: z.boolean().default(false),
   idlePresentation: idlePresentationSchema.prefault({}),
@@ -118,11 +119,12 @@ const rotationDraftSchema = z.strictObject({
 });
 
 /** Reading save also stores TV mode and rotation. An invalid interval stays as a draft and keeps the last saved rotation. */
-export function withReadingPlayback<T extends Pick<PresentationSettings, "displayScalePercent" | "showStatusBanner" | "idlePresentation" | "defaultTvMode" | "rotation">>(confirmed: T, draft: Partial<Pick<PresentationSettings, "displayScalePercent" | "showStatusBanner" | "idlePresentation" | "defaultTvMode" | "rotation">>): T {
+export function withReadingPlayback<T extends Pick<PresentationSettings, "displayScalePercent" | "showStatusBanner" | "idlePresentation" | "defaultTvMode" | "rotation" | "publicMonitorZoomPercent">>(confirmed: T, draft: Partial<Pick<PresentationSettings, "displayScalePercent" | "showStatusBanner" | "idlePresentation" | "defaultTvMode" | "rotation" | "publicMonitorZoomPercent">>): T {
   const rotation = rotationDraftSchema.safeParse(draft.rotation);
   return {
     ...confirmed,
     displayScalePercent: draft.displayScalePercent ?? confirmed.displayScalePercent,
+    publicMonitorZoomPercent: draft.publicMonitorZoomPercent ?? confirmed.publicMonitorZoomPercent,
     showStatusBanner: draft.showStatusBanner ?? confirmed.showStatusBanner,
     idlePresentation: draft.idlePresentation ?? confirmed.idlePresentation,
     defaultTvMode: draft.defaultTvMode ?? confirmed.defaultTvMode,
@@ -131,7 +133,7 @@ export function withReadingPlayback<T extends Pick<PresentationSettings, "displa
 }
 
 export function initialPresentation(newId: () => string): PresentationDocument {
-  return { schemaVersion: 2, revision: 1, defaultTvMode: false, displayScalePercent: defaultDisplayScalePercent, showStatusBanner: false, idlePresentation: idlePresentationSchema.parse({}), rotation: { autoStart: false, intervalSeconds: 20 }, screens: [{
+  return { schemaVersion: 2, revision: 1, defaultTvMode: false, displayScalePercent: defaultDisplayScalePercent, publicMonitorZoomPercent: 100, showStatusBanner: false, idlePresentation: idlePresentationSchema.parse({}), rotation: { autoStart: false, intervalSeconds: 20 }, screens: [{
     id: newId(), name: "Visão geral", enabled: true, layout: "overview", overviewGrid: "default",
     blocks: defaultDashboardBlocks.map(block => ({ id: newId(), ...block, enabled: true, options: effectiveOptions(block) })),
   }] };

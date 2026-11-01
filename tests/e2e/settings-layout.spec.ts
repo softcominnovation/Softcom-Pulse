@@ -1,7 +1,7 @@
 import { test, expect, type Locator } from "@playwright/test";
 import { adminFixture } from "../fixtures/admin";
 import { signIn } from "../fixtures/infrastructure";
-import { id } from "../fixtures/dashboard";
+import { id, overview } from "../fixtures/dashboard";
 
 const readingSave = "Salvar leitura do telão";
 
@@ -11,12 +11,14 @@ test("reading save preserves invalid drafts elsewhere and advances revision for 
   await page.getByLabel("Nome da tela", { exact: true }).fill("");
   await page.getByLabel("Intervalo da alternância (segundos)").fill("1");
   await page.getByLabel("Tamanho dos elementos no telão").selectOption("125");
+  await page.getByLabel("Zoom inicial do /monitor (%)").fill("70");
   await page.getByLabel("Tempo sem interação (minutos)").fill("7");
   await page.getByLabel("Entrar no modo TV após inatividade", { exact: true }).check();
   await page.getByRole("button", { name: readingSave, exact: true }).click();
   await expect.poll(() => state.document.revision).toBe(2);
   expect(state.document.screens).toEqual(original.screens); expect(state.document.rotation).toEqual(original.rotation);
   expect(state.document.displayScalePercent).toBe(125); expect(state.document.idlePresentation.afterMinutes).toBe(7);
+  expect(state.document.publicMonitorZoomPercent).toBe(70);
   await expect(page.getByLabel("Nome da tela", { exact: true })).toHaveValue("");
   await expect(page.getByLabel("Intervalo da alternância (segundos)")).toHaveValue("1");
   await page.getByLabel("Nome da tela", { exact: true }).fill("Operação revisada");
@@ -27,6 +29,7 @@ test("reading save preserves invalid drafts elsewhere and advances revision for 
   expect(state.document.screens[0].name).toBe("Operação revisada");
   await page.reload();
   await expect(page.getByLabel("Tamanho dos elementos no telão")).toHaveValue("125");
+  await expect(page.getByLabel("Zoom inicial do /monitor (%)")).toHaveValue("70");
   await expect(page.getByLabel("Tempo sem interação (minutos)")).toHaveValue("7");
 });
 
@@ -107,3 +110,19 @@ for (const width of [390, 768, 1366, 1920]) {
     }
   });
 }
+
+
+test("monitor zoom does not apply TV enlargement or change the private dashboard scale", async ({ page }) => {
+  const state = await adminFixture(page);
+  state.document.defaultTvMode = true; state.document.displayScalePercent = 125; state.document.publicMonitorZoomPercent = 70;
+  await page.route('**/api/public/settings/presentation', route => route.fulfill({ json: { data: state.document } }));
+  await page.route('**/api/public/dashboard/overview*', route => route.fulfill({ json: overview(state.document) }));
+  await signIn(page); await page.goto('/');
+  await expect(page.locator('.dashboard-shell')).toHaveAttribute('data-display-scale', '125');
+  await page.goto('/monitor?compat=0');
+  await expect(page.locator('.public-monitor-frame')).toHaveAttribute('data-public-monitor-zoom', '70');
+  await expect(page.locator('.dashboard-shell')).toHaveAttribute('data-display-scale', '100');
+  await page.goto('/');
+  await expect(page.locator('.public-monitor-frame')).toHaveCount(0);
+  await expect(page.locator('.dashboard-shell')).toHaveAttribute('data-display-scale', '125');
+});

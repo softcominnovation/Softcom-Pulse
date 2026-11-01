@@ -78,7 +78,8 @@ test("shipped classic monitor preserves Host behind an HTTPS tunnel and serves a
           const frame = page.frameLocator('iframe[title="Monitor clássico"]');
           await frame.locator("#compat-content .dashboard-blocks").waitFor({ state: "visible" });
           assert.ok(await frame.locator('svg[data-icon="server"]').count());
-          assert.equal(await frame.locator("#compat-volume").isVisible(), true);
+          assert.equal(await frame.locator("#compat-sound-settings").isVisible(), true);
+          assert.equal(await frame.locator(".pulse-topbar input[type=range]").count(), 0);
           if (!noJs) {
             await frame.locator('#compat-content[data-monitor-controller="ready"]').waitFor();
             const update = page.waitForResponse(response => new URL(response.url()).pathname === "/monitor/compat" && new URL(response.url()).searchParams.has("fragment"));
@@ -87,7 +88,10 @@ test("shipped classic monitor preserves Host behind an HTTPS tunnel and serves a
             assert.equal(response.headers()["access-control-allow-origin"], "*");
             if (mode === "no-audio" || mode === "blocked-audio") {
               await frame.locator(`#compat-audio[data-audio-state="${mode === "no-audio" ? "unsupported" : "unavailable"}"]`).waitFor();
-              assert.equal(await frame.locator("#compat-test-sound").isEnabled(), false);
+              if (mode === 'no-audio') {
+                await frame.locator('#compat-sound-settings').click();
+                assert.equal(await frame.locator('#compat-test-sound').isEnabled(), false);
+              } else assert.equal(await frame.locator('#compat-sound-settings').isEnabled(), false);
             }
           }
           assert.deepEqual(errors, []); assert.deepEqual(nextBundles, []);
@@ -200,9 +204,90 @@ test("current classic cards fill native layout, scroll complete bodies and keep 
       await page.getByRole("button", { name: "Fechar", exact: true }).click();
       assert.equal(await page.locator("body").evaluate(body => body.style.overflow), "");
       await page.getByRole("button", { name: "Som ativo", exact: true }).click();
+      await page.getByRole("button", { name: "Ajustar sons", exact: true }).click();
       assert.equal(await page.getByRole("button", { name: "Testar som", exact: true }).isEnabled(), false);
+      await page.locator('#compat-volume').press('Home');
+      await page.getByRole('button', { name: 'Fechar', exact: true }).click();
+      await page.getByRole('button', { name: 'Ajustar sons', exact: true }).click();
+      assert.equal(await page.locator('#compat-volume').inputValue(), '0');
+      assert.equal(await page.getByRole('button', { name: 'Testar som', exact: true }).isEnabled(), false);
       assert.deepEqual(errors, []);
       await page.screenshot({ path: fileURLToPath(new URL(".cache/screenshots/monitor-compat-current.png", root)), fullPage: true });
+    } finally { await context.close(); await browser.close(); }
+  });
+});
+
+
+test("configured classic zoom fills the first render without JS and updates without TV amplification", { timeout: 60000 }, async () => {
+  const fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', 'tests/fixtures/monitor-compat.mjs', '70'], { cwd: fileURLToPath(root), encoding: 'utf8' }));
+  await shipped(async base => {
+    const browser = await chromium.launch();
+    try {
+      for (const javaScriptEnabled of [false, true]) {
+        const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, javaScriptEnabled });
+        try {
+          const page = await context.newPage();
+          await page.route('**/monitor?compat=1', route => route.fulfill({ contentType: 'text/html', body: fixture.page }));
+          await page.route('**/monitor/compat?fragment=1*', route => route.fulfill({ json: { ...fixture.snapshot, state: { ...fixture.snapshot.state, zoomPercent: 125 } } }));
+          await page.goto(base + '/monitor?compat=1');
+          const initial = await page.locator('#compat-shell').boundingBox();
+          assert.ok(Math.abs(initial.width - 1280) < 2 && Math.abs(initial.height - 720) < 2, JSON.stringify({ javaScriptEnabled, initial }));
+          assert.equal(await page.locator('html').evaluate(element => element.style.zoom), '70%');
+          if (javaScriptEnabled) {
+            await page.locator('#compat-content[data-monitor-controller=ready]').waitFor();
+            assert.equal(await page.locator('.panel-heading h2').first().evaluate(e => getComputedStyle(e).fontSize), '13px');
+            await page.locator('#compat-refresh').click();
+            await page.waitForFunction(() => document.documentElement.style.zoom === '125%');
+            const updated = await page.locator('#compat-shell').boundingBox();
+            assert.ok(Math.abs(updated.width - 1280) < 2 && Math.abs(updated.height - 720) < 2, JSON.stringify(updated));
+            await page.evaluate(() => {
+              const supports = CSS.supports.bind(CSS);
+              CSS.supports = (property, value) => property === 'zoom' ? false : supports(property, value);
+              const style = document.createElement('style'); style.textContent = 'html{zoom:1!important}'; document.head.appendChild(style);
+              document.documentElement.style.zoom = '70%';
+            });
+            await page.waitForFunction(() => document.getElementById('compat-viewport').style.transform === 'scale(0.7)');
+            const fallback = await page.locator('#compat-shell').boundingBox();
+            assert.ok(Math.abs(fallback.width - 1280) < 2 && Math.abs(fallback.height - 720) < 2, JSON.stringify(fallback));
+          }
+        } finally { await context.close(); }
+      }
+    } finally { await browser.close(); }
+  });
+});
+
+test("modern monitor uses its own zoom, keeps TV scale neutral and leaves the private root unchanged", { timeout: 60000 }, async () => {
+  await shipped(async base => {
+    const browser = await chromium.launch(), context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+    try {
+      const page = await context.newPage(), configuration = await fetch(base + '/api/public/settings/presentation').then(r => r.json());
+      configuration.data.displayScalePercent = 125;
+      configuration.data.publicMonitorZoomPercent = 70;
+      await page.route('**/api/public/settings/presentation', route => route.fulfill({ json: configuration }));
+      await page.goto(base + '/monitor?compat=0');
+      await page.locator('[data-public-monitor-zoom="70"]').waitFor();
+      await page.getByRole('heading', { name: 'Disponibilidade de Serviços', exact: true }).waitFor();
+      const bounds = await page.locator('.public-monitor-stage').evaluate(element => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height, scale: element.querySelector('.dashboard-shell').getAttribute('data-display-scale'), footer: element.querySelector('.dashboard-footer').getBoundingClientRect().bottom }));
+      assert.ok(Math.abs(bounds.width - 1920) < 2 && Math.abs(bounds.height - 1080) < 2, JSON.stringify(bounds));
+      assert.equal(bounds.scale, '100');
+      for (const zoom of [50, 100, 125, 150, 70]) {
+        configuration.data.publicMonitorZoomPercent = zoom;
+        await page.reload();
+        await page.locator(`[data-public-monitor-zoom="${zoom}"]`).waitFor();
+        await page.getByRole('heading', { name: 'Disponibilidade de Serviços', exact: true }).waitFor();
+        const current = await page.locator('.public-monitor-stage').boundingBox();
+        assert.ok(Math.abs(current.width - 1920) < 2 && Math.abs(current.height - 1080) < 2, JSON.stringify({ zoom, current }));
+        assert.equal(await page.locator('.dashboard-shell').getAttribute('data-display-scale'), '100');
+      }
+      await page.screenshot({ path: fileURLToPath(new URL('.cache/screenshots/monitor-02-modern.png', root)) });
+      await page.setViewportSize({ width: 1280, height: 720 });
+      const compact = await page.locator('.public-monitor-stage').evaluate(element => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height, footer: element.querySelector('.dashboard-footer').getBoundingClientRect().bottom }));
+      assert.ok(Math.abs(compact.width - 1280) < 2 && Math.abs(compact.height - 720) < 2 && compact.footer > 690 && compact.footer <= 721, JSON.stringify(compact));
+      const response = await page.request.get(base + '/monitor?compat=0');
+      assert.match(await response.text(), /data-public-monitor-zoom="100"/);
+      assert.equal(await page.locator('html').evaluate(e => e.style.zoom), '');
+      await page.goto(base + '/');
+      assert.equal(await page.locator('.public-monitor-frame').count(), 0);
     } finally { await context.close(); await browser.close(); }
   });
 });

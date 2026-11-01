@@ -152,3 +152,5 @@ O [alerta de disco do Storage](storage.md#alerta-de-ocupação-do-disco) reutili
 ## Apresentação clássica de `/monitor`
 
 A [camada compatível para TVs](monitor-compatibility.md) mantém mute, volume e teste no HTML inicial, inclusive em TV. Seu adaptador ES5 utiliza os mesmos quatro WAVs operacionais, preferências, cooldown e deduplicação; não substitui o áudio moderno. Eventos de uso e mensagens de limite vêm dos contratos atuais. Armazenamento/áudio indisponível não impede os cards; autoplay e permissões continuam sendo responsabilidade do navegador e hospedeiro.
+
+No monitor clássico, o header usa os mesmos dois controles visuais compactos (mute e ajustes) do padrão Kobra. O modal “Sons da interface” concentra volume, percentual e teste. Sua abertura/reabertura não redefine preferências; zero e mute continuam interrompendo vozes e desabilitando teste. A rota React conserva `KobraControls` sem alteração.

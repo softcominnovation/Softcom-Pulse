@@ -4,7 +4,7 @@
 @supports (zoom: 1) { .public-monitor-stage { zoom: var(--public-monitor-zoom); } }
 @supports not (zoom: 1) { .public-monitor-stage { transform: scale(var(--public-monitor-zoom)); transform-origin: top left; } }
 @media (min-width: 1201px) and (min-height: 480px) {
-  .public-monitor-stage > .dashboard-shell { height: 100%; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .public-monitor-frame .public-monitor-stage > .dashboard-shell { height: 100%; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
   .public-monitor-stage .pulse-topbar { flex-shrink: 0; }
   .public-monitor-stage .dashboard-main { display: flex; flex: 1; min-height: 0; align-items: stretch; }
   .public-monitor-stage .dashboard { display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 0; }

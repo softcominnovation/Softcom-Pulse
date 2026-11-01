@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import type { IdlePresentation } from "@/lib/config/presentation";
 import { enterFullscreen } from "@/lib/client/fullscreen";
 import { useUiStore } from "@/store/ui.store";
+import { isAutomaticScroll } from "@/lib/client/automatic-scroll-events";
 
 export function useIdlePresentation(settings: IdlePresentation | undefined) {
   const enabled = settings?.enabled, afterMinutes = settings?.afterMinutes, requestFullscreen = settings?.requestFullscreen;
@@ -44,7 +45,7 @@ export function useIdlePresentation(settings: IdlePresentation | undefined) {
       clearTimeout(timer);
       timer = !blocked && !consumed ? setTimeout(activate, afterMinutes * 60000) : undefined;
     };
-    const activity = () => schedule();
+    const activity = (event: Event) => { if (!isAutomaticScroll(event)) schedule(); };
     const suspension = () => {
       const next = document.hidden || dialogOpen();
       if (next === blocked) return;

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { isAutomaticScroll } from "@/lib/client/automatic-scroll-events";
 import { useStore } from "zustand";
 import { Activity, RefreshCw, TriangleAlert } from "lucide-react";
 import { isAxiosError } from "axios";
@@ -31,7 +32,7 @@ function hasOldEvidence(value: unknown, now: number): boolean {
   if ("validUntil" in value && typeof value.validUntil === "string" && Date.parse(value.validUntil) < now) return true;
   return Object.values(value).some(child => typeof child === "object" && hasOldEvidence(child, now));
 }
-export function Dashboard({ initialTvMode, onPresentation }: { initialTvMode?: boolean; onPresentation?: (document: PresentationDocument) => void } = {}) {
+export function Dashboard({ initialTvMode, onPresentation, extraControls }: { initialTvMode?: boolean; onPresentation?: (document: PresentationDocument) => void; extraControls?: ReactNode } = {}) {
   const [store] = useState(createPlayerStore), player = useStore(store);
   const [now, setNow] = useState(0);
   useEffect(() => {
@@ -71,6 +72,7 @@ export function Dashboard({ initialTvMode, onPresentation }: { initialTvMode?: b
     const visibility = () => store.getState().block("hidden", document.hidden);
     const dialog = () => store.getState().block("dialog", !!document.querySelector('[role="dialog"][data-state="open"], dialog[open]'));
     const reading = (event: Event) => {
+      if (isAutomaticScroll(event)) return;
       if (event.target instanceof Element && event.target.closest("[data-dashboard-content]")) store.getState().pause();
       else if (event.type === "scroll" && (event.target === document || event.target === document.documentElement)) store.getState().pause();
     };
@@ -99,7 +101,7 @@ export function Dashboard({ initialTvMode, onPresentation }: { initialTvMode?: b
   const title = overview.failed ? "Falha na atualização" : result?.stale ? "Dados desatualizados" : !result ? "Carregando monitoramento" : !hasData ? "Aguardando dados do monitoramento" : partial ? "Há evidências desatualizadas" : (problems ?? 0) > 0 ? "A operação requer atenção" : "Monitoramento atualizado";
   const layout = player.layoutOverride ?? screen?.layout ?? "overview";
   return <div className={`dashboard ${layout} ${layout === "overview" ? "balanced" : ""}`}>
-    <PlayerToolbar store={store} />
+    <PlayerToolbar store={store} extraControls={extraControls} />
     {configuration.failed && <div className="dashboard-banner banner-warn" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Não foi possível carregar a configuração</strong><p>{player.document ? "A última configuração válida foi mantida." : "Tente novamente para carregar as telas salvas."}</p></div><Button onClick={configuration.refresh}>Tentar novamente</Button></div>}
     {!player.document && !configuration.failed && <DashboardSkeleton label="Carregando as telas configuradas…" />}
     {player.document && !screen && <div className="dashboard-banner banner-warn" role="alert"><TriangleAlert aria-hidden="true" /><div><strong>Nenhuma composição utilizável</strong><p>A configuração precisa de uma tela habilitada com blocos disponíveis.</p></div><Button onClick={configuration.refresh}>Recarregar configuração</Button></div>}
@@ -118,7 +120,7 @@ export function Dashboard({ initialTvMode, onPresentation }: { initialTvMode?: b
         const renderBlock = (block: typeof enabled[number]) => {
           const payload = result?.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
           const width = displayBlockWidth(block, enabled, { split, wall });
-          return <div className={`dashboard-block width-${width} block-${block.type}`} key={block.id}>
+          return <div className={`dashboard-block width-${width} block-${block.type}`} data-block-id={block.id} key={block.id}>
             {payload ? <DashboardBlock block={payload} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
           </div>;
         };

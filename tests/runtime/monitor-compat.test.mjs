@@ -133,6 +133,7 @@ test("current classic cards fill native layout, scroll complete bodies and keep 
       });
       await page.goto(base + "/monitor?compat=1");
       await page.locator('#compat-content[data-monitor-controller="ready"]').waitFor();
+      await page.getByRole('button', { name: 'Pausar rolagem automática', exact: true }).click();
       await page.getByRole("button", { name: "Notificações: 4 não lidas, 1 incidentes atuais" }).waitFor();
       assert.equal(await page.locator("#compat-count").evaluate(element => getComputedStyle(element).backgroundColor), "rgb(220, 38, 38)");
       for (const [width, height] of [[1280, 720], [1920, 1080], [960, 540]]) {
@@ -218,6 +219,66 @@ test("current classic cards fill native layout, scroll complete bodies and keep 
 });
 
 
+test("classic monitor auto-scroll preserves manual reading, refresh positions and opaque iframe bounds", { timeout: 60000 }, async () => {
+  const fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', 'tests/fixtures/monitor-compat.mjs'], { cwd: fileURLToPath(root), encoding: 'utf8' }));
+  await shipped(async base => {
+    let parentAddress;
+    const parent = createServer((request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/html' });
+      // A real document response retains loopback address-space metadata in an opaque iframe.
+      if (request.url.startsWith('/monitor?')) response.end(fixture.page.replace('<head>', `<head><base href="${base}/">`));
+      else response.end(`<style>body{margin:0}iframe{width:1280px;height:720px;border:0}</style><iframe title="Monitor" sandbox="allow-scripts" src="${parentAddress}/monitor?compat=1"></iframe>`);
+    });
+    parentAddress = await listen(parent);
+    const browser = await chromium.launch();
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, reducedMotion: 'no-preference', userAgent: oldUa });
+    try {
+      const page = await context.newPage(), errors = [];
+      page.on('pageerror', error => { errors.push(error.message); console.error('Classic scrolling page error:', error.message); });
+      page.on('requestfailed', request => { const error = new URL(request.url()).pathname + ': ' + request.failure()?.errorText; errors.push(error); console.error('Classic scrolling request failed:', error); });
+      page.on('console', message => { if (message.type() === 'error') { errors.push(message.text()); console.error('Classic scrolling console:', message.text()); } });
+      await page.route('**/monitor/compat?fragment=1*', route => route.fulfill({ headers: { 'Access-Control-Allow-Origin': '*' }, json: fixture.snapshot }));
+      await page.route('**/monitor/compat/notifications**', route => route.fulfill({ headers: { 'Access-Control-Allow-Origin': '*' }, json: {
+        counts: { unreadCount: 0, activeCount: 0 }, runtime: { enabled: false, deliveryRevision: '1' }, serverTime: new Date().toISOString(),
+        events: [], incidents: [], changes: [], syncCursor: 'test', nextCursor: 'test', hasMore: false, nextPageCursor: null,
+      } }));
+      await page.goto(parentAddress);
+      const frame = page.frameLocator('iframe[title="Monitor"]');
+      await frame.locator('#compat-content[data-monitor-controller="ready"]').waitFor();
+      const region = frame.locator('.block-asgard_summary .panel-content[data-monitor-auto-scroll]');
+      await region.waitFor();
+      const top = () => region.evaluate(element => element.scrollTop);
+      for (let attempt = 0; attempt < 40 && await top() <= 12; attempt++) await delay(100);
+      assert.ok(await top() > 12, 'Automatic motion starts after the reading pause');
+      await frame.getByRole('button', { name: 'Pausar rolagem automática', exact: true }).click();
+      await delay(100);
+      const pausedAt = await top(); await delay(700); assert.equal(await top(), pausedAt);
+      const refreshed = page.waitForResponse(response => response.url().includes('/monitor/compat?fragment=1'));
+      await frame.locator('#compat-refresh').click(); await refreshed;
+      await frame.locator('#compat-content[data-connection="ready"]').waitFor();
+      assert.equal(await top(), pausedAt, 'Replacing a snapshot preserves the position');
+      await frame.getByRole('button', { name: 'Retomar rolagem automática', exact: true }).click();
+      for (let attempt = 0; attempt < 40 && await top() <= pausedAt + 12; attempt++) await delay(100);
+      assert.ok(await top() > pausedAt + 12);
+      await region.focus(); await region.press('End');
+      for (let attempt = 0; attempt < 30 && !await region.evaluate(element => element.scrollTop >= element.scrollHeight - element.clientHeight - 1); attempt++) await delay(100);
+      const bottom = await region.evaluate(element => ({ top: element.scrollTop, max: element.scrollHeight - element.clientHeight }));
+      assert.ok(bottom.top >= bottom.max - 1);
+      await delay(700); assert.equal(await top(), bottom.top, 'Keyboard reading remains manual');
+      await frame.locator('#compat-notifications').click(); await delay(150);
+      const modalAt = await top(); await delay(700); assert.equal(await top(), modalAt);
+      await frame.getByRole('button', { name: 'Fechar', exact: true }).click();
+      const bounds = await frame.locator('#compat-shell').boundingBox();
+      assert.ok(Math.abs(bounds.width - 1280) < 2 && Math.abs(bounds.height - 720) < 2, JSON.stringify(bounds));
+      assert.equal(await frame.locator('#compat-content').evaluate(element => element.ownerDocument.scrollingElement.scrollTop), 0);
+      assert.equal(await frame.locator('#compat-modal [data-monitor-auto-scroll]').count(), 0);
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await frame.getByRole('button', { name: 'Retomar rolagem automática', exact: true }).waitFor();
+      assert.deepEqual(errors, []);
+    } finally { await context.close(); await browser.close(); await new Promise(resolve => parent.close(resolve)); }
+  });
+});
+
 test("configured classic zoom fills the first render without JS and updates without TV amplification", { timeout: 60000 }, async () => {
   const fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', 'tests/fixtures/monitor-compat.mjs', '70'], { cwd: fileURLToPath(root), encoding: 'utf8' }));
   await shipped(async base => {
@@ -260,15 +321,28 @@ test("modern monitor uses its own zoom, keeps TV scale neutral and leaves the pr
   await shipped(async base => {
     const browser = await chromium.launch(), context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
     try {
-      const page = await context.newPage(), configuration = await fetch(base + '/api/public/settings/presentation').then(r => r.json());
+      const page = await context.newPage(), configuration = await fetch(base + '/api/public/settings/presentation').then(r => r.json()), errors = [];
+      page.on('pageerror', error => { errors.push(error.message); console.error('Modern monitor page error:', error.message); });
       configuration.data.displayScalePercent = 125;
       configuration.data.publicMonitorZoomPercent = 70;
       await page.route('**/api/public/settings/presentation', route => route.fulfill({ json: configuration }));
       await page.goto(base + '/monitor?compat=0');
       await page.locator('[data-public-monitor-zoom="70"]').waitFor();
       await page.getByRole('heading', { name: 'Disponibilidade de Serviços', exact: true }).waitFor();
-      const bounds = await page.locator('.public-monitor-stage').evaluate(element => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height, scale: element.querySelector('.dashboard-shell').getAttribute('data-display-scale'), footer: element.querySelector('.dashboard-footer').getBoundingClientRect().bottom }));
+      async function fitted(width, height) {
+        const current = await page.locator('.public-monitor-stage').evaluate(element => ({
+          width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height,
+          shellHeight: element.querySelector('.dashboard-shell').getBoundingClientRect().height,
+          footer: element.querySelector('.dashboard-footer').getBoundingClientRect().bottom,
+          panelsBottom: Math.max(...Array.from(element.querySelectorAll('.dashboard-panel'), panel => panel.getBoundingClientRect().bottom)),
+        }));
+        assert.ok(Math.abs(current.width - width) < 2 && Math.abs(current.height - height) < 2, JSON.stringify(current));
+        assert.ok(Math.abs(current.shellHeight - height) < 2 && current.footer > height - 32 && current.footer <= height + 1, JSON.stringify(current));
+        assert.ok(current.panelsBottom > height - 60 && current.panelsBottom <= height, JSON.stringify(current));
+      }
+      const bounds = await page.locator('.public-monitor-stage').evaluate(element => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height, shellHeight: element.querySelector('.dashboard-shell').getBoundingClientRect().height, scale: element.querySelector('.dashboard-shell').getAttribute('data-display-scale'), footer: element.querySelector('.dashboard-footer').getBoundingClientRect().bottom }));
       assert.ok(Math.abs(bounds.width - 1920) < 2 && Math.abs(bounds.height - 1080) < 2, JSON.stringify(bounds));
+      assert.ok(Math.abs(bounds.shellHeight - 1080) < 2 && bounds.footer > 1050 && bounds.footer <= 1081, JSON.stringify(bounds));
       assert.equal(bounds.scale, '100');
       for (const zoom of [50, 100, 125, 150, 70]) {
         configuration.data.publicMonitorZoomPercent = zoom;
@@ -277,15 +351,34 @@ test("modern monitor uses its own zoom, keeps TV scale neutral and leaves the pr
         await page.getByRole('heading', { name: 'Disponibilidade de Serviços', exact: true }).waitFor();
         const current = await page.locator('.public-monitor-stage').boundingBox();
         assert.ok(Math.abs(current.width - 1920) < 2 && Math.abs(current.height - 1080) < 2, JSON.stringify({ zoom, current }));
+        await fitted(1920, 1080);
         assert.equal(await page.locator('.dashboard-shell').getAttribute('data-display-scale'), '100');
       }
+      await page.addStyleTag({ path: fileURLToPath(new URL('components/dashboard/dashboard.css', root)) });
+      await page.addStyleTag({ path: fileURLToPath(new URL('components/dashboard/storage-composition.css', root)) });
+      await fitted(1920, 1080);
+      configuration.data.screens[0].overviewGrid = 'split';
+      await page.reload(); await page.locator('.overview-split-grid').waitFor(); await fitted(1920, 1080);
+      await page.getByRole('button', { name: 'Sair do modo TV', exact: true }).click();
+      await fitted(1920, 1080);
       await page.screenshot({ path: fileURLToPath(new URL('.cache/screenshots/monitor-02-modern.png', root)) });
+      const storage = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', '--input-type=module', '-e', "import { monitorFixture } from './tests/fixtures/monitor-compat.mjs'; process.stdout.write(JSON.stringify(monitorFixture()));"], { cwd: fileURLToPath(root), encoding: 'utf8' }));
+      configuration.data = { ...storage.document, publicMonitorZoomPercent: 70 };
+      for (const block of storage.overview.data.blocks) block.options = configuration.data.screens[0].blocks.find(item => item.id === block.blockId).options;
+      await page.route('**/api/public/dashboard/overview*', route => route.fulfill({ json: storage.overview }));
+      for (const layout of ['overview', 'wall']) {
+        configuration.data.screens[0].layout = layout;
+        await page.reload(); await page.locator('.storage-composition').waitFor();
+        await page.addStyleTag({ path: fileURLToPath(new URL('components/dashboard/storage-composition.css', root)) });
+        await fitted(1920, 1080);
+      }
       await page.setViewportSize({ width: 1280, height: 720 });
       const compact = await page.locator('.public-monitor-stage').evaluate(element => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height, footer: element.querySelector('.dashboard-footer').getBoundingClientRect().bottom }));
       assert.ok(Math.abs(compact.width - 1280) < 2 && Math.abs(compact.height - 720) < 2 && compact.footer > 690 && compact.footer <= 721, JSON.stringify(compact));
       const response = await page.request.get(base + '/monitor?compat=0');
       assert.match(await response.text(), /data-public-monitor-zoom="100"/);
       assert.equal(await page.locator('html').evaluate(e => e.style.zoom), '');
+      assert.deepEqual(errors, []);
       await page.goto(base + '/');
       assert.equal(await page.locator('.public-monitor-frame').count(), 0);
     } finally { await context.close(); await browser.close(); }

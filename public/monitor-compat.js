@@ -10,6 +10,7 @@
   var rotating = state.autoStart && state.screens.length > 1, offset = Date.parse(state.serverTime) - Date.now();
   var restoreFocus = null, oldOverflow = '', queryGeneration = 0, rotationDueAt = 0, failureCount = 0;
   var displayedScreenId = state.screenId;
+  var autoScroll = null;
   var layoutOverride = /(?:^|[?&])layout=/.test(window.location.search);
   if (!/(?:^|[?&])theme=/.test(window.location.search)) {
     try { var theme = localStorage.getItem('softcom-pulse-theme'); if (theme === 'dark' || theme === 'light') state.theme = theme; } catch (_error) { void _error; /* Keep the explicit/default theme. */ }
@@ -101,6 +102,7 @@
   }
   function applySnapshot(result) {
     if (result.requestGeneration !== queryGeneration) return;
+    if (autoScroll) autoScroll.capture();
     var changed = result.state.revision !== state.revision;
     if (result.state.screenId !== displayedScreenId || result.state.intervalMs !== state.intervalMs) rotationDueAt = 0;
     var focusDetail = document.activeElement && document.activeElement.getAttribute('data-open-detail');
@@ -137,6 +139,7 @@
       var previous = scroll[regionKey(element)];
       if (previous && element.offsetHeight) { element.scrollTop = previous.top; element.scrollLeft = previous.left; if (previous.focus) element.focus(); }
     });
+    if (autoScroll) autoScroll.sync();
   }
   function changeView() {
     queryGeneration++; pending = null;
@@ -562,6 +565,20 @@
   audioLoadTimer = setTimeout(audioUnavailable, 8000);
   document.head.appendChild(audioScript);
   updateControls(); clock(); applyDensity(); armRotation();
+  if (window.PulseMonitorAutoScroll) {
+    var scrollPreference = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
+    var scrollPaused = !!(scrollPreference && scrollPreference.matches), scrollButton = byId('compat-auto-scroll');
+    autoScroll = window.PulseMonitorAutoScroll.attach(content, { paused: scrollPaused });
+    function updateScrollControl() {
+      scrollButton.disabled = false;
+      scrollButton.setAttribute('aria-pressed', String(scrollPaused));
+      scrollButton.setAttribute('aria-label', scrollPaused ? 'Retomar rolagem automática' : 'Pausar rolagem automática');
+    }
+    scrollButton.addEventListener('click', function () { scrollPaused = !scrollPaused; autoScroll.setPaused(scrollPaused); updateScrollControl(); });
+    function reducedMotion() { if (scrollPreference.matches) { scrollPaused = true; autoScroll.setPaused(true); updateScrollControl(); } }
+    if (scrollPreference && scrollPreference.addListener) scrollPreference.addListener(reducedMotion);
+    updateScrollControl();
+  }
   window.addEventListener('resize', syncViewport);
   window.addEventListener('orientationchange', syncViewport);
   if (window.MutationObserver) {

@@ -174,7 +174,7 @@ test("vps list keeps catalog fields and treats a missing monitor as gray", async
   expect(managerCalls).toEqual([]);
 });
 
-test("highlighted vps card keeps the availability size and opens its detail", async ({ page }) => {
+for (const navigationDelayMs of [0, 6000]) test(navigationDelayMs === 0 ? "highlighted vps card keeps the availability size and opens its detail" : "highlighted vps card completes a slow detail navigation", async ({ page }) => {
   await infrastructureFixture(page);
   const at = new Date().toISOString();
   const vpsId = id(90);
@@ -191,6 +191,13 @@ test("highlighted vps card keeps the availability size and opens its detail", as
   body.data.standaloneVps = [card(row), card(live)].map(item => item as NonNullable<typeof body.data.standaloneVps>[number]);
   await page.route("**/api/dashboard/overview*", route => route.fulfill({ json: body }));
   await page.route("**/api/monitoring/standalone-vps/*", route => route.fulfill({ json: { data: detail(row) } }));
+  let navigationRequested = false;
+  if (navigationDelayMs) await page.route(url => url.pathname === `/admin/vps/${vpsId}`, async route => {
+    if (route.request().headers()["rsc"] !== "1" || route.request().headers()["next-router-prefetch"] === "1") return route.continue();
+    navigationRequested = true;
+    await new Promise(resolve => setTimeout(resolve, navigationDelayMs));
+    return route.continue();
+  });
   await signIn(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   const highlight = page.getByRole("button", { name: "Detalhes de Orbit: Monitor não cadastrado, disponibilidade —", exact: true });
@@ -212,9 +219,13 @@ test("highlighted vps card keeps the availability size and opens its detail", as
   await expect(dialog.locator(".vps-snapshot .meter-value")).toHaveCount(3);
   await expect(dialog.getByText(/Núcleo/)).toHaveCount(0);
   await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
   await highlight.click();
-  await page.getByRole("link", { name: "Abrir em VPS", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`/admin/vps/${vpsId}$`));
+  const open = page.getByRole("link", { name: "Abrir em VPS", exact: true }), destination = new RegExp(`/admin/vps/${vpsId}$`);
+  await expect(open).toHaveAttribute("href", `/admin/vps/${vpsId}`);
+  await Promise.all([page.waitForURL(destination), open.click()]);
+  await expect(page).toHaveURL(destination);
+  if (navigationDelayMs) expect(navigationRequested).toBe(true);
   expect(new URL(page.url()).search).toBe("");
   await expect(page.getByRole("region", { name: "Orbit", exact: true })).toContainText("Monitor não cadastrado");
 });

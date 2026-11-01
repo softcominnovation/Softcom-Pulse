@@ -276,6 +276,7 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
         <a class="control layout-control" href="/monitor?compat=1&amp;layout=overview" data-layout="overview">${controlContent("dashboard", "1 · Visão geral")}</a>
         <a class="control layout-control" href="/monitor?compat=1&amp;layout=wall" data-layout="wall">${controlContent("maximize", "2 · Tela completa")}</a>
         <button class="control" id="compat-rotate" type="button">${controlContent("refresh", model.document.rotation.autoStart ? "Parar alternância" : "Alternar telas")}</button>
+        <button class="control" id="compat-auto-scroll" type="button" aria-label="Pausar rolagem automática" aria-pressed="false" disabled>${controlContent("pause", "Rolagem")}</button>
         <label for="compat-screen" class="sr-only">Tela</label>
         <select id="compat-screen" class="control">${model.screens.map(screen => `<option value="${h(screen.id)}"${screen.id === model.screen.id ? " selected" : ""}>${h(screen.name)}</option>`).join("")}</select>
         <a id="compat-refresh" class="control" href="/monitor?compat=1">${controlContent("refresh", "Atualizar")}</a>
@@ -295,6 +296,7 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
 <script id="compat-state" type="application/json">${scriptData(state)}</script>
 <template id="compat-audio-template"><div class="compat-sound-form"><p>Volume e mute pertencem a este dispositivo.</p><p class="compat-sound-state" role="status"></p><label for="compat-volume">Volume <output id="compat-volume-value">50%</output></label><input type="range" id="compat-volume" min="0" max="100" step="5" value="50" aria-label="Volume"><p>Notificações usam os sons oficiais do Kobra. Volume zero silencia todos os sons.</p><button type="button" class="control" id="compat-test-sound">${monitorIcon("volume")} Testar som</button></div></template>
 <style id="compat-density"></style>
+<script src="${h(compatibleAssetUrl("monitor-auto-scroll.js"))}" defer></script>
 <script src="${h(compatibleAssetUrl("monitor-compat.js"))}" defer></script>
 </body></html>`;
 }

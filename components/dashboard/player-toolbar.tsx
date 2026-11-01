@@ -2,11 +2,12 @@
 
 import { ChevronLeft, ChevronRight, Play, RefreshCw, Pause } from "lucide-react";
 import { useStore } from "zustand";
+import type { ReactNode } from "react";
 import { MonitoringNav } from "@/components/layout/monitoring-nav";
 import { Button } from "@/components/ui/button";
 import { createPlayerStore, playableScreens } from "@/lib/dashboard/player";
 
-export function PlayerToolbar({ store }: { store: ReturnType<typeof createPlayerStore> }) {
+export function PlayerToolbar({ store, extraControls }: { store: ReturnType<typeof createPlayerStore>; extraControls?: ReactNode }) {
   const player = useStore(store), screens = playableScreens(player.document);
   const current = screens.find(screen => screen.id === player.screenId), layout = player.layoutOverride ?? current?.layout;
   const paused = player.readingPaused || player.hidden || player.dialog;
@@ -29,6 +30,7 @@ export function PlayerToolbar({ store }: { store: ReturnType<typeof createPlayer
       </div>}
     </div>
     <div className="screen-controls">
+      {extraControls}
       <Button variant="ghost" disabled={!canRotate} aria-pressed={player.rotating} title="Atalho R" onClick={() => player.rotating ? player.stop() : player.start()}>{player.rotating ? <Pause aria-hidden="true" /> : <RefreshCw aria-hidden="true" />}{player.rotating ? "Parar alternância" : "Alternar telas"}</Button>
       <label htmlFor="dashboard-screen">Tela {current ? screens.indexOf(current) + 1 : 0} de {screens.length}</label>
       <select id="dashboard-screen" value={player.screenId ?? ""} disabled={!current} onChange={event => player.select(event.target.value)} aria-label="Escolher tela">

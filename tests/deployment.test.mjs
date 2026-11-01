@@ -74,6 +74,7 @@ for (const dev of [false, true]) {
     assert.deepEqual(Object.keys(c.on.push), ["tags"]);
     assert.deepEqual(c.on.push.tags, dev ? ["v*.*.*-dev"] : ["v*.*.*", "!*-*", "!*\\+*"]);
     assert.deepEqual(c.permissions, { contents: "read", packages: "write" });
+    assert.equal(c.jobs.publish["timeout-minutes"], 90, "Full validation and cold multi-platform builds share this job budget");
     const steps = c.jobs.publish.steps;
     assert.ok(steps.find(step => step.run?.includes("validate-release.mjs " + (dev ? "development" : "production"))));
     const build = steps.find(step => step.uses?.startsWith("docker/build-push-action@"));

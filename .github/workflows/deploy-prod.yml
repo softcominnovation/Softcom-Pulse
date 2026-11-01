@@ -21,7 +21,7 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     env:
       DATABASE_URL: postgresql://pulse_ci:pulse_ci@127.0.0.1:5432/pulse
       REDIS_URL: redis://127.0.0.1:6379

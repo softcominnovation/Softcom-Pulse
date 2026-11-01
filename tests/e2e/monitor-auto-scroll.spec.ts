@@ -9,7 +9,16 @@ async function monitor(page: Page, { count = 1, idle = false, autoScrollOnLoad =
   document.idlePresentation = { enabled: idle, afterMinutes: 1, requestFullscreen: false };
   for (const screen of document.screens) for (const block of screen.blocks) block.options = effectiveOptions({ type: block.type });
   await page.route("**/api/public/settings/presentation", route => route.fulfill({ json: { data: document } }));
-  await page.route("**/api/public/dashboard/overview*", route => route.fulfill({ json: overview(document, new URL(route.request().url()).searchParams.get("screenId") ?? undefined) }));
+  let readings = 0;
+  await page.route("**/api/public/dashboard/overview*", route => {
+    const result = overview(document, new URL(route.request().url()).searchParams.get("screenId") ?? undefined);
+    if (idle) {
+      const increment = readings++;
+      if (result.data.summary.containersRunning !== null) result.data.summary.containersRunning += increment;
+      if (result.data.summary.containersTotal != null) result.data.summary.containersTotal += increment;
+    }
+    return route.fulfill({ json: result });
+  });
   await page.emulateMedia({ reducedMotion });
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/monitor?compat=0");
@@ -56,12 +65,17 @@ test("polling preserves monitor scroll and its automatic events do not postpone 
   await page.clock.install();
   const region = await monitor(page, { idle: true });
   await page.getByRole("button", { name: "Sair do modo TV", exact: true }).click();
+  const running = page.locator(".dashboard-kpi").filter({ has: page.getByRole("heading", { name: "Containers em execução", exact: true }) }).locator(".kpi-value");
+  const initialRunning = Number(await running.innerText());
   await page.clock.runFor(3500);
   await page.clock.fastForward(15500);
   const before = await region.evaluate(element => element.scrollTop);
   expect(before).toBeGreaterThan(12);
   const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === "/api/public/dashboard/overview");
-  await page.clock.runFor(2000); await refreshed;
+  await page.clock.runFor(2000);
+  const refreshedRunning = (await (await refreshed).json()).data.summary.containersRunning;
+  expect(refreshedRunning).toBeGreaterThan(initialRunning);
+  await expect(running).toHaveText(String(refreshedRunning));
   expect(Math.abs(await region.evaluate(element => element.scrollTop) - before)).toBeLessThan(55);
   await page.clock.fastForward(41000);
   await expect(page.getByRole("button", { name: "Sair do modo TV", exact: true })).toBeVisible();

@@ -5,6 +5,39 @@ import { fileURLToPath } from 'node:url';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= fileURLToPath(new URL('../../.cache/ms-playwright', import.meta.url));
 const { chromium } = await import('@playwright/test');
 
+test('automatic scroll provenance survives delayed native delivery and manual input invalidates it', { timeout: 30000 }, async () => {
+  const browser = await chromium.launch(), page = await browser.newPage();
+  try {
+    await page.setContent('<style>.region{height:100px;width:200px;overflow:auto}.rows{height:400px}</style><div id="monitor"><div data-block-id="one"><div class="region" tabindex="0"><div class="rows">Rows</div></div></div></div>');
+    await page.addScriptTag({ path: fileURLToPath(new URL('../../public/monitor-auto-scroll.js', import.meta.url)) });
+    await page.evaluate(() => {
+      const region = document.querySelector('.region');
+      let delayed = false;
+      document.addEventListener('scroll', event => {
+        if (delayed || event.target !== region) return;
+        delayed = true; window.controller.setPaused(true);
+        const started = performance.now();
+        let iterations = 0;
+        do { iterations++; } while (performance.now() - started < 350);
+        window.delayedScroll = { automatic: window.PulseMonitorAutoScroll.isAutomatic(region), elapsed: performance.now() - started, trusted: event.isTrusted, top: region.scrollTop, iterations };
+      }, true);
+      window.controller = window.PulseMonitorAutoScroll.attach(document.getElementById('monitor'));
+    });
+    await page.waitForFunction(() => window.delayedScroll);
+    const sample = await page.evaluate(() => window.delayedScroll);
+    assert.ok(sample.elapsed >= 350);
+    assert.equal(sample.trusted, true, 'The delayed event comes from an actual browser scroll');
+    assert.equal(sample.automatic, true, 'A slow listener must not turn an automatic event into manual activity');
+    const region = page.locator('.region');
+    await region.dispatchEvent('wheel');
+    assert.equal(await region.evaluate(element => window.PulseMonitorAutoScroll.isAutomatic(element)), false, 'Manual intent invalidates provenance even before the position changes');
+    await region.focus(); await region.press('ArrowDown');
+    await page.waitForFunction(() => document.querySelector('.region').scrollTop > window.delayedScroll.top);
+    assert.equal(await region.evaluate(element => window.PulseMonitorAutoScroll.isAutomatic(element)), false);
+    await page.evaluate(() => window.controller.destroy());
+  } finally { await browser.close(); }
+});
+
 test('shared monitor controller reverses real overflow, preserves refresh state and releases every region', { timeout: 30000 }, async () => {
   const browser = await chromium.launch(), page = await browser.newPage();
   try {

@@ -32,8 +32,8 @@
     var lastScan = 0, paused = !!options.paused, observer;
     var manualEvents = ['wheel', 'touchstart', 'touchmove', 'pointerdown', 'pointermove', 'keydown'];
     function now() { return win.performance && win.performance.now ? win.performance.now() : Date.now(); }
-    function command(entry, value, time) {
-      entry.expected = value; entry.commandUntil = time + 250;
+    function command(entry, value) {
+      entry.expected = value; entry.commanded = true;
       entry.element.scrollTop = value;
       // Some WebViews round scrollTop; retain fractions in the motion model, not the DOM.
       entry.expected = entry.element.scrollTop;
@@ -59,14 +59,14 @@
           if (!element.clientHeight || element.scrollHeight - element.clientHeight <= 1) continue;
           var entry = cache[key];
           if (!entry) {
-            entry = { key: key, motion: createMotion(time), manualUntil: 0, commandUntil: 0, expected: 0, element: null };
+            entry = { key: key, motion: createMotion(time), manualUntil: 0, commanded: false, expected: 0, element: null };
             entry.motion.hold(element.scrollTop, time);
             cache[key] = entry; order.push(key);
           }
           if (captureDOM === true) entry.motion.capture(element.scrollTop);
           if (entry.element !== element) {
             entry.element = element;
-            command(entry, Math.min(entry.motion.getPosition(), element.scrollHeight - element.clientHeight), time);
+            command(entry, Math.min(entry.motion.getPosition(), element.scrollHeight - element.clientHeight));
           }
           element.setAttribute('data-monitor-auto-scroll', 'true');
           next.push(entry);
@@ -83,10 +83,9 @@
       lastScan = time;
     }
     function owns(target) {
-      var time = now();
       for (var i = 0; i < entries.length; i++) {
         var entry = entries[i];
-        if (entry.element === target && time <= entry.commandUntil && Math.abs(target.scrollTop - entry.expected) < 1) return true;
+        if (entry.element === target && entry.commanded && Math.abs(target.scrollTop - entry.expected) < 1) return true;
       }
       return false;
     }
@@ -97,7 +96,7 @@
       for (var i = 0; i < entries.length; i++) {
         var entry = entries[i];
         if (entry.element === event.target || entry.element.contains(event.target)) {
-          entry.commandUntil = 0; entry.manualUntil = time + 5000;
+          entry.commanded = false; entry.manualUntil = time + 5000;
           entry.motion.hold(entry.element.scrollTop, time);
         }
       }
@@ -113,7 +112,7 @@
       for (var i = 0; i < entries.length; i++) {
         var entry = entries[i], element = entry.element;
         if (blocked || time < entry.manualUntil || !element.clientHeight) entry.motion.hold(element.scrollTop, time);
-        else command(entry, entry.motion.step(time, element.scrollHeight - element.clientHeight), time);
+        else command(entry, entry.motion.step(time, element.scrollHeight - element.clientHeight));
       }
       frame = win.requestAnimationFrame(animate);
     }

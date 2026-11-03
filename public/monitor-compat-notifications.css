@@ -2,8 +2,8 @@
 .compat-toast.top-end { top: 16px; bottom: auto; }
 .compat-toast.header-center { top: 16px; bottom: auto; left: 50%; right: auto; transform: translateX(-50%); }
 .compat-toast .toast-operational-copy { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 256px; max-width: 384px; }
-.compat-toast-title { font-size: 16px; font-weight: 600; line-height: 20px; letter-spacing: -.4px; overflow-wrap: break-word; }
-.compat-toast-detail { font-size: 13px; font-weight: 500; line-height: 16px; opacity: .85; margin-top: 2px; overflow-wrap: break-word; }
+.compat-toast-title { font-size: 16px; font-weight: 700; line-height: 20px; letter-spacing: -.4px; overflow-wrap: break-word; }
+.compat-toast-detail { font-size: 13px; font-weight: 400; line-height: 16px; opacity: .85; margin-top: 2px; overflow-wrap: break-word; }
 .compat-toast-glyph { flex: 0 0 auto; margin-right: 8px; }
 .compat-toast-glyph > span { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; }
 .compat-toast-glyph .compat-icon { width: 16px; height: 16px; stroke-width: 2; }
@@ -12,7 +12,8 @@
 .compat-toast-glyph [data-toast-glyph="warning"] { color: var(--toast-warning); }
 .compat-toast-glyph [data-toast-glyph="info"] { color: var(--toast-info); }
 .compat-toast-glyph [data-toast-glyph="success"] { border-radius: 50%; background: #2563eb; color: white; box-shadow: 0 0 0 1px #2563eb; transform: scale(1.09); }
-.compat-toast .compat-toast-action { flex: 0 0 auto; margin-left: 16px; border-radius: 9999px; padding: 0 12px; height: 32px; background: #262626; border-color: #454545; color: #fafafa; font: 500 12px/16px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.compat-toast .compat-toast-action { position: relative; flex: 0 0 auto; margin-left: 16px; border-width: 0; border-radius: 9999px; padding: 0 12px; height: 32px; background: #262626; border-color: #454545; color: #fafafa; font: 400 12.8px/19.2px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.compat-toast .compat-toast-action::before { content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; border: 1px solid; border-color: inherit; border-radius: inherit; pointer-events: none; }
 .compat-toast[data-tone="error"] { background: #b84548; color: white; border-color: #ffc2be; box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), 0 0 0 1px rgba(255,100,103,.8), 0 0 42px rgba(255,100,103,.7), 0 20px 48px rgba(0,0,0,.48); }
 .compat-toast[data-tone="error"] .compat-toast-action { background: #fafafa; color: #171717; border-color: rgba(0,0,0,.12); }
 .compat-toast[data-tone="warning"] { background: #3f311f; border-color: rgba(213,144,0,.7); box-shadow: inset 5px 0 0 var(--toast-warning), 0 16px 36px rgba(0,0,0,.34); }

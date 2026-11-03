@@ -39,6 +39,7 @@ test("classic notification arrivals match Kobra tones and WAVs without using the
       });
       const page = await context.newPage(), normal = await context.newPage(), errors = [];
       await page.clock.install();
+      await normal.clock.install();
       await normal.goto(base + '/monitor?compat=0');
       await normal.locator('.dashboard-shell').waitFor();
       let revision = 1, polls = 0; const changes = [];
@@ -86,8 +87,19 @@ test("classic notification arrivals match Kobra tones and WAVs without using the
           await normal.evaluate(({ tone, event }) => window.dispatchEvent(new CustomEvent('kobra:toast', { detail: { id: 'parity', operational: true, state: tone, message: event.displayName + ' · ' + event.message, sound: false, lifetime: 15000, action: { label: 'Ver central', run() {} } } })), { tone, event });
           const modern = normal.locator('[data-operational-toast="parity"]');
           await expect(modern).toBeVisible();
+          await normal.clock.runFor(1000);
           await page.clock.runFor(400);
-          const read = element => { const s = getComputedStyle(element), canvas = document.createElement('canvas'), ctx = canvas.getContext('2d'); canvas.width = canvas.height = 1; const color = value => { ctx.clearRect(0,0,1,1); ctx.fillStyle = value; ctx.fillRect(0,0,1,1); return Array.from(ctx.getImageData(0,0,1,1).data); }; return { background: color(s.backgroundColor), color: color(s.color), border: color(s.borderTopColor), radius: s.borderRadius, padding: s.padding, font: s.fontFamily, height: element.getBoundingClientRect().height, width: element.getBoundingClientRect().width }; };
+          const read = element => {
+            const s = getComputedStyle(element), canvas = document.createElement('canvas'), ctx = canvas.getContext('2d');
+            canvas.width = canvas.height = 1;
+            const color = value => { ctx.clearRect(0,0,1,1); ctx.fillStyle = value; ctx.fillRect(0,0,1,1); return Array.from(ctx.getImageData(0,0,1,1).data); };
+            const typography = node => {
+              const style = getComputedStyle(node);
+              return { font: style.fontFamily, size: style.fontSize, weight: style.fontWeight, lineHeight: style.lineHeight, tracking: style.letterSpacing };
+            };
+            const copy = element.querySelector('.toast-operational-copy');
+            return { background: color(s.backgroundColor), color: color(s.color), border: color(s.borderTopColor), radius: s.borderRadius, padding: s.padding, font: s.fontFamily, height: element.getBoundingClientRect().height, width: element.getBoundingClientRect().width, typography: { title: typography(copy.firstElementChild), detail: typography(copy.lastElementChild), action: typography(element.querySelector('button')) } };
+          };
           const actual = await toast.evaluate(read), reference = await modern.evaluate(read);
           assert.deepEqual(actual.background, reference.background, tone + ' background ' + theme);
           assert.deepEqual(actual.color, reference.color, tone + ' text ' + theme);
@@ -95,7 +107,8 @@ test("classic notification arrivals match Kobra tones and WAVs without using the
           assert.equal(actual.radius, reference.radius);
           assert.equal(actual.padding, reference.padding);
           assert.equal(actual.font, reference.font);
-          assert.ok(Math.abs(actual.width - reference.width) < .5, tone + ' width ' + theme);
+          assert.deepEqual(actual.typography, reference.typography, tone + ' typography ' + theme);
+          assert.ok(Math.abs(actual.width - reference.width) < .5, tone + ' width ' + theme + ': ' + JSON.stringify({ actual: actual.width, reference: reference.width }));
           assert.equal(actual.height, reference.height, tone + ' height ' + theme);
           await page.screenshot({ path: fileURLToPath(new URL(`.cache/screenshots/monitor-toast-${tone}-${theme}.png`, root)) });
         }

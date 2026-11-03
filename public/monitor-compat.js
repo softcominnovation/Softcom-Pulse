@@ -422,8 +422,14 @@
     load(null, false);
   }
   byId('compat-notifications').addEventListener('click', notificationList);
-  var seen = {}, seenIds = [], toastTimer, visualTimer, lastVisual = 0, visibleEvents = [], visualGroups = [], visualRuntime = null;
-  function hideToast() { byId('compat-toast').hidden = true; visibleEvents = []; clearTimeout(toastTimer); }
+  var seen = {}, seenIds = [], toastTimer, toastLeft = 0, toastSince = 0, visualTimer, lastVisual = 0, visibleEvents = [], visualGroups = [], visualRuntime = null;
+  function hideToast() { if (visibleEvents.length) lastVisual = Date.now(); byId('compat-toast').hidden = true; visibleEvents = []; toastLeft = 0; clearTimeout(toastTimer); }
+  function armToast() {
+    clearTimeout(toastTimer);
+    if (!visibleEvents.length || byId('compat-toast').contains(document.activeElement)) return;
+    toastSince = Date.now();
+    toastTimer = setTimeout(function () { hideToast(); flushVisuals(); }, toastLeft);
+  }
   function resetVisuals() { hideToast(); visualGroups = []; clearTimeout(visualTimer); }
   function flushVisuals() {
     clearTimeout(visualTimer);
@@ -435,11 +441,20 @@
     if (!fresh.length) { flushVisuals(); return; }
     fresh.sort(function (left, right) { var ranks = { critical: 3, warning: 2, info: 1 }; return ranks[right.severity] - ranks[left.severity]; });
     var toast = byId('compat-toast'), first = fresh[0];
-    var message = (fresh.length > 1 ? fresh.length + ' ocorrências · ' : '') + first.displayName + ' · ' + (first.message || state.messages[first.messageCode] || 'Aviso de monitoramento');
-    text(toast, message); text(byId('compat-announcement'), message);
-    toast.className = 'compat-toast ' + (visualRuntime.toastPosition === 'top-end' || visualRuntime.toastPosition === 'header-center' ? visualRuntime.toastPosition : 'bottom-end');
-    toast.hidden = false; lastVisual = now + visualRuntime.toastLifetimeMs; visibleEvents = fresh;
-    toastTimer = setTimeout(function () { hideToast(); flushVisuals(); }, visualRuntime.toastLifetimeMs);
+    var targets = {}, count = 0;
+    each(fresh, function (event) { if (!targets[event.targetRef]) { targets[event.targetRef] = true; count++; } });
+    var message = fresh.length > 1 ? fresh.length + ' ocorrências em ' + count + (count === 1 ? ' serviço' : ' serviços') + ' · ' + first.displayName : first.displayName + ' · ' + (first.message || state.messages[first.messageCode] || 'Aviso de monitoramento');
+    var tone = first.eventType === 'recovery' ? 'success' : first.severity === 'critical' ? 'error' : first.severity === 'warning' ? 'warning' : 'info';
+    var split = message.indexOf(' · ');
+    text(byId('compat-toast-title'), split < 0 ? message : message.slice(0, split));
+    text(byId('compat-toast-detail'), split < 0 ? '' : message.slice(split + 3));
+    byId('compat-toast-detail').hidden = split < 0;
+    each(toast.querySelectorAll('[data-toast-glyph]'), function (glyph) { glyph.hidden = glyph.getAttribute('data-toast-glyph') !== tone; });
+    toast.setAttribute('data-tone', tone);
+    text(byId('compat-announcement'), message);
+    toast.className = 'compat-toast toast-pill toast-operational ' + (visualRuntime.toastPosition === 'top-end' || visualRuntime.toastPosition === 'header-center' ? visualRuntime.toastPosition : 'bottom-end');
+    toast.hidden = false; visibleEvents = fresh;
+    toastLeft = visualRuntime.toastLifetimeMs; armToast();
   }
   function deliver(events, runtime, closed, read) {
     visualRuntime = runtime;
@@ -510,7 +525,11 @@
   }
   document.addEventListener('visibilitychange', function () { paintTabIcon(); if (document.hidden) resetVisuals(); });
   window.addEventListener('pagehide', function () { clearTimeout(notificationTimer); resetVisuals(); });
-  byId('compat-toast').addEventListener('click', function () { hideToast(); flushVisuals(); notificationList(); });
+  byId('compat-toast-action').addEventListener('click', function () { hideToast(); flushVisuals(); notificationList(); });
+  byId('compat-toast').addEventListener('focusin', function (event) {
+    if (!this.contains(event.relatedTarget)) { toastLeft = Math.max(0, toastLeft - (Date.now() - toastSince)); clearTimeout(toastTimer); }
+  });
+  byId('compat-toast').addEventListener('focusout', function () { setTimeout(armToast, 0); });
   var audioInstalled = false, audioLoadTimer;
   function audioUnavailable() {
     if (audioInstalled) return;
@@ -559,6 +578,7 @@
     function prepareAudio(event) { if (event.isTrusted) audio.prepare(); }
     document.addEventListener('click', prepareAudio, true); document.addEventListener('keydown', prepareAudio, true);
     window.addEventListener('storage', sync);
+    if (supported && !audio.muted() && audio.volume() > 0) audio.prepare();
     sync(); applyDensity();
   }
   var audioScript = document.createElement('script'); audioScript.src = state.audioAdapterUrl;

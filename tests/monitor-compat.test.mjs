@@ -139,13 +139,13 @@ test("classic browser scripts parse as ES5 and omit the rejected viewport calibr
 });
 
 test("classic asset URLs identify the actual content so a cached controller cannot cross versions", async () => {
-  for (const file of ["monitor-compat.js", "monitor-compat.css", "monitor-compat-audio.js", "monitor-compat-bootstrap.js", "monitor-auto-scroll.js"]) {
+  for (const file of ["monitor-compat.js", "monitor-compat.css", "monitor-compat-notifications.css", "monitor-compat-audio.js", "monitor-compat-bootstrap.js", "monitor-auto-scroll.js"]) {
     const content = await readFile(new URL("../public/" + file, import.meta.url));
     const digest = createHash("sha256").update(content).digest("hex").slice(0, 20);
     assert.equal(compatibleAssetUrl(file), '/' + file + '?v=' + digest);
   }
   const model = monitorFixture(), html = renderCompatiblePage(model, "Pulse");
-  for (const file of ["monitor-compat.css", "monitor-compat.js", "monitor-auto-scroll.js"]) assert.ok(html.includes(compatibleAssetUrl(file)));
+  for (const file of ["monitor-compat.css", "monitor-compat-notifications.css", "monitor-compat.js", "monitor-auto-scroll.js"]) assert.ok(html.includes(compatibleAssetUrl(file)));
   assert.ok(html.indexOf(compatibleAssetUrl("monitor-auto-scroll.js")) < html.indexOf(compatibleAssetUrl("monitor-compat.js")));
   assert.equal(compatibleMonitorState(model).audioAdapterUrl, compatibleAssetUrl("monitor-compat-audio.js"));
 });

@@ -8,11 +8,142 @@ import { setTimeout as delay } from "node:timers/promises";
 
 const root = new URL("../../", import.meta.url), standalone = new URL(".next/standalone/", root);
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= fileURLToPath(new URL(".cache/ms-playwright", root));
-const { chromium } = await import("@playwright/test");
+const { chromium, expect } = await import("@playwright/test");
 before(async () => {
   await cp(new URL("public/", root), new URL("public/", standalone), { recursive: true });
   await cp(new URL(".next/static/", root), new URL(".next/static/", standalone), { recursive: true });
   await mkdir(new URL(".cache/screenshots/", root), { recursive: true });
+});
+
+test("classic notification arrivals match Kobra tones and WAVs without using the volume test", { timeout: 120000 }, async () => {
+  await shipped(async base => {
+    const parent = createServer((_request, response) => {
+      response.setHeader('Content-Type', 'text/html');
+      response.end(`<style>body{margin:0}iframe{width:1280px;height:720px;border:0}</style><iframe title="Monitor" sandbox="allow-scripts" src="${base}/monitor?compat=1"></iframe>`);
+    });
+    const parentAddress = await listen(parent), browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
+    const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+    try {
+      await context.addInitScript(() => {
+        window.notificationVoices = [];
+        const start = AudioBufferSourceNode.prototype.start, connect = AudioBufferSourceNode.prototype.connect;
+        AudioBufferSourceNode.prototype.connect = function (node, ...ports) { this.notificationGain = node; return connect.call(this, node, ...ports); };
+        AudioBufferSourceNode.prototype.start = function (...args) {
+          if (this.buffer) {
+            const samples = this.buffer.getChannelData(0); let signature = 0;
+            for (let i = 0; i < samples.length; i++) signature += samples[i] * (i % 31 + 1);
+            window.notificationVoices.push({ signature, gain: this.notificationGain.gain.value });
+          }
+          return start.apply(this, args);
+        };
+      });
+      const page = await context.newPage(), normal = await context.newPage(), errors = [];
+      await page.clock.install();
+      await normal.goto(base + '/monitor?compat=0');
+      await normal.locator('.dashboard-shell').waitFor();
+      let revision = 1, polls = 0; const changes = [];
+      const runtime = { enabled: true, deliveryRevision: '1', policyRevision: 1, toastPosition: 'header-center', toastLifetimeMs: 8000, soundCooldownMs: 15000, maxDeliveryAgeMs: 60000, visualGapMs: 10000 };
+      await page.route('**/monitor/compat/notifications**', route => {
+        const url = new URL(route.request().url()); polls++;
+        const common = { counts: { unreadCount: revision - 1, activeCount: 1 }, serverTime: new Date().toISOString(), runtime };
+        return route.fulfill({ headers: { 'Access-Control-Allow-Origin': '*' }, json: url.pathname.endsWith('/changes') ? { ...common, changes: changes.filter(change => Number(change.revision) > Number(url.searchParams.get('after'))), nextCursor: String(revision), streamRevision: String(revision), hasMore: false } : { ...common, events: [], incidents: [], syncCursor: String(revision), streamRevision: String(revision) } });
+      });
+      page.on('pageerror', error => errors.push(error.message));
+      await page.goto(parentAddress); await page.bringToFront();
+      const frame = page.frameLocator('iframe'), toast = frame.locator('#compat-toast');
+      await frame.locator('#compat-audio[data-audio-state="ready"]').waitFor();
+      await expect.poll(() => polls).toBeGreaterThan(0);
+      const expected = await frame.locator('html').evaluate(async () => {
+        const audio = new AudioContext(), result = {};
+        for (const name of ['error', 'warning', 'success', 'notification']) {
+          const bytes = await fetch('/monitor/compat/audio/' + name).then(response => response.arrayBuffer());
+          const buffer = await audio.decodeAudioData(bytes), samples = buffer.getChannelData(0); let signature = 0;
+          for (let i = 0; i < samples.length; i++) signature += samples[i] * (i % 31 + 1);
+          result[name] = signature;
+        }
+        await audio.close(); return result;
+      });
+      const tones = [ ['error', 'unavailable', 'critical', 'error'], ['warning', 'attention', 'warning', 'warning'], ['success', 'recovery', 'info', 'success'], ['info', 'attention', 'info', 'notification'] ];
+      for (const [tone, eventType, severity, sound] of tones) {
+        const event = { id: 'event-' + (++revision), incidentId: 'incident-' + revision, targetRef: 'storage:fixture', displayName: 'Storage de operações', message: eventType === 'recovery' ? 'Serviço recuperado' : 'Serviço indisponível', eventType, severity, announce: true, toastEligible: true, readAt: null, incidentStatus: eventType === 'recovery' ? 'resolved' : 'active', sound, createdAt: new Date().toISOString() };
+        changes.push({ revision: String(revision), kind: 'incident', payload: { event } });
+        const previousPolls = polls;
+        await page.clock.fastForward(16000);
+        await expect.poll(() => polls).toBeGreaterThan(previousPolls);
+        await expect.poll(() => frame.locator('html').evaluate(() => window.notificationVoices.length)).toBe(tones.findIndex(item => item[0] === tone) + 1);
+        const voice = await frame.locator('html').evaluate(() => window.notificationVoices.at(-1));
+        assert.ok(Math.abs(voice.signature - expected[sound]) < .0001, sound + ' uses the same WAV');
+        assert.ok(Math.abs(voice.gain - .5 * (severity === 'critical' ? .65 : .45)) < .0001);
+        await page.clock.runFor(2500);
+        await expect(toast).toBeVisible(); await expect(toast).toHaveAttribute('data-tone', tone);
+        assert.equal(await toast.evaluate(element => getComputedStyle(element).top), '16px', 'Header-center toast keeps its inset in the compatible monitor');
+        assert.equal(await toast.locator('#compat-toast-title').innerText(), event.displayName);
+        assert.equal(await toast.locator('#compat-toast-detail').innerText(), event.message);
+        assert.equal(await toast.locator(`[data-toast-glyph="${tone}"] svg`).isVisible(), true);
+        for (const theme of ['dark', 'light']) {
+          await frame.locator('html').evaluate((html, theme) => { html.className = theme; }, theme);
+          await normal.locator('html').evaluate((html, theme) => { html.className = theme; }, theme);
+          await normal.evaluate(({ tone, event }) => window.dispatchEvent(new CustomEvent('kobra:toast', { detail: { id: 'parity', operational: true, state: tone, message: event.displayName + ' · ' + event.message, sound: false, lifetime: 15000, action: { label: 'Ver central', run() {} } } })), { tone, event });
+          const modern = normal.locator('[data-operational-toast="parity"]');
+          await expect(modern).toBeVisible();
+          await page.clock.runFor(400);
+          const read = element => { const s = getComputedStyle(element), canvas = document.createElement('canvas'), ctx = canvas.getContext('2d'); canvas.width = canvas.height = 1; const color = value => { ctx.clearRect(0,0,1,1); ctx.fillStyle = value; ctx.fillRect(0,0,1,1); return Array.from(ctx.getImageData(0,0,1,1).data); }; return { background: color(s.backgroundColor), color: color(s.color), border: color(s.borderTopColor), radius: s.borderRadius, padding: s.padding, font: s.fontFamily, height: element.getBoundingClientRect().height, width: element.getBoundingClientRect().width }; };
+          const actual = await toast.evaluate(read), reference = await modern.evaluate(read);
+          assert.deepEqual(actual.background, reference.background, tone + ' background ' + theme);
+          assert.deepEqual(actual.color, reference.color, tone + ' text ' + theme);
+          assert.deepEqual(actual.border, reference.border, tone + ' border ' + theme);
+          assert.equal(actual.radius, reference.radius);
+          assert.equal(actual.padding, reference.padding);
+          assert.equal(actual.font, reference.font);
+          assert.ok(Math.abs(actual.width - reference.width) < .5, tone + ' width ' + theme);
+          assert.equal(actual.height, reference.height, tone + ' height ' + theme);
+          await page.screenshot({ path: fileURLToPath(new URL(`.cache/screenshots/monitor-toast-${tone}-${theme}.png`, root)) });
+        }
+        await toast.getByRole('button', { name: 'Ver central', exact: true }).click();
+        await expect(frame.locator('#compat-modal')).toBeVisible();
+        await frame.getByRole('button', { name: 'Fechar', exact: true }).click();
+      }
+      for (const mode of ['policy', 'muted', 'zero']) {
+        await frame.locator('html').evaluate((_html, mode) => {
+          window.PulseCompatibleAudio.setMuted(mode === 'muted');
+          window.PulseCompatibleAudio.setVolume(mode === 'zero' ? 0 : .5);
+        }, mode);
+        const event = { id: 'silent-' + (++revision), incidentId: 'silent-' + revision, targetRef: 'storage:fixture', displayName: 'Storage', message: 'Serviço recuperado', eventType: 'recovery', severity: 'info', announce: true, toastEligible: true, readAt: null, incidentStatus: 'resolved', sound: mode === 'policy' ? false : 'success', createdAt: new Date().toISOString() };
+        changes.push({ revision: String(revision), kind: 'incident', payload: { event } });
+        const previousPolls = polls;
+        await page.clock.fastForward(16000); await expect.poll(() => polls).toBeGreaterThan(previousPolls);
+        await page.clock.runFor(2500);
+        await expect(toast).toBeVisible(); await expect(toast).toHaveAttribute('data-tone', 'success');
+        assert.equal(await frame.locator('html').evaluate(() => window.notificationVoices.length), 4, mode + ' remains silent');
+        if (mode === 'zero') {
+          await toast.getByRole('button', { name: 'Ver central', exact: true }).focus();
+          await page.clock.runFor(9000); await expect(toast).toBeVisible();
+          await frame.locator('#compat-theme').focus();
+          await page.clock.runFor(9000); await expect(toast).toBeHidden();
+        } else {
+          await toast.hover(); await page.clock.runFor(9000); await expect(toast).toBeHidden();
+        }
+      }
+      await frame.locator('html').evaluate(() => { window.PulseCompatibleAudio.setMuted(false); window.PulseCompatibleAudio.setVolume(.5); });
+      await page.clock.runFor(2000);
+      assert.equal(await frame.locator('html').evaluate(() => window.notificationVoices.length), 4, 'Re-enabling sound does not replay discarded arrivals');
+      for (const width of [320, 390]) {
+        await page.locator('iframe').evaluate((element, width) => { element.style.width = width + 'px'; }, width);
+        const event = { id: 'narrow-' + (++revision), incidentId: 'narrow-' + revision, targetRef: 'storage:fixture', displayName: 'Storage de operações com nome longo <img src=x onerror=alert(1)>', message: 'Serviço recuperado e operação normalizada', eventType: 'recovery', severity: 'info', announce: true, toastEligible: true, readAt: null, incidentStatus: 'resolved', sound: false, createdAt: new Date().toISOString() };
+        changes.push({ revision: String(revision), kind: 'incident', payload: { event } });
+        const previousPolls = polls;
+        await page.clock.fastForward(16000); await expect.poll(() => polls).toBeGreaterThan(previousPolls);
+        await page.clock.runFor(2500); await expect(toast).toBeVisible();
+        assert.equal(await toast.locator('img').count(), 0);
+        const bounds = await toast.evaluate(element => { const card = element.getBoundingClientRect(), action = element.querySelector('button').getBoundingClientRect(); return { left: card.left, right: card.right, actionRight: action.right, width: innerWidth }; });
+        assert.ok(bounds.left >= 0 && bounds.right <= bounds.width + 1);
+        assert.ok(bounds.actionRight <= bounds.right);
+        await toast.getByRole('button', { name: 'Ver central', exact: true }).click();
+        await frame.getByRole('button', { name: 'Fechar', exact: true }).click();
+      }
+      assert.deepEqual(errors, []);
+    } finally { await context.close(); await browser.close(); await new Promise(resolve => parent.close(resolve)); }
+  });
 });
 async function listen(server) {
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));

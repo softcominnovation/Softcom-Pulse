@@ -1,0 +1,41 @@
+.compat-toast { --toast-error: #ff6467; --toast-warning: #d59000; --toast-success: #47ba6f; --toast-info: #5aa1fb; --toast-popover: #171717; --toast-foreground: #fafafa; position: fixed; display: flex; align-items: center; right: 16px; bottom: 24px; width: max-content; max-width: 448px; max-width: min(448px, calc(100% - 32px)); min-height: 76px; padding: 16px 12px 16px 16px; background: #171717; color: #fafafa; border: 1px solid #353535; border-radius: 18px; z-index: 200; box-shadow: 0 1px 2px rgba(0,0,0,.22), 0 18px 40px rgba(0,0,0,.34); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 16px; overflow: hidden; text-align: left; }
+.compat-toast.top-end { top: 16px; bottom: auto; }
+.compat-toast.header-center { top: 16px; bottom: auto; left: 50%; right: auto; transform: translateX(-50%); }
+.compat-toast .toast-operational-copy { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 256px; max-width: 384px; }
+.compat-toast-title { font-size: 16px; font-weight: 600; line-height: 20px; letter-spacing: -.4px; overflow-wrap: break-word; }
+.compat-toast-detail { font-size: 13px; font-weight: 500; line-height: 16px; opacity: .85; margin-top: 2px; overflow-wrap: break-word; }
+.compat-toast-glyph { flex: 0 0 auto; margin-right: 8px; }
+.compat-toast-glyph > span { display: flex; align-items: center; justify-content: center; width: 16px; height: 16px; }
+.compat-toast-glyph .compat-icon { width: 16px; height: 16px; stroke-width: 2; }
+.compat-toast-glyph [data-toast-glyph="error"] { width: 40px; height: 40px; border-radius: 50%; background: rgba(255,255,255,.18); color: white; }
+.compat-toast-glyph [data-toast-glyph="error"] .compat-icon { width: 24px; height: 24px; }
+.compat-toast-glyph [data-toast-glyph="warning"] { color: var(--toast-warning); }
+.compat-toast-glyph [data-toast-glyph="info"] { color: var(--toast-info); }
+.compat-toast-glyph [data-toast-glyph="success"] { border-radius: 50%; background: #2563eb; color: white; box-shadow: 0 0 0 1px #2563eb; transform: scale(1.09); }
+.compat-toast .compat-toast-action { flex: 0 0 auto; margin-left: 16px; border-radius: 9999px; padding: 0 12px; height: 32px; background: #262626; border-color: #454545; color: #fafafa; font: 500 12px/16px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.compat-toast[data-tone="error"] { background: #b84548; color: white; border-color: #ffc2be; box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), 0 0 0 1px rgba(255,100,103,.8), 0 0 42px rgba(255,100,103,.7), 0 20px 48px rgba(0,0,0,.48); }
+.compat-toast[data-tone="error"] .compat-toast-action { background: #fafafa; color: #171717; border-color: rgba(0,0,0,.12); }
+.compat-toast[data-tone="warning"] { background: #3f311f; border-color: rgba(213,144,0,.7); box-shadow: inset 5px 0 0 var(--toast-warning), 0 16px 36px rgba(0,0,0,.34); }
+.compat-toast[data-tone="success"] { background: #243328; border-color: rgba(71,186,111,.62); box-shadow: inset 5px 0 0 var(--toast-success), 0 16px 36px rgba(0,0,0,.30); }
+.compat-toast[data-tone="info"] { background: #232d3a; border-color: rgba(90,161,251,.58); box-shadow: inset 5px 0 0 var(--toast-info), 0 16px 36px rgba(0,0,0,.30); }
+.light .compat-toast { --toast-error: #be000a; --toast-warning: #945000; --toast-success: #05773b; --toast-info: #0060c1; --toast-popover: #fff; --toast-foreground: #0a0a0a; background: #fff; color: #0a0a0a; border-color: #d2d2d2; }
+.light .compat-toast .compat-toast-action { background: #fff; border-color: #ddd; color: #0a0a0a; }
+.light .compat-toast[data-tone="error"] { background: #880005; color: white; border-color: #eea59c; box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), 0 0 0 1px rgba(190,0,10,.8), 0 0 42px rgba(190,0,10,.7), 0 20px 48px rgba(0,0,0,.48); }
+.light .compat-toast[data-tone="error"] .compat-toast-action { background: #171717; color: #fafafa; border-color: rgba(255,255,255,.12); }
+.light .compat-toast[data-tone="warning"] { background: #e6d4c0; border-color: rgba(148,80,0,.7); }
+.light .compat-toast[data-tone="success"] { background: #d2e3d6; border-color: rgba(5,119,59,.62); }
+.light .compat-toast[data-tone="info"] { background: #d4e3f6; border-color: rgba(0,96,193,.58); }
+@supports (color: color-mix(in oklab, white, black)) {
+  /* Match the compiled Kobra theme, including its color conversion precision. */
+  .compat-toast { --toast-error: lab(63.7053% 60.7449 31.3109); --toast-warning: lab(65.4854% 20.6535 71.1176); --toast-success: lab(67.5817% -46.3531 27.7297); --toast-info: lab(64.8211% -2.06703 -52.0381); --toast-popover: lab(7.78201% -.0000149012 0); --toast-foreground: lab(98.26% 0 0); }
+  .light .compat-toast { --toast-error: lab(39.8745% 66.3514 52.059); --toast-warning: lab(41.5778% 24.7051 79.644); --toast-success: lab(43.6413% -40.5038 24.4243); --toast-info: lab(40.5943% 5.73054 -58.2307); --toast-popover: lab(100% 0 0); --toast-foreground: lab(2.75381% 0 0); }
+  .compat-toast, .light .compat-toast { background: var(--toast-popover); color: var(--toast-foreground); border-color: color-mix(in oklab, var(--toast-foreground) 16%, transparent); }
+  .compat-toast[data-tone="error"], .light .compat-toast[data-tone="error"] { background: color-mix(in oklab, var(--toast-error) 78%, black); color: white; border-color: color-mix(in oklab, var(--toast-error) 42%, white); box-shadow: inset 0 0 0 1px rgba(255,255,255,.28), 0 0 0 1px color-mix(in oklab, var(--toast-error) 80%, transparent), 0 0 42px color-mix(in oklab, var(--toast-error) 70%, transparent), 0 20px 48px rgba(0,0,0,.48); }
+  .compat-toast[data-tone="warning"], .light .compat-toast[data-tone="warning"] { background: color-mix(in oklab, var(--toast-warning) 24%, var(--toast-popover)); border-color: color-mix(in oklab, var(--toast-warning) 70%, transparent); }
+  .compat-toast[data-tone="success"], .light .compat-toast[data-tone="success"] { background: color-mix(in oklab, var(--toast-success) 20%, var(--toast-popover)); border-color: color-mix(in oklab, var(--toast-success) 62%, transparent); }
+  .compat-toast[data-tone="info"], .light .compat-toast[data-tone="info"] { background: color-mix(in oklab, var(--toast-info) 18%, var(--toast-popover)); border-color: color-mix(in oklab, var(--toast-info) 58%, transparent); }
+}
+@media (max-width: 480px) {
+  .compat-toast .toast-operational-copy { min-width: 0; }
+  .compat-toast .compat-toast-action { margin-left: 8px; }
+}

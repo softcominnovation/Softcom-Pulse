@@ -245,6 +245,7 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#191919"><title>${h(appName)}</title>
   <link id="compat-tab-icon" rel="icon" href="${h(pulseTabIcon)}"><link rel="stylesheet" href="${h(compatibleAssetUrl("monitor-compat.css"))}">
+  <link rel="stylesheet" href="${h(compatibleAssetUrl("monitor-compat-notifications.css"))}">
   <style id="compat-initial-zoom">@media(min-width:761px) and (min-height:480px){html[data-monitor-zoom] #compat-viewport{width:${extent}vw;height:${extent}vh}}@supports not (zoom:1){html[data-monitor-zoom] #compat-viewport{transform:scale(${zoom / 100});transform-origin:top left}}</style>
   <noscript><meta http-equiv="refresh" content="${Math.ceil(model.refreshAfterMs / 1000)}"></noscript>
 </head>
@@ -290,7 +291,11 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
   <div class="modal-backdrop" data-close-modal></div>
   <section class="modal-panel"><header><h2 id="compat-modal-title">Detalhes</h2><button type="button" class="control" data-close-modal aria-label="Fechar">${monitorIcon("close")}</button></header><div id="compat-modal-body"></div></section>
 </div>
-<button type="button" id="compat-toast" class="compat-toast" hidden></button>
+<div id="compat-toast" class="compat-toast toast-pill toast-operational" data-operational-toast="pulse-operational-notification" hidden>
+  <span class="compat-toast-glyph" aria-hidden="true"><span data-toast-glyph="error" hidden>${monitorIcon("alertCircle")}</span><span data-toast-glyph="warning" hidden>${monitorIcon("alertCircle")}</span><span data-toast-glyph="success" hidden>${monitorIcon("done")}</span><span data-toast-glyph="info" hidden>${monitorIcon("info")}</span></span>
+  <div class="toast-operational-copy"><span id="compat-toast-title" class="compat-toast-title"></span><span id="compat-toast-detail" class="compat-toast-detail"></span></div>
+  <button type="button" id="compat-toast-action" class="compat-toast-action">Ver central</button>
+</div>
 <div id="compat-announcement" class="sr-only" role="status" aria-live="polite"></div>
 </div>
 <script id="compat-state" type="application/json">${scriptData(state)}</script>

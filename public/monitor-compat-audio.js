@@ -47,7 +47,9 @@
     } catch (_error) { void _error; return false; }
   }
   function play(name, velocity, eligible, callback) {
-    if (!context || names.indexOf(name) < 0 || muted() || volume() === 0 || !eligible()) { callback(false); return; }
+    if (names.indexOf(name) < 0 || muted() || volume() === 0 || !eligible()) { callback(false); return; }
+    if ((!context || context.state === 'closed') && !prepare()) { callback(false); return; }
+    silence();
     var epoch = generation, ended = false, deadline = Date.now() + 1500;
     var timeout = setTimeout(function () { finish(false); }, 1500);
     function finish(started) { if (ended) return; ended = true; clearTimeout(timeout); callback(started); }
@@ -64,7 +66,7 @@
       });
     }
     try {
-      var resumed = context.resume ? context.resume() : null;
+      var resumed = context.state !== 'running' && context.resume ? context.resume() : null;
       if (resumed && resumed.then) resumed.then(start, function () { finish(false); });
       else start();
     } catch (_error) { void _error; finish(false); }

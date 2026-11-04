@@ -1,4 +1,5 @@
 "use client";
+import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 import { AgentMonitoringDialog } from "@/components/admin/agent-monitoring";
 import { CardReadings } from "@/components/dashboard/card-readings";
 import { cardMetricsSchema } from "@/lib/config/agent-monitoring";
@@ -333,8 +334,7 @@ function LinkedVmCard({ link, fallbackName }: { link: LinkItem; fallbackName?: s
   const ram = link.memoryUsagePercent;
   const footerRight = link.inventoryStatus === "missing" ? "Sem leitura" : link.inventoryStatus === "stale" ? "Desatualizado" : ready ? "Inventário" : "Sem leitura";
   return <article className="availability-card signal-linked-card" aria-label={`${name}: ${status.label}`}>
-    <span className={`availability-state tone-${status.tone}`}><i className="status-dot" />{status.label}</span>
-    <strong className="availability-name">{name}</strong>
+    <AvailabilityCardHeader name={name} label={status.label} tone={status.tone} />
     <span className="availability-description">{role}</span>
     <CardReadings pair={link.cardMetrics ?? ["cpu", "memory"]} values={{ cpu: ready ? cpu ?? null : null, memory: ready ? ram ?? null : null, disk: ready ? link.diskUsagePercent ?? null : null }} />
     <span className="availability-footer"><span>VM</span><strong>{footerRight}</strong></span>

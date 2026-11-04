@@ -12,7 +12,7 @@ export function presentation(count = 1, revision = 1, autoStart = false): Presen
     blocks: defaultDashboardBlocks.map((block, position) => ({ id: id(100 + index * 10 + position), ...block, enabled: true })),
   }));
   return {
-    schemaVersion: 1, revision, defaultTvMode: false, displayScalePercent: 110, publicMonitorZoomPercent: 100, publicMonitorAutoScrollOnLoad: true, showStatusBanner: false,
+    schemaVersion: 1, revision, defaultTvMode: false, displayScalePercent: 110, dashboardZoomPercent: 100, publicMonitorZoomPercent: 100, publicMonitorAutoScrollOnLoad: true, showStatusBanner: false,
     idlePresentation: { enabled: false, afterMinutes: 5, requestFullscreen: true },
     rotation: { intervalSeconds: 5, autoStart },
     screens,

@@ -71,15 +71,21 @@ test("KPI font scale previews, persists and stays independent from reading saves
   expect(effectiveOptions({ ...state.document.screens[0].blocks[0], type: "summary" }).fontScalePercent).toBe(150);
 });
 
-test("public React monitor fills its viewport without KPIs across zooms and scales only KPI text", async ({ page }) => {
-  const state = await fixture(page, true), summary = state.document.screens[0].blocks[0];
-  summary.enabled = false; state.document.publicMonitorAutoScrollOnLoad = false;
+async function publicFixture(page: Page) {
+  const state = await fixture(page, true);
+  state.document.publicMonitorAutoScrollOnLoad = false;
   await page.route("**/api/public/settings/presentation", route => route.fulfill({ json: { data: state.document } }));
   await page.route("**/api/public/dashboard/overview*", route => {
     const result = overview(state.document);
     result.data.blocks.forEach(block => { block.options = state.document.screens[0].blocks.find(item => item.id === block.blockId)?.options; });
     return route.fulfill({ json: result });
   });
+  return state;
+}
+
+test("public React monitor fills its viewport without KPIs across zooms", async ({ page }) => {
+  const state = await publicFixture(page);
+  state.document.screens[0].blocks[0].enabled = false;
   await page.setViewportSize({ width: 1280, height: 720 });
   for (const zoom of [50, 70, 100, 125, 150]) {
     state.document.publicMonitorZoomPercent = zoom;
@@ -96,9 +102,14 @@ test("public React monitor fills its viewport without KPIs across zooms and scal
     expect(geometry.bottom).toBeLessThanOrEqual(721);
     expect(await page.locator(".vm-table-scroll").evaluate(node => node.clientHeight)).toBeGreaterThan(20);
   }
-  state.document.publicMonitorZoomPercent = 100; summary.enabled = true;
+});
+
+test("public KPI scale changes only its own text and preserves the footer", async ({ page }) => {
+  const state = await publicFixture(page), summary = state.document.screens[0].blocks[0];
+  await page.setViewportSize({ width: 1280, height: 720 });
+  state.document.publicMonitorZoomPercent = 100;
   summary.options = effectiveOptions({ type: "summary" });
-  await page.reload(); await expect(page.locator(".dashboard-kpis")).toBeVisible();
+  await page.goto("/monitor?compat=0"); await expect(page.locator(".dashboard-kpis")).toBeVisible();
   const measure = () => page.locator(".dashboard").evaluate(node => ({
     value: parseFloat(getComputedStyle(node.querySelector(".kpi-value")!).fontSize),
     label: parseFloat(getComputedStyle(node.querySelector(".kpi-label")!).fontSize),

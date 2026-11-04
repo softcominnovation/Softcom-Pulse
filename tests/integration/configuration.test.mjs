@@ -666,11 +666,14 @@ test("options migration preserves identity and preferences, increments once, and
   const current = (await getPresentation()).data;
   assert.equal(current.schemaVersion, 2); assert.equal(current.revision, 41); assert.equal(current.rotation.intervalSeconds, 52);
   assert.deepEqual(current.screens.map(screen => ({ ...screen, blocks: screen.blocks.map(({ options, ...block }) => { void options; return block; }) })), legacy.screens);
-  // Frozen migration writes the 2026-10-03 option shapes; newer Zod defaults (e.g. selection/cards) resolve at read time.
+  // Frozen migration writes the 2026-10-03 shapes; new presentation defaults resolve in memory.
   for (const block of current.screens[0].blocks) {
     if (block.type === "highlighted_resources") {
       assert.deepEqual(block.options, { sortBy: "configured", sortDirection: "asc", criticalOnly: false, visibleRows: 1 });
-      assert.deepEqual(effectiveOptions(block), { sortBy: "configured", sortDirection: "asc", criticalOnly: false, visibleRows: 1, selection: "default", cards: [] });
+      assert.deepEqual(effectiveOptions(block), { cardSize: "compact", sortBy: "configured", sortDirection: "asc", criticalOnly: false, visibleRows: 1, selection: "default", cards: [] });
+    } else if (block.type === "summary") {
+      assert.deepEqual(block.options, { indicators: ["hosts", "containers_running", "containers_stopped", "problems"] });
+      assert.deepEqual(effectiveOptions(block), { ...block.options, fontScalePercent: 100 });
     } else assert.deepEqual(block.options, effectiveOptions({ type: block.type }));
   }
   await getDatabase().query(sql); assert.deepEqual((await getPresentation()).data, current);
@@ -737,6 +740,48 @@ test("reading scale defaults without a database rewrite and persists through the
   const invalid = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision + 1, settings: { ...settings, displayScalePercent: 150 } }));
   assert.equal(invalid.status, 400);
   assert.equal((await getPresentation()).data.displayScalePercent, 125);
+});
+
+test("manual availability rows persist per block and legacy reads do not rewrite automatic preferences", async () => {
+  const legacy = initialV2(randomUUID);
+  await getDatabase().query("UPDATE pulse_settings SET value=$1::jsonb WHERE key='dashboardPresentation'", [JSON.stringify(legacy)]);
+  const loaded = (await getPresentation()).data;
+  assert.equal(loaded.screens[0].blocks[1].options.rowMode, undefined);
+  assert.deepEqual((await getDatabase().query("SELECT value FROM pulse_settings WHERE key='dashboardPresentation'")).rows[0].value, legacy);
+  const { revision, ...settings } = loaded;
+  settings.screens[0].blocks[1].options = { ...settings.screens[0].blocks[1].options, rowMode: "manual", visibleRows: 3 };
+  const saved = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision, settings }));
+  assert.equal(saved.status, 200);
+  const current = (await getPresentation()).data;
+  assert.equal(current.screens[0].blocks[1].options.rowMode, "manual"); assert.equal(current.screens[0].blocks[1].options.visibleRows, 3);
+  assert.deepEqual(current.screens[0].blocks[0], legacy.screens[0].blocks[0]);
+  const invalid = structuredClone(settings); invalid.screens[0].blocks[1].options.rowMode = "fixed";
+  assert.equal((await handlers.presentationPut(request("/", "PUT", { expectedRevision: current.revision, settings: invalid }))).status, 400);
+  assert.equal((await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision, settings }))).status, 409);
+  assert.deepEqual((await getPresentation()).data, current);
+});
+
+test("private root zoom defaults without writes and persists independently of public zoom through the BFF", async () => {
+  const legacy = initialV2(randomUUID); delete legacy.dashboardZoomPercent; legacy.publicMonitorZoomPercent = 70;
+  await getDatabase().query("UPDATE pulse_settings SET value=$1::jsonb WHERE key='dashboardPresentation'", [JSON.stringify(legacy)]);
+  const loaded = await (await handlers.presentationGet(request())).json();
+  assert.equal(loaded.data.dashboardZoomPercent, 100); assert.equal(loaded.data.publicMonitorZoomPercent, 70);
+  assert.deepEqual((await getDatabase().query("SELECT value FROM pulse_settings WHERE key='dashboardPresentation'")).rows[0].value, legacy);
+  const { revision, ...settings } = loaded.data;
+  const saved = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision, settings: { ...settings, dashboardZoomPercent: 80 } }));
+  assert.equal(saved.status, 200);
+  const current = (await getPresentation()).data;
+  assert.equal(current.dashboardZoomPercent, 80); assert.equal(current.publicMonitorZoomPercent, 70);
+  assert.deepEqual(current.screens, legacy.screens);
+  const changedPublic = await handlers.presentationPut(request("/", "PUT", { expectedRevision: current.revision, settings: { ...settings, dashboardZoomPercent: 80, publicMonitorZoomPercent: 60 } }));
+  assert.equal(changedPublic.status, 200);
+  const latest = (await getPresentation()).data;
+  assert.equal(latest.dashboardZoomPercent, 80); assert.equal(latest.publicMonitorZoomPercent, 60);
+  const invalid = await handlers.presentationPut(request("/", "PUT", { expectedRevision: latest.revision, settings: { ...settings, dashboardZoomPercent: 151 } }));
+  assert.equal(invalid.status, 400);
+  const conflict = await handlers.presentationPut(request("/", "PUT", { expectedRevision: revision, settings }));
+  assert.equal(conflict.status, 409);
+  assert.deepEqual((await getPresentation()).data, latest);
 });
 
 test("idle presentation defaults without rewriting legacy data and saves with revision and minute validation", async () => {

@@ -1,4 +1,5 @@
 "use client";
+import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 import { useContext } from "react";
 import type { ConfiguredResource, Metric } from "@/lib/monitoring/contracts";
 import { currentMetric, serviceAvailability } from "@/lib/dashboard/service-availability";
@@ -23,8 +24,7 @@ export function ServiceAvailabilityCard({ item, stale, preview = false }: { item
   const uptime = item.metrics.uptimeSeconds;
   const footer = p.showUptime && currentMetric(uptime, stale, now) ? `Ativo ${metricValue(uptime)}` : item.resource?.evidence.observedAt ? `Leitura ${timestamp(item.resource.evidence.observedAt).split(", ").at(-1)}` : "Sem leitura";
   const content = <>
-    <span className={`availability-state tone-${status.tone}`}><i className="status-dot" />{status.label}</span>
-    <strong className="availability-name">{name}</strong>
+    <AvailabilityCardHeader name={name} label={status.label} tone={status.tone} />
     <span className="availability-description">{item.config.description?.trim() || item.linkedVmName || item.config.zabbixHostKey}</span>
     <span className="availability-readings">{slots.length ? slots.map(kind => <Reading key={kind} label={kind === "cpu" ? "CPU" : kind === "memory" ? "RAM" : "Disco"} metric={kind === "cpu" ? item.metrics.cpuUsagePercent : kind === "memory" ? item.metrics.memoryUsagePercent ?? (p.cardMetrics ? undefined : item.metrics.memoryUsedBytes) : item.metrics.diskUsagePercent} stale={stale} now={now} currentOnly={!!p.cardMetrics || kind === "disk"} title={kind === "disk" ? item.cardDiskLabel ?? "Disco do recurso" : undefined} />) : <span className="availability-no-metrics">Ver detalhes</span>}</span>
 

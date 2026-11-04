@@ -1,4 +1,5 @@
 "use client";
+import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 import { AgentMonitoringDialog } from "@/components/admin/agent-monitoring";
 import { CardReadings } from "@/components/dashboard/card-readings";
 import { cardMetricsSchema } from "@/lib/config/agent-monitoring";
@@ -113,8 +114,7 @@ export function SignalClusterServices({ targetId, revision, services, editor, on
     <p className="admin-muted">Postgres, Redis e outros containers das VMs vinculadas. O vínculo é o nome do serviço, não o id da task. Sem enumeração completa do Docker, um container que some fica como Sem leitura, não como Fora.</p>
     {visible.length ? <ul className="signal-linked-grid">{visible.map(service => <li key={service.id} id={`signal-service-${service.id}`} className="signal-linked-card-wrap">
       <article className="availability-card signal-cluster-card" aria-current={focus === service.id ? "true" : undefined}>
-        <span className={`availability-state tone-${service.tone}`}><i className="status-dot" />{service.kpiLabel}</span>
-        <strong className="availability-name">{service.displayName}</strong>
+        <AvailabilityCardHeader name={service.displayName} label={service.kpiLabel} tone={service.tone} />
         <span className="availability-description">{service.servicePrefix}</span>
         <CardReadings pair={service.cardMetrics ?? ["cpu", "memory"]} values={{ cpu: service.cpu ?? null, memory: service.memory ?? null, disk: service.disk ?? null }} diskLabel="Disco da VM" />
         <span className="availability-footer"><span>{service.vmName ?? service.hostKey ?? "Sem container único"}</span><strong>{service.flowKpi === "database" ? "Banco" : service.flowKpi === "redis" ? "Redis" : "Fora dos KPIs"}</strong></span>

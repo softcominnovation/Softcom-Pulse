@@ -36,6 +36,7 @@ for (const width of [390, 1366, 1920, 3440]) for (const layout of ["overview", "
       state.admin.document.displayScalePercent = scale; state.admin.document.revision++;
       for (const screen of [first, second]) screen.blocks.find(block => block.type === "highlighted_resources")!.options = { ...effectiveOptions({ type: "highlighted_resources" }), visibleRows };
       await page.reload();
+      await expect(page.locator(".availability-panel")).toHaveAttribute("data-service-rows", String(visibleRows));
       await page.getByRole("button", { name: "Modo TV", exact: true }).click();
       await page.getByLabel("Escolher tela").selectOption(first.id);
       await expect(page.locator(".dashboard-shell")).toHaveAttribute("data-display-scale", String(scale));

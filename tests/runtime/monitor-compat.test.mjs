@@ -194,6 +194,134 @@ function getWithHost(address, host, headers = {}) {
 }
 const oldUa = "Mozilla/5.0 (Linux; Android 11; TV) AppleWebKit/537.36 Version/4.0 Chrome/83.0.4103.120 Safari/537.36";
 
+test("expanded classic cards keep their profile, responsive columns and complete contents in an opaque iframe", { timeout: 90000 }, async () => {
+  await shipped(async base => {
+    const fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', '--input-type=module', '-e', `
+      import { monitorFixture } from './tests/fixtures/monitor-compat.mjs';
+      import { effectiveOptions } from './lib/config/presentation.ts';
+      import { renderCompatibleContent, renderCompatiblePage, compatibleMonitorState } from './lib/server/monitor-compat/render.ts';
+      const model = monitorFixture({ cardSize: 'expanded' });
+      model.document.publicMonitorAutoScrollOnLoad = false;
+      const id = '00000000-0000-4000-8000-000000008200';
+      model.screen.blocks.push({ id, type: 'problems', enabled: true, width: 'wide', options: effectiveOptions({ type: 'problems' }) });
+      model.overview.data.blocks.push({ blockId: id, type: 'problems', data: [], availability: 'ready', stale: false, lastUpdated: null });
+      const snapshot = () => ({ html: renderCompatibleContent(model), state: compatibleMonitorState(model) });
+      const page = renderCompatiblePage(model, 'Expanded fixture'), expanded = snapshot();
+      model.screen.blocks.find(block => block.type === 'highlighted_resources').options.cardSize = 'compact'; model.document.revision++;
+      const compact = snapshot();
+      model.screen.blocks.find(block => block.type === 'highlighted_resources').options.cardSize = 'expanded'; model.document.revision++;
+      const expandedAgain = snapshot();
+      model.screen.blocks.find(block => block.type === 'summary').enabled = false; model.document.revision++;
+      const withoutKpis = snapshot();
+      model.screen.blocks.find(block => block.type === 'summary').enabled = true; model.document.revision++;
+      const withKpisAgain = snapshot();
+      model.screen.overviewGrid = 'default'; model.document.revision++;
+      const cards = model.overview.data.blocks.find(block => block.type === 'highlighted_resources').data.cards;
+      while (cards.length < 13) {
+        const item = structuredClone(cards[0].item), id = '00000000-0000-4000-8000-' + String(8300 + cards.length).padStart(12, '0');
+        item.id = id; item.config.id = id; cards.push({ kind: 'resource', item });
+      }
+      const full = snapshot();
+      model.screen.overviewGrid = 'split'; model.document.revision++;
+      const manualBlock = model.screen.blocks.find(block => block.type === 'highlighted_resources');
+      manualBlock.options.rowMode = 'manual'; manualBlock.options.visibleRows = 3;
+      const manual = snapshot();
+      manualBlock.options.cardSize = 'compact'; manualBlock.options.visibleRows = 1; model.document.revision++;
+      process.stdout.write(JSON.stringify({ page, expanded, compact, expandedAgain, withoutKpis, withKpisAgain, full, manual, compactManual: snapshot() }));
+    `], { cwd: fileURLToPath(root), encoding: 'utf8', windowsHide: true, maxBuffer: 8 * 1024 * 1024 }));
+    let current = fixture.expanded;
+    const parent = createServer(async (request, response) => {
+      response.setHeader('Access-Control-Allow-Origin', '*');
+      if (request.url === '/') {
+        response.setHeader('Content-Type', 'text/html');
+        response.end('<style>body{margin:0}iframe{width:100vw;height:100vh;border:0}</style><iframe sandbox="allow-scripts" src="/monitor?compat=1"></iframe>');
+      } else if (request.url === '/monitor?compat=1') {
+        response.setHeader('Content-Type', 'text/html'); response.end(fixture.page);
+      } else if (request.url.startsWith('/monitor/compat?fragment=1')) {
+        response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(current));
+      } else {
+        const upstream = await fetch(base + request.url);
+        response.statusCode = upstream.status; response.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/octet-stream');
+        response.end(Buffer.from(await upstream.arrayBuffer()));
+      }
+    });
+    const address = await listen(parent), browser = await chromium.launch();
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+    try {
+      const noJs = await browser.newContext({ javaScriptEnabled: false, viewport: { width: 1280, height: 720 } });
+      try {
+        const initial = await noJs.newPage(); await initial.goto(address + '/monitor?compat=1');
+        const sizes = await initial.locator('.availability-card').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
+        assert.equal(sizes.length, 6); assert.ok(sizes.every(height => height === 140));
+        await expect(initial.locator('.availability-grid')).toHaveAttribute('data-card-rows', '2');
+      } finally { await noJs.close(); }
+      const page = await context.newPage(); await page.goto(address);
+      const frame = page.frameLocator('iframe'), grid = frame.locator('.availability-grid');
+      await frame.locator('#compat-content[data-monitor-controller="ready"]').waitFor();
+      for (const width of [1280, 1920, 900]) for (const zoom of [70, 100, 125]) {
+        await page.setViewportSize({ width, height: 720 });
+        await frame.locator('html').evaluate((node, zoom) => { node.style.zoom = zoom + '%'; }, zoom);
+        await expect.poll(() => frame.locator('#compat-shell').evaluate(node => Math.round(node.getBoundingClientRect().width))).toBe(width);
+        const bounds = await grid.evaluate(node => ({ columns: Number(node.getAttribute('data-card-columns')), cards: Array.from(node.querySelectorAll('.availability-card'), card => ({ height: card.getBoundingClientRect().height, width: card.clientWidth, fits: card.scrollHeight <= card.clientHeight + 1, name: parseFloat(getComputedStyle(card.querySelector('.availability-name')).fontSize) })), footer: document.querySelector('.dashboard-footer').getBoundingClientRect().bottom }));
+        assert.ok(bounds.columns >= 1 && bounds.columns <= 3, JSON.stringify(bounds));
+        if (width === 1920 && zoom <= 100) assert.equal(bounds.columns, 3);
+        if (zoom === 100 && width === 1280) assert.equal(bounds.columns, 2);
+        if (zoom === 100 && width === 900) assert.equal(bounds.columns, 1);
+        const rows = await grid.evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, scroll: node.scrollHeight - node.clientHeight, cards: Array.from(node.querySelectorAll('.availability-card'), card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) }));
+        const headers = await grid.locator('.availability-card-heading').evaluateAll(nodes => nodes.map(node => {
+          const name = node.querySelector('.availability-name').getBoundingClientRect(), badge = node.querySelector('.status-pill').getBoundingClientRect();
+          return { gap: badge.left - name.right, aligned: name.top < badge.bottom && name.bottom > badge.top, background: getComputedStyle(node.querySelector('.status-pill')).backgroundColor };
+        }));
+        for (const header of headers) { assert.ok(header.gap >= 5); assert.ok(header.aligned); assert.notEqual(header.background, 'rgba(0, 0, 0, 0)'); }
+        for (const card of rows.cards.slice(0, bounds.columns * 2)) assert.ok(card.bottom <= rows.bottom + 1);
+        if (rows.cards.length > bounds.columns * 2) { assert.ok(rows.scroll > 0); assert.ok(rows.cards[bounds.columns * 2].top >= rows.bottom); }
+        else assert.ok(rows.scroll <= 1);
+        for (const card of bounds.cards) { assert.ok(Math.abs(card.height - 140 * zoom / 100) < 1, JSON.stringify({ width, zoom, card })); assert.ok(card.fits); assert.equal(card.name, 15); }
+        assert.ok(bounds.footer <= 721 && bounds.footer > 680, JSON.stringify(bounds));
+      }
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await frame.locator('html').evaluate(node => { node.style.zoom = ''; });
+      current = fixture.compact; await frame.locator('#compat-refresh').click();
+      await expect(grid).toHaveAttribute('data-card-size', 'compact');
+      assert.equal(await grid.locator('.availability-card').first().evaluate(node => node.getBoundingClientRect().height), 120);
+      current = fixture.expandedAgain; await frame.locator('#compat-refresh').click();
+      await expect(grid).toHaveAttribute('data-card-size', 'expanded');
+      assert.equal(await grid.locator('.availability-name').first().evaluate(node => getComputedStyle(node).fontSize), '15px');
+      await page.screenshot({ path: fileURLToPath(new URL('.cache/screenshots/expanded-classic-grid.png', root)) });
+      await frame.getByRole('button', { name: 'Detalhes de Storage configurado', exact: true }).click();
+      await expect(frame.locator('#compat-modal')).toBeVisible();
+      await expect(frame.locator('#compat-modal')).toContainText('Volume 16');
+      await page.screenshot({ path: fileURLToPath(new URL('.cache/screenshots/expanded-classic.png', root)) });
+      await frame.locator('#compat-modal button[data-close-modal]').click();
+      current = fixture.withoutKpis; await frame.locator('#compat-refresh').click();
+      await expect(grid).toHaveAttribute('data-card-rows', '3');
+      const noKpis = await grid.evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, scroll: node.scrollHeight - node.clientHeight, cards: Array.from(node.querySelectorAll('.availability-card'), card => card.getBoundingClientRect().bottom) }));
+      assert.ok(noKpis.cards.every(bottom => bottom <= noKpis.bottom + 1)); assert.ok(noKpis.scroll <= 1);
+      current = fixture.withKpisAgain; await frame.locator('#compat-refresh').click();
+      await expect(grid).toHaveAttribute('data-card-rows', '2');
+      current = fixture.full; await frame.locator('#compat-refresh').click();
+      await expect(grid).toHaveAttribute('data-card-rows', '2');
+      const full = await grid.evaluate(node => ({ columns: Number(node.getAttribute('data-card-columns')), bottom: node.getBoundingClientRect().bottom, cards: Array.from(node.querySelectorAll('.availability-card'), card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) }));
+      for (const card of full.cards.slice(0, full.columns * 2)) assert.ok(card.bottom <= full.bottom + 1);
+      assert.ok(full.cards[full.columns * 2].top >= full.bottom);
+      current = fixture.manual; await frame.locator('#compat-refresh').click();
+      await expect(grid).toHaveAttribute('data-card-rows', '3');
+      await expect(grid).toHaveAttribute('data-row-mode', 'manual');
+      const manual = await grid.evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, columns: Number(node.getAttribute('data-card-columns')), cards: Array.from(node.querySelectorAll('.availability-card'), card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) }));
+      for (const card of manual.cards.slice(0, manual.columns * 3)) assert.ok(card.bottom <= manual.bottom + 1);
+      assert.ok(manual.cards[manual.columns * 3].top >= manual.bottom);
+      current = fixture.compactManual; await frame.locator('#compat-refresh').click();
+      await expect(grid).toHaveAttribute('data-card-rows', '1');
+      await expect(grid).toHaveAttribute('data-card-size', 'compact');
+      const one = await grid.evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, height: node.getBoundingClientRect().height, cards: Array.from(node.querySelectorAll('.availability-card'), card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) }));
+      assert.equal(one.height, 128);
+      const firstRow = one.cards.filter(card => Math.abs(card.top - one.cards[0].top) < 1);
+      for (const card of firstRow) assert.ok(card.bottom <= one.bottom + 1);
+      assert.ok(one.cards[firstRow.length].top >= one.bottom);
+    } finally { await context.close(); await browser.close(); parent.closeAllConnections(); await new Promise(resolve => parent.close(resolve)); }
+  });
+});
+
 test("classic KPI scale survives snapshots and opaque iframe zoom with indicators hidden", { timeout: 90000 }, async () => {
   await shipped(async base => {
     const browser = await chromium.launch();

@@ -19,16 +19,42 @@ export function StorageComposition({ blocks, split, wall, render, onOverflow }: 
       const scale = Number(getComputedStyle(element).getPropertyValue("--dashboard-scale")) || 1;
       const rowGap = rowContainer ? parseFloat(getComputedStyle(rowContainer).rowGap) || 0 : 0;
       const summaryHeight = summary ? summary.offsetHeight + (parseFloat(getComputedStyle(element).rowGap) || 0) : 0;
-      const needed = sizing.rows.reduce((total, row, index) => total + (row.contentSized ? rows[index]?.offsetHeight ?? 0 : row.minimum * scale), 0) + Math.max(0, rows.length - 1) * rowGap + summaryHeight;
-      const compact = matchMedia(element.closest(".public-monitor-stage") ? "(min-width:1201px) and (min-height:480px)" : "(min-width:1201px) and (min-height:740px)").matches;
+      const needed = sizing.rows.reduce((total, row, index) => {
+        const target = rows[index];
+        const panels = target ? [...target.querySelectorAll<HTMLElement>('.availability-panel[data-card-size="expanded"], .availability-panel[data-row-mode]')] : [];
+        if (panels.length) {
+          const minimum = Math.max(210 * scale, ...panels.map(panel => {
+            const style = getComputedStyle(panel);
+            return [...panel.children].reduce((height, child) => {
+              const spacing = getComputedStyle(child);
+              return height + (child as HTMLElement).offsetHeight + (parseFloat(spacing.marginTop) || 0) + (parseFloat(spacing.marginBottom) || 0);
+            }, 0) + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+          }));
+          const value = String(minimum / scale);
+          if (target.style.getPropertyValue("--row-minimum") !== value) target.style.setProperty("--row-minimum", value);
+          return total + minimum;
+        }
+        if (target && target.style.getPropertyValue("--row-minimum") !== String(row.minimum)) target.style.setProperty("--row-minimum", String(row.minimum));
+        return total + (row.contentSized ? target?.offsetHeight ?? 0 : row.minimum * scale);
+      }, 0) + Math.max(0, rows.length - 1) * rowGap + summaryHeight;
+      const compact = matchMedia(element.closest(".public-monitor-stage, .root-dashboard-frame.is-zoomed") ? "(min-width:1201px) and (min-height:480px)" : "(min-width:1201px) and (min-height:740px)").matches;
       const next = compact && element.clientHeight > 0 && needed > element.clientHeight + 1;
       setOverflow(next); onOverflow?.(next);
     };
-    const observer = new ResizeObserver(check); observer.observe(element);
-    if (summary) observer.observe(summary);
-    rows.forEach((row, index) => { if (sizing.rows[index]?.contentSized) observer.observe(row); });
-    check();
-    return () => observer.disconnect();
+    const observer = new ResizeObserver(check), observed = new Set<Element>();
+    const watch = () => {
+      const targets = new Set<Element>([element, ...(summary ? [summary] : [])]);
+      rows.forEach((row, index) => {
+        if (sizing.rows[index]?.contentSized) targets.add(row);
+        row.querySelectorAll('.availability-panel[data-card-size="expanded"] > *, .availability-panel[data-row-mode] > *').forEach(child => targets.add(child));
+      });
+      observed.forEach(target => { if (!targets.has(target)) { observer.unobserve(target); observed.delete(target); } });
+      targets.forEach(target => { if (!observed.has(target)) { observer.observe(target); observed.add(target); } });
+      check();
+    };
+    const changes = new MutationObserver(watch); changes.observe(element, { childList: true, subtree: true });
+    watch();
+    return () => { observer.disconnect(); changes.disconnect(); };
   }, [signature, onOverflow]);
   return <div ref={root} className={`storage-composition${overflow ? " storage-composition-scroll" : ""}`} data-storage-layout data-overflow={overflow}>
     {!!plan.summaries.length && <div className="storage-composition-summaries">{plan.summaries.map(render)}</div>}

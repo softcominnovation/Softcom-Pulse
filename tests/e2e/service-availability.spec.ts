@@ -57,6 +57,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1366, height: 768 
     await page.screenshot({ path: ".cache/availability-" + viewport.width + "-" + mode + ".png", fullPage: viewport.width === 390 });
   }
   await exitNativeFullscreen(page);
-  await page.getByRole("link", { name: "Todos os serviços", exact: true }).click();
+  const services = page.getByRole("link", { name: "Todos os serviços", exact: true });
+  await expect(services).toHaveAttribute("href", "/servicos");
+  await Promise.all([page.waitForURL(/\/servicos$/), services.click()]);
   await expect(page).toHaveURL(/\/servicos$/);
 });

@@ -8,7 +8,7 @@ import { isAxiosError } from "axios";
 import { presentationDocumentSchema, type PresentationDocument } from "@/lib/config/presentation";
 import type { Overview, ReadResult } from "@/lib/monitoring/contracts";
 import { createPlayerStore, playableScreens } from "@/lib/dashboard/player";
-import { dashboardGridRows, displayBlockWidth } from "@/lib/dashboard/layout";
+import { dashboardGridRows, displayBlockWidth, isAvailabilityDivided } from "@/lib/dashboard/layout";
 import { timestamp } from "@/lib/dashboard/format";
 import { api } from "@/lib/client/api";
 import { useUiStore } from "@/store/ui.store";
@@ -121,7 +121,7 @@ export function Dashboard({ initialTvMode, onPresentation, extraControls }: { in
           const payload = result?.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
           const width = displayBlockWidth(block, enabled, { split, wall });
           return <div className={`dashboard-block width-${width} block-${block.type}`} data-block-id={block.id} key={block.id}>
-            {payload ? <DashboardBlock block={payload} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
+            {payload ? <DashboardBlock block={payload} hasKpis={enabled.some(item => item.type === "summary")} availabilityDivided={isAvailabilityDivided(block, enabled, split, wall)} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
           </div>;
         };
         return <div data-dashboard-content data-fit-rows={!hasStorage || undefined} style={!hasStorage ? { "--dashboard-grid-rows": dashboardGridRows(enabled, split, wall) } as CSSProperties : undefined} className={`dashboard-blocks${split ? " overview-split" : ""}${hasStorage ? " has-storage" : ""}`} aria-busy={overview.loading}>

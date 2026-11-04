@@ -5,6 +5,7 @@ import { Activity, ArrowRight, Box, Layers, Server, TriangleAlert } from "lucide
 import { useContext, type CSSProperties, type ReactNode } from "react";
 import { effectiveOptions, type IndicatorKey, type OptionsByType } from "@/lib/config/presentation";
 import { resolveAvailabilityPanel } from "@/lib/dashboard/availability-cards";
+import { availabilityCardSizes, availabilityRowLimit } from "@/lib/dashboard/availability-sizing";
 import { selectProblems, sortInventory } from "@/lib/dashboard/block-options";
 import { isPublicPath } from "@/lib/public/paths";
 import { EvidenceTimeContext } from "./metrics";
@@ -90,10 +91,12 @@ function SummaryBlock({ data, stale, options }: { data: Summary; stale: boolean;
     </article>;
   })}</section>;
 }
-export function DashboardBlock({ block, failed, probes = [], vps = [], signalCards = [], hostMetricsSources }: {
+export function DashboardBlock({ block, failed, probes = [], vps = [], signalCards = [], hostMetricsSources, availabilityDivided = false, hasKpis = false }: {
   block: OverviewBlock; failed: boolean; probes?: ProbeCard[]; vps?: StandaloneVpsHighlight[];
   signalCards?: NonNullable<import("@/lib/monitoring/contracts").Overview["signalCards"]>;
   hostMetricsSources?: Record<string, "auto" | "agent" | "hypervisor">;
+  availabilityDivided?: boolean;
+  hasKpis?: boolean;
 }) {
   const stale = failed || block.stale, now = useContext(EvidenceTimeContext);
   const publicSurface = isPublicPath(usePathname());
@@ -141,8 +144,10 @@ export function DashboardBlock({ block, failed, probes = [], vps = [], signalCar
         : probeCount ? "Estado da consulta · latência atual · detalhes ao selecionar"
         : signalCount ? "Estado do Signal · workers · faixa de presença"
         : "Estado da VPS · faixa de presença · detalhes ao selecionar";
+      const dimensions = availabilityCardSizes[options.cardSize];
+      const visibleRows = availabilityRowLimit(options.cardSize, options.visibleRows, availabilityDivided, hasKpis, options.rowMode);
       const stripNote = (vpsCount || signalCount) && (resourceCount || storageCount || probeCount) ? " · faixa Signal/VPS" : "";
-      return <section className="dashboard-panel availability-panel" style={{ "--service-rows": options.visibleRows } as CSSProperties} data-service-rows={options.visibleRows}><div className="panel-heading"><Box aria-hidden="true" /><h2>Disponibilidade de Serviços</h2><PlaceLink className="panel-link" href="/servicos">Todos os serviços <ArrowRight aria-hidden="true" /></PlaceLink></div>{visible ? <div className="availability-grid" tabIndex={0} role="region" aria-label="Recursos destacados">{cards.map(card => card.kind === "resource" ? <ServiceAvailabilityCard key={`resource:${card.item.id}`} item={card.item} stale={stale} /> : card.kind === "external_service" ? <ProbeAvailabilityCard key={`external_service:${card.item.id}`} item={card.item} /> : card.kind === "standalone_vps" ? <VpsAvailabilityCard key={`standalone_vps:${card.item.id}`} item={card.item} /> : card.kind === "storage" ? <StorageCard key={`storage:${card.item.storageKey}`} item={card.item} stale={stale} /> : card.kind === "signal_service" ? <SignalServiceAvailabilityCard key={`signal_service:${card.item.id}`} item={card.item} /> : <SignalAvailabilityCard key={`signal_target:${card.item.id}`} item={card.item} />)}</div> : <p className="panel-empty">{empty}</p>}<p className="panel-foot">{countNote}{hint}{stripNote}</p></section>;
+      return <section className="dashboard-panel availability-panel" data-card-size={options.cardSize} data-card-divided={availabilityDivided || undefined} data-row-mode={options.rowMode} style={{ "--service-rows": visibleRows, "--availability-base-height": `${dimensions.height}px`, "--availability-base-width": `${dimensions.minWidth}px`, "--availability-base-gap": `${dimensions.gap}px` } as CSSProperties} data-service-rows={visibleRows}><div className="panel-heading"><Box aria-hidden="true" /><h2>Disponibilidade de Serviços</h2><PlaceLink className="panel-link" href="/servicos">Todos os serviços <ArrowRight aria-hidden="true" /></PlaceLink></div>{visible ? <div className="availability-grid" tabIndex={0} role="region" aria-label="Recursos destacados">{cards.map(card => card.kind === "resource" ? <ServiceAvailabilityCard key={`resource:${card.item.id}`} item={card.item} stale={stale} /> : card.kind === "external_service" ? <ProbeAvailabilityCard key={`external_service:${card.item.id}`} item={card.item} /> : card.kind === "standalone_vps" ? <VpsAvailabilityCard key={`standalone_vps:${card.item.id}`} item={card.item} /> : card.kind === "storage" ? <StorageCard key={`storage:${card.item.storageKey}`} item={card.item} stale={stale} /> : card.kind === "signal_service" ? <SignalServiceAvailabilityCard key={`signal_service:${card.item.id}`} item={card.item} /> : <SignalAvailabilityCard key={`signal_target:${card.item.id}`} item={card.item} />)}</div> : <p className="panel-empty">{empty}</p>}<p className="panel-foot">{countNote}{hint}{stripNote}</p></section>;
     }
     case "resource_card": return <ResourceCard item={block.data as ConfiguredResource} stale={stale} />;
     case "uptime_list": return <UptimeList items={block.data as ProbeCard[]} options={effectiveOptions({ ...block, type: "uptime_list" })} />;

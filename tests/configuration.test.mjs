@@ -83,17 +83,19 @@ test("presentation limits, IDs, references and rotation are strict", () => {
 });
 test("reading save stores TV mode and rotation, and keeps the last rotation when the interval is invalid", () => {
   const { settings: confirmed } = settings();
-  const saved = withReadingPlayback(confirmed, { defaultTvMode: true, rotation: { autoStart: true, intervalSeconds: 30 }, displayScalePercent: 125, publicMonitorZoomPercent: 70, publicMonitorAutoScrollOnLoad: false });
+  const saved = withReadingPlayback(confirmed, { defaultTvMode: true, rotation: { autoStart: true, intervalSeconds: 30 }, displayScalePercent: 125, dashboardZoomPercent: 80, publicMonitorZoomPercent: 70, publicMonitorAutoScrollOnLoad: false });
   assert.equal(saved.defaultTvMode, true);
   assert.deepEqual(saved.rotation, { autoStart: true, intervalSeconds: 30 });
   assert.equal(saved.displayScalePercent, 125);
   assert.equal(saved.publicMonitorZoomPercent, 70);
+  assert.equal(saved.dashboardZoomPercent, 80);
   assert.equal(saved.publicMonitorAutoScrollOnLoad, false);
   assert.deepEqual(saved.screens, confirmed.screens);
   const kept = withReadingPlayback(confirmed, { defaultTvMode: true, rotation: { autoStart: true, intervalSeconds: 1 } });
   assert.equal(kept.defaultTvMode, true);
   assert.deepEqual(kept.rotation, confirmed.rotation);
   assert.equal(kept.publicMonitorAutoScrollOnLoad, confirmed.publicMonitorAutoScrollOnLoad);
+  assert.equal(kept.dashboardZoomPercent, confirmed.dashboardZoomPercent);
 });
 
 test("monitor scroll starts enabled in legacy documents and accepts only an explicit boolean", () => {
@@ -118,6 +120,22 @@ test("public monitor zoom defaults to 100 for old documents and rejects invalid 
   }
   for (const value of [0, 49, 151, 70.5, null, '70']) {
     base.settings.publicMonitorZoomPercent = value;
+    assert.equal(presentationWriteSchema.safeParse(base).success, false);
+  }
+});
+
+test("private root zoom defaults independently and validates the same integer bounds", () => {
+  const base = settings(); delete base.settings.dashboardZoomPercent;
+  base.settings.publicMonitorZoomPercent = 70;
+  assert.equal(presentationWriteSchema.parse(base).settings.dashboardZoomPercent, 100);
+  assert.equal(base.settings.dashboardZoomPercent, undefined);
+  for (const value of [50, 70, 100, 125, 150]) {
+    base.settings.dashboardZoomPercent = value;
+    const parsed = presentationWriteSchema.parse(base).settings;
+    assert.equal(parsed.dashboardZoomPercent, value); assert.equal(parsed.publicMonitorZoomPercent, 70);
+  }
+  for (const value of [0, 49, 151, 70.5, null, '70']) {
+    base.settings.dashboardZoomPercent = value;
     assert.equal(presentationWriteSchema.safeParse(base).success, false);
   }
 });

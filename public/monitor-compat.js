@@ -214,6 +214,26 @@
     each(fonts, function (font) { rules += font[0] + '{font-size:' + Math.round(font[1] * ratio * 100) / 100 + 'px;}'; });
     var style = byId('compat-density');
     if (style && style.textContent !== rules) style.textContent = rules;
+    each(content.querySelectorAll('.availability-grid[data-card-size="expanded"]'), function (grid) {
+      var gap = Number(grid.getAttribute('data-card-gap')), minimum = Number(grid.getAttribute('data-card-width'));
+      var columns = Math.max(1, Math.floor(grid.clientWidth / (minimum + gap)));
+      if (grid.getAttribute('data-card-divided') === 'true') columns = Math.min(3, columns);
+      each(grid.querySelectorAll('.card-wrap'), function (card) { card.style.width = 100 / columns + '%'; });
+      grid.setAttribute('data-card-columns', String(columns));
+    });
+    each(content.querySelectorAll('.compat-row[data-measured-row]'), function (row) {
+      var minimum = 210;
+      each(row.querySelectorAll('.availability-grid[data-card-size="expanded"], .availability-grid[data-row-mode]'), function (grid) {
+        var body = grid.parentNode, panel = body.parentNode, size = window.getComputedStyle(body), border = window.getComputedStyle(panel);
+        var height = grid.offsetHeight + parseFloat(size.paddingTop || 0) + parseFloat(size.paddingBottom || 0) + parseFloat(border.borderTopWidth || 0) + parseFloat(border.borderBottomWidth || 0);
+        each(panel.children, function (child) {
+          var spacing = window.getComputedStyle(child);
+          if (child !== body) height += child.offsetHeight + parseFloat(spacing.marginTop || 0) + parseFloat(spacing.marginBottom || 0);
+        });
+        minimum = Math.max(minimum, height);
+      });
+      if ((' ' + row.className + ' ').indexOf(' content-sized ') === -1) row.style.minHeight = minimum + 'px';
+    });
   }
   function openModal(title, html, trigger, kind) {
     if (modal.hidden) {
@@ -597,10 +617,10 @@
     scrollButton.addEventListener('click', function () { scrollPaused = !scrollPaused; autoScroll.setPaused(scrollPaused); updateScrollControl(); });
     updateScrollControl();
   }
-  window.addEventListener('resize', syncViewport);
-  window.addEventListener('orientationchange', syncViewport);
+  window.addEventListener('resize', applyDensity);
+  window.addEventListener('orientationchange', applyDensity);
   if (window.MutationObserver) {
-    var viewportObserver = new window.MutationObserver(syncViewport);
+    var viewportObserver = new window.MutationObserver(applyDensity);
     viewportObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['style'] });
   }
   content.setAttribute('data-monitor-controller', 'ready');

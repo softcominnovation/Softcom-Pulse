@@ -1,4 +1,6 @@
 "use client";
+import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
+
 
 import { useContext, useEffect, useId, useRef, useState } from "react";
 import { EvidenceTimeContext } from "@/components/dashboard/metrics";
@@ -94,7 +96,7 @@ function AgentMonitoringEditor({ hostKey }: { hostKey: string }) {
       <h3 className="font-semibold">Minicard</h3><Field label="Métricas do minicard"><select value={pair} onChange={event => setPair(event.target.value)}><option value="cpu,memory">CPU e RAM</option><option value="cpu,disk">CPU e Disco</option><option value="disk,memory">Disco e RAM</option></select></Field>
       <Field label="Fonte de CPU e RAM do minicard"><select value={source} onChange={event => setSource(event.target.value)}><option value="hypervisor">Hipervisor · padrão existente</option><option value="agent">Agent · mesma fonte dos alertas</option><option value="auto">Automática · padrão existente</option></select></Field>
       <p className="text-xs">Prévia das métricas do Agent. CPU/RAM do card mantêm a fonte escolhida acima; o disco sempre é do Agent.</p>
-      <div className="availability-card"><span className="availability-state">Prévia · Agent</span><strong className="availability-name">{data.name}</strong><span className="availability-description">Armazenamento monitorado</span><CardReadings pair={pair.split(",") as CardMetric[]} values={{ cpu: value("cpu"), memory: value("memory"), disk: value("disk") }} /><span className="availability-footer">{draft.capacity.filesystemKeys.length} volumes selecionados</span></div>
+      <div className="availability-card"><AvailabilityCardHeader name={data.name} label="Prévia · Agent" tone="unknown" /><span className="availability-description">Armazenamento monitorado</span><CardReadings pair={pair.split(",") as CardMetric[]} values={{ cpu: value("cpu"), memory: value("memory"), disk: value("disk") }} /><span className="availability-footer">{draft.capacity.filesystemKeys.length} volumes selecionados</span></div>
     </fieldset>
     {saved && <p role="status">Alertas e exibição salvos.</p>}
     {error && <p role="alert" className="admin-error">{error}</p>}

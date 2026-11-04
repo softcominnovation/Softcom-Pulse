@@ -1,0 +1,29 @@
+/* Independent private-root zoom; every desktop slide keeps a viewport-sized shell. */
+.root-dashboard-frame, .root-dashboard-stage { display: contents; }
+.root-dashboard-frame.is-zoomed { display: block; width: 100%; height: 100dvh; overflow: hidden; }
+.root-dashboard-frame.is-zoomed > .root-dashboard-stage { display: block; width: calc(100vw / var(--root-dashboard-zoom)); height: calc(100dvh / var(--root-dashboard-zoom)); overflow: auto; }
+.root-dashboard-frame.is-zoomed > .root-dashboard-stage > .dashboard-shell { min-height: 100%; }
+@supports (zoom: 1) { .root-dashboard-frame.is-zoomed > .root-dashboard-stage { zoom: var(--root-dashboard-zoom); } }
+@supports not (zoom: 1) { .root-dashboard-frame.is-zoomed > .root-dashboard-stage { transform: scale(var(--root-dashboard-zoom)); transform-origin: top left; } }
+@media (max-width: 1200px), (max-height: 479px) {
+  .root-dashboard-frame[data-dashboard-zoom="100"], .root-dashboard-frame[data-dashboard-zoom="100"] > .root-dashboard-stage { display: contents; }
+}
+@media (min-width: 1201px) and (min-height: 480px) {
+  .root-dashboard-frame.is-zoomed > .root-dashboard-stage > .dashboard-shell { height: 100%; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .root-dashboard-frame.is-zoomed .pulse-topbar { flex-shrink: 0; }
+  .root-dashboard-frame.is-zoomed .dashboard-main { display: flex; flex: 1; min-height: 0; align-items: stretch; }
+  .root-dashboard-frame.is-zoomed .dashboard { display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 0; }
+  .root-dashboard-frame.is-zoomed .dashboard > :not(.dashboard-blocks) { flex-shrink: 0; }
+  .root-dashboard-frame.is-zoomed .dashboard-blocks { flex: 1; min-height: 0; overflow: auto; align-content: stretch; }
+  .root-dashboard-frame.is-zoomed .dashboard-blocks > .dashboard-block { align-self: stretch; min-height: 0; display: flex; flex-direction: column; }
+  .root-dashboard-frame.is-zoomed .dashboard-blocks[data-fit-rows]:not(.overview-split) { grid-template-rows: var(--dashboard-grid-rows); grid-auto-rows: minmax(0, 1fr); }
+  .root-dashboard-frame.is-zoomed .dashboard-blocks[data-fit-rows].overview-split { grid-template-rows: var(--dashboard-grid-rows); }
+  .root-dashboard-frame.is-zoomed .dashboard-blocks[data-fit-rows] > .overview-split-grid { height: 100%; grid-template-rows: max-content minmax(200px, 1fr); }
+  .root-dashboard-frame.is-zoomed .dashboard-panel { min-height: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
+  .root-dashboard-frame.is-zoomed .panel-heading, .root-dashboard-frame.is-zoomed .panel-foot { flex-shrink: 0; }
+  .root-dashboard-frame.is-zoomed .problem-list, .root-dashboard-frame.is-zoomed .asgard-content, .root-dashboard-frame.is-zoomed .asgard-machines, .root-dashboard-frame.is-zoomed .signal-flow-body, .root-dashboard-frame.is-zoomed .vm-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+  .root-dashboard-frame.is-zoomed .asgard-panel .asgard-machines { flex: 1 0 96px; }
+  .root-dashboard-frame.is-zoomed .storage-composition-row { flex: 1 1 0; min-height: 0; }
+  .root-dashboard-frame.is-zoomed .storage-composition-scroll .storage-composition-row { flex: 0 0 auto; min-height: calc(var(--row-minimum) * var(--dashboard-scale, 1) * 1px); }
+  .root-dashboard-frame.is-zoomed .storage-composition-row-content, .root-dashboard-frame.is-zoomed .storage-composition-scroll .storage-composition-row-content { flex: 0 0 auto; min-height: 0; }
+}

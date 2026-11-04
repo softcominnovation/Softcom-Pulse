@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { availabilityCardRefSchema } from "./availability-card-refs.ts";
 import { hostKeySchema, uuidSchema } from "./resources.ts";
+import { availabilityCardSizeOptions, availabilityRowModeOptions } from "../dashboard/availability-sizing.ts";
 
 export const blockTypes = ["summary", "highlighted_resources", "problems", "asgard_summary", "resource_card", "host_inventory", "container_inventory", "uptime_list", "signal_flow", "storage_summary"] as const;
 export type BlockType = typeof blockTypes[number];
@@ -27,14 +28,16 @@ export const blockOptionsSchemas = {
   asgard_summary: z.strictObject({ sortBy: z.enum(["name", "state", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows, states: z.array(z.enum(["running", "stopped", "paused", "unknown"])).min(1).max(4).refine(unique).default(["running", "stopped", "paused", "unknown"]) }),
   problems: z.strictObject({ sortBy: z.enum(["severity", "recent"]).default("severity"), sortDirection: z.enum(["asc", "desc"]).default("desc"), visibleRows: rows, severities: z.array(z.number().int().min(0).max(5)).min(1).max(6).refine(unique).default([0, 1, 2, 3, 4, 5]) }),
   highlighted_resources: z.strictObject({
+    cardSize: z.enum(availabilityCardSizeOptions).default("compact"),
+    rowMode: z.enum(availabilityRowModeOptions).optional(),
     sortBy: z.enum(["configured", "name"]).default("configured"),
     sortDirection: direction,
     criticalOnly: z.boolean().default(false),
-    // Legacy documents may store 3; clamp to 1–2 so saves stay valid without migration.
-    visibleRows: z.preprocess(value => typeof value === "number" ? Math.min(2, Math.max(1, value)) : value, z.number().int().min(1).max(2)).default(1),
+    // Preserve legacy compact normalization; explicit row modes can use all three rows.
+    visibleRows: z.preprocess(value => typeof value === "number" ? Math.min(3, Math.max(1, value)) : value, z.number().int().min(1).max(3)).default(1),
     selection: z.enum(["default", "custom"]).default("default"),
     cards: z.array(availabilityCardRefSchema).max(8).refine(unique).default([]),
-  }).transform(options => options.selection === "default" ? { ...options, cards: [] } : options),
+  }).transform(options => ({ ...options, visibleRows: options.cardSize === "compact" && options.rowMode === undefined ? Math.min(2, options.visibleRows) : options.visibleRows, ...(options.selection === "default" ? { cards: [] } : {}) })),
   resource_card: z.strictObject({}),
   host_inventory: z.strictObject({ sortBy: z.enum(["name", "state", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows }),
   container_inventory: z.strictObject({ sortBy: z.enum(["name", "status", "health", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows, hostKeys: z.array(hostKeySchema).max(32).refine(unique).optional() }),
@@ -72,6 +75,7 @@ const screenSchema = z.strictObject({
 const fields = {
   schemaVersion: z.union([z.literal(1), z.literal(2)]), defaultTvMode: z.boolean().default(false),
   displayScalePercent: displayScaleSchema.default(defaultDisplayScalePercent),
+  dashboardZoomPercent: z.number().int().min(50).max(150).default(100),
   publicMonitorZoomPercent: z.number().int().min(50).max(150).default(100),
   publicMonitorAutoScrollOnLoad: z.boolean().default(true),
   // Hidden unless explicitly enabled in admin; legacy documents omit the field and stay hidden.
@@ -121,11 +125,12 @@ const rotationDraftSchema = z.strictObject({
 });
 
 /** Reading save also stores TV mode and rotation. An invalid interval stays as a draft and keeps the last saved rotation. */
-export function withReadingPlayback<T extends Pick<PresentationSettings, "displayScalePercent" | "showStatusBanner" | "idlePresentation" | "defaultTvMode" | "rotation" | "publicMonitorZoomPercent" | "publicMonitorAutoScrollOnLoad">>(confirmed: T, draft: Partial<Pick<PresentationSettings, "displayScalePercent" | "showStatusBanner" | "idlePresentation" | "defaultTvMode" | "rotation" | "publicMonitorZoomPercent" | "publicMonitorAutoScrollOnLoad">>): T {
+export function withReadingPlayback<T extends Pick<PresentationSettings, "displayScalePercent" | "dashboardZoomPercent" | "showStatusBanner" | "idlePresentation" | "defaultTvMode" | "rotation" | "publicMonitorZoomPercent" | "publicMonitorAutoScrollOnLoad">>(confirmed: T, draft: Partial<Pick<PresentationSettings, "displayScalePercent" | "dashboardZoomPercent" | "showStatusBanner" | "idlePresentation" | "defaultTvMode" | "rotation" | "publicMonitorZoomPercent" | "publicMonitorAutoScrollOnLoad">>): T {
   const rotation = rotationDraftSchema.safeParse(draft.rotation);
   return {
     ...confirmed,
     displayScalePercent: draft.displayScalePercent ?? confirmed.displayScalePercent,
+    dashboardZoomPercent: draft.dashboardZoomPercent ?? confirmed.dashboardZoomPercent,
     publicMonitorZoomPercent: draft.publicMonitorZoomPercent ?? confirmed.publicMonitorZoomPercent,
     publicMonitorAutoScrollOnLoad: draft.publicMonitorAutoScrollOnLoad ?? confirmed.publicMonitorAutoScrollOnLoad,
     showStatusBanner: draft.showStatusBanner ?? confirmed.showStatusBanner,
@@ -136,7 +141,7 @@ export function withReadingPlayback<T extends Pick<PresentationSettings, "displa
 }
 
 export function initialPresentation(newId: () => string): PresentationDocument {
-  return { schemaVersion: 2, revision: 1, defaultTvMode: false, displayScalePercent: defaultDisplayScalePercent, publicMonitorZoomPercent: 100, publicMonitorAutoScrollOnLoad: true, showStatusBanner: false, idlePresentation: idlePresentationSchema.parse({}), rotation: { autoStart: false, intervalSeconds: 20 }, screens: [{
+  return { schemaVersion: 2, revision: 1, defaultTvMode: false, displayScalePercent: defaultDisplayScalePercent, dashboardZoomPercent: 100, publicMonitorZoomPercent: 100, publicMonitorAutoScrollOnLoad: true, showStatusBanner: false, idlePresentation: idlePresentationSchema.parse({}), rotation: { autoStart: false, intervalSeconds: 20 }, screens: [{
     id: newId(), name: "Visão geral", enabled: true, layout: "overview", overviewGrid: "default",
     blocks: defaultDashboardBlocks.map(block => ({ id: newId(), ...block, enabled: true, options: effectiveOptions(block) })),
   }] };

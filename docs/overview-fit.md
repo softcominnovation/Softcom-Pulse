@@ -29,6 +29,10 @@ Modo TV e tela cheia usam o mesmo shell. A escala de leitura (`--dashboard-scale
 
 ## Como o encaixe funciona
 
+Serviços destacados pode usar o perfil Atual ou Ampliado por bloco. `availability-sizing.ts` concentra geometria e limite: a escolha manual de **Fileiras visíveis** (1–3) prevalece sobre KPIs/largura em ambos os perfis. Automático explícito usa duas no dividido com KPIs, três sem KPIs e duas na faixa inteira; sem modo novo, conserva o comportamento legado de cada perfil. A escala privada é aplicada uma vez e os zooms por rota permanecem independentes. Não há fileira vazia reservada quando há menos cards. Fileiras mistas com Storage e o clássico medem a altura natural de grades Ampliadas ou com modo explícito.
+
+A faixa inteira continua acompanhando o conteúdo e as fileiras flexíveis aproveitam a sobra. Se a janela completa de cards e os mínimos inferiores não couberem, usar a rolagem interna da composição preservada na correção sem KPIs, informada na prévia. Não reduzir a caixa nem a quantidade de fileiras para caber parcialmente em uma reserva antiga de 120/128px. O perfil Atual conserva suas regras legadas quando não há modo explícito; a seleção nova de 1–3 prevalece em ambos os perfis; os detalhes estão em [Minicards](availability-cards.md#perfis-de-tamanho-por-bloco).
+
 As trilhas externas do grid React são derivadas dos blocos habilitados por `dashboardGridRows`, em vez de reservar posições fixas para os Indicadores. O mesmo cálculo alimenta a prévia e a raiz pública. Uma faixa de Indicadores ou de Disponibilidade isolada acompanha o conteúdo; fileiras de painéis recebem a altura restante. Sem Indicadores, não fica uma trilha vazia absorvendo o espaço de ASGARD/Signal. UUIDs, ordem e larguras continuam os da composição salva.
 
 As fileiras flexíveis sem Storage conservam mínimo de leitura de 200px lógicos; a composição com Storage mantém seus mínimos próprios. O miolo do ASGARD também pode rolar quando suas métricas ocupam a altura disponível, preservando uma janela útil para a tabela. Se fontes maiores, múltiplas faixas ou zoom deixarem espaço insuficiente, a composição rola dentro do shell em vez de comprimir ASGARD/Signal até zerar seus corpos; cabeçalho e legenda permanecem visíveis. A prévia desktop recebe uma altura delimitada para mostrar esse mesmo comportamento sem aplicar a trava à página administrativa inteira.
@@ -39,7 +43,7 @@ A partir de 1201×740, `.dashboard-shell:has(.balanced)` fica com `height: 100dv
 
 `.dashboard.balanced` é uma coluna. Tudo que não é `.dashboard-blocks` — navegação, título, avisos, legenda — tem `flex-shrink: 0`. A grade `.dashboard-blocks` recebe `flex: 1` e `min-height: 0`. Cada `.dashboard-panel` dentro dela tem `height: 100%`, `min-height: 0` e `overflow: hidden`.
 
-A lista que pode crescer não estica o painel. Ela fica numa área com `flex: 1 1 0`, `min-height: 0` e `overflow: auto`. Já estão nesse grupo: problemas, VMs do ASGARD, hosts, containers, uptime e a grade de recursos. A grade de Disponibilidade de Serviços tem altura máxima própria e rola por dentro; o card mantém altura de 120px e largura usual até 230px, com colunas elásticas no split, como em [minicards](availability-cards.md).
+A lista que pode crescer não estica o painel. Ela fica numa área com `flex: 1 1 0`, `min-height: 0` e `overflow: auto`. Já estão nesse grupo: problemas, VMs do ASGARD, hosts, containers, uptime e a grade de recursos. A grade de Disponibilidade de Serviços tem altura máxima própria e rola por dentro; no perfil Atual, o card mantém altura de 120px e largura usual até 230px, com colunas elásticas no split. O Ampliado usa o envelope e as contas próprios descritos em [minicards](availability-cards.md).
 
 Nada é apagado para caber. O que não cabe na altura do painel continua acessível na rolagem interna.
 
@@ -61,6 +65,12 @@ Um bloco, card ou painel feito para a visão geral da rota `/` segue esta lista.
 A prévia em configurações avisa quando a composição precisa de rolagem na altura da janela. Esse aviso é o sinal de que o bloco passou do espaço da visão geral.
 
 ## Apresentação pública compatível
+
+### Zoom independente da raiz
+
+A rota `/` usa `RootDashboard` com `dashboardZoomPercent` (50–150, default 100), recebido pelo BFF autenticado e atualizado conforme o player aplica revisões. `root-dashboard-stage` compensa largura/altura lógica inversamente ao percentual e aplica zoom uma vez, com fallback por transform. Desktop conserva o shell no viewport também ao mudar entre overview e wall; se os mínimos não couberem, rola a composição e mantém a legenda. Mobile a 100% conserva o fluxo existente; demais percentuais mantêm acesso pelo stage. CSS limitado ao wrapper da raiz; não muda o monitor público, administração ou detalhes.
+
+A escala privada de TV/fullscreen e os fatores locais de KPIs e minicards continuam dentro desse zoom. Nenhum percentual é inferido de DPR/densidade. O valor não é compartilhado com `publicMonitorZoomPercent`. Com o cabeçalho nome/badge em uma linha, o Ampliado usa 140px e os cálculos de fileiras/mínimos usam essa mesma base.
 
 O renderer clássico de `/monitor` usa uma [composição CSS própria](monitor-compatibility.md#composição-e-rolagem), limitada àquele documento, sem alterar o encaixe React descrito acima. Não transporta o algoritmo antigo de sensores/transformação. Compensa apenas zoom CSS explicitamente definido na raiz do iframe, expandindo o viewport lógico e mantendo a composição flex; não deduz zoom por densidade da tela. Mantém regiões roláveis e pode rolar a composição quando os mínimos não cabem, preservando os dados e a legenda.
 

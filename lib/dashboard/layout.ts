@@ -1,4 +1,5 @@
 import { defaultDashboardBlocks, effectiveOptions, type PresentationBlock } from "../config/presentation.ts";
+import { availabilityPanelMinimum, availabilityRowLimit } from "./availability-sizing.ts";
 
 const overviewPairTypes = new Set(["asgard_summary", "problems", "signal_flow", "storage_summary"]);
 
@@ -12,6 +13,15 @@ export function isBalancedComposition(blocks: PresentationBlock[]) {
 }
 
 type WidthMode = { split: boolean; wall?: boolean };
+
+export function isAvailabilityDivided(block: PresentationBlock, blocks: PresentationBlock[], split: boolean, wall = false) {
+  const enabled = blocks.filter(item => item.enabled);
+  if (split) {
+    if (!enabled.some(item => item.type === "storage_summary")) return true;
+    if (enabled.filter(item => item.type === "highlighted_resources").length === 1 && enabled.filter(item => item.type === "problems").length === 1) return true;
+  }
+  return displayBlockWidth(block, enabled, { split: false, wall }) !== "full";
+}
 
 export function dashboardGridRows(blocks: PresentationBlock[], split: boolean, wall = false): string {
   const enabled = blocks.filter(block => block.enabled);
@@ -66,15 +76,21 @@ export function displayBlockWidth(block: PresentationBlock, enabled: Presentatio
 /** Storage compositions are packed by block identity; duplicate types never share an area. */
 export function storageLayout(blocks: PresentationBlock[], split: boolean, wall = false) {
   const enabled = blocks.filter(block => block.enabled);
+  const hasKpis = enabled.some(block => block.type === "summary");
   const summaries = enabled.filter(block => block.type === "summary");
   let panels = enabled.filter(block => block.type !== "summary");
   const availability = panels.filter(block => block.type === "highlighted_resources"), problems = panels.filter(block => block.type === "problems");
   type Row = { paired: boolean; minimum: number; blocks: { block: PresentationBlock; span: number }[] };
-  const minimum = (block: PresentationBlock) => block.type === "highlighted_resources" ? 90 + 120 * effectiveOptions({ ...block, type: "highlighted_resources" }).visibleRows : 210;
+  const minimum = (block: PresentationBlock) => {
+    if (block.type !== "highlighted_resources") return 210;
+    const options = effectiveOptions({ ...block, type: "highlighted_resources" });
+    return availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.visibleRows, isAvailabilityDivided(block, enabled, split, wall), hasKpis, options.rowMode));
+  };
   const rows: Row[] = [];
   if (split && availability.length === 1 && problems.length === 1) {
     const top = [availability[0], problems[0]];
-    rows.push({ paired: true, minimum: Math.max(...top.map(minimum)), blocks: top.map(block => ({ block, span: 6 })) });
+    const options = effectiveOptions({ ...availability[0], type: "highlighted_resources" });
+    rows.push({ paired: true, minimum: Math.max(minimum(top[1]), availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.visibleRows, true, hasKpis, options.rowMode))), blocks: top.map(block => ({ block, span: 6 })) });
     panels = panels.filter(block => !top.some(item => item.id === block.id));
   }
   let occupied = 12;

@@ -1,4 +1,5 @@
 "use client";
+import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 import { useContext, useState } from "react";
 import { usePathname } from "next/navigation";
 import { PlaceLink } from "@/components/layout/place-link";
@@ -24,8 +25,7 @@ export function StorageCard({ item, stale = false, preview = false }: { item: St
   const uptime = item.metrics.uptimeSeconds;
   const reading = uptime && !isOld(uptime, old, now) ? `Ativo ${metricValue(uptime)}` : `Leitura ${timestamp(item.evidence.observedAt)}`;
   const content = <>
-    <span className={`availability-state tone-${status.tone}`}><i className="status-dot" />{status.label}</span>
-    <strong className="availability-name">{item.displayName}</strong>
+    <AvailabilityCardHeader name={item.displayName} label={status.label} tone={status.tone} />
     <span className="availability-description">{item.description ?? "Storage · Zabbix Agent"}</span>
     <span className="availability-readings">{([
       ["CPU", item.metrics.cpuUsagePercent], ["Disco", item.capacity.usagePercent],

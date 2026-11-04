@@ -1,6 +1,18 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import { ResourceCardReadingsFixture } from "../fixtures/resource-card-readings";
 
+test("expanded resources keep their metric pair and complete footer at every presentation scale", async ({ mount }) => {
+  for (const scale of [100, 110, 120, 125]) for (const pair of [["cpu", "memory"], ["cpu", "disk"], ["disk", "memory"]] as const) {
+    const component = await mount(<ResourceCardReadingsFixture size="expanded" scale={scale} width={260 * scale / 100} pair={[...pair]} />);
+    const card = component.locator(".availability-card");
+    await expect(card.locator(".availability-reading")).toHaveCount(2);
+    const geometry = await card.evaluate(node => ({ height: node.getBoundingClientRect().height, fits: node.scrollHeight <= node.clientHeight + 1, name: parseFloat(getComputedStyle(node.querySelector(".availability-name")!).fontSize), footer: node.querySelector(".availability-footer")!.getBoundingClientRect().bottom, bottom: node.getBoundingClientRect().bottom }));
+    expect(geometry.height).toBeCloseTo(140 * scale / 100, 1); expect(geometry.fits).toBe(true);
+    expect(geometry.name).toBeCloseTo(15 * scale / 100, 1); expect(geometry.footer).toBeLessThan(geometry.bottom);
+    await component.unmount();
+  }
+});
+
 test("resource pairs keep their choice and every line visible in the 120px card", async ({ mount }) => {
   for (const width of [180, 230]) for (const pair of [["cpu", "memory"], ["cpu", "disk"], ["disk", "memory"]] as const) {
     const component = await mount(<ResourceCardReadingsFixture width={width} pair={[...pair]} />);

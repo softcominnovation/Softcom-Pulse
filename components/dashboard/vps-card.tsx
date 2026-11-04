@@ -1,4 +1,5 @@
 "use client";
+import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 
 import { usePathname } from "next/navigation";
 import { PlaceLink } from "@/components/layout/place-link";
@@ -31,8 +32,7 @@ export function VpsAvailabilityCard({ item }: { item: StandaloneVpsHighlight }) 
   const network = publicSurface ? publicVpsNetworkLabel : item.ip;
   const description = item.provider?.trim() || network;
   const content = <>
-    <span className={`availability-state tone-${item.enabled ? monitor?.tone ?? "good" : "unknown"}`}><i className="status-dot" />{headline}</span>
-    <strong className="availability-name">{item.name}</strong>
+    <AvailabilityCardHeader name={item.name} label={headline} tone={item.enabled ? monitor?.tone ?? "good" : "unknown"} />
     <span className="availability-description">{description}</span>
     <span className="probe-card-uptime"><ProbeStrip reasons={strip} colorFor={vpsReasonColor} /><span className="availability-footer"><span>VPS · {network}</span><strong>{uptime}</strong></span></span>
   </>;

@@ -87,7 +87,11 @@ h1 { font-size: 20px; margin: 0; }
 .card-wrap { display: inline-block; vertical-align: top; width: 238px; max-width: 100%; padding: 4px; font-size: 12px; }
 .split-row .card-wrap { width: 25%; }
 .availability-card { display: block; text-align: left; width: 100%; height: 120px; min-width: 0; border-radius: 9px; border: 1px solid #363636; background: #1e1e1e; padding: 9px 10px; overflow: hidden; }
-.availability-card .status-pill { display: block; background: transparent; padding: 0; font-size: 9px; line-height: 12px; }
+.availability-card-heading { display: flex; align-items: center; justify-content: space-between; width: 100%; min-width: 0; }
+.availability-card-heading .availability-name { flex: 1 1 auto; min-width: 0; margin: 0 8px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.availability-card .status-pill { display: inline-flex; flex: none; padding: 2px 6px; font-size: 9px; line-height: 12px; white-space: nowrap; }
+.availability-card .status-pill.tone-unknown { background: #2e2e2e; }
+.light .availability-card .status-pill.tone-unknown { background: #e5e5e5; }
 .availability-name { display: block; margin-top: 3px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; font-size: 12px; }
 .availability-description { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #aaa; font-size: 10px; margin: 3px 0 5px; }
 .availability-content { display: block; min-height: 31px; }
@@ -101,6 +105,25 @@ h1 { font-size: 20px; margin: 0; }
 .strip { display: block; width: 100%; height: 16px; font-size: 0; margin: 7px 0; overflow: hidden; white-space: nowrap; }
 .strip i { display: inline-block; height: 100%; border-right: 3px solid #1b1b1b; border-radius: 2px; vertical-align: top; }
 .availability-content .strip { height: 15px; margin: 8px 0; }
+.availability-grid[data-card-size="expanded"] .card-wrap { width: 268px; max-width: 100%; }
+.split-row .availability-grid[data-card-size="expanded"] .card-wrap,
+.availability-grid[data-card-size="expanded"][data-card-divided="true"] .card-wrap { width: max(33.333333%, min(100%, 268px)); }
+.availability-grid[data-card-size="expanded"] .availability-card { height: 140px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.availability-grid[data-card-size="expanded"] .availability-name { font-size: 15px; line-height: 20px; margin: 0; }
+.availability-grid[data-card-size="expanded"] .availability-card-heading .availability-name { margin-right: 8px; }
+.availability-grid[data-card-size="expanded"] .status-pill,
+.availability-grid[data-card-size="expanded"] .availability-description,
+.availability-grid[data-card-size="expanded"] .availability-footer,
+.availability-grid[data-card-size="expanded"] .availability-footer strong,
+.availability-grid[data-card-size="expanded"] .reading > span:first-child,
+.availability-grid[data-card-size="expanded"] .reading > strong { font-size: 11px; line-height: 14px; }
+.availability-grid[data-card-size="expanded"] .availability-description { margin: 0; }
+.availability-grid[data-card-size="expanded"] .availability-content { margin-top: auto; min-height: 0; width: 100%; }
+.availability-grid[data-card-size="expanded"] .metric-meter { height: 4px; margin-top: 3px; }
+.availability-grid[data-card-size="expanded"] .strip { height: 20px; margin: 0 0 7px; }
+.availability-grid[data-card-size="expanded"] .availability-footer { width: 100%; }
+.availability-grid[data-card-size="expanded"] .availability-footer > span { overflow: hidden; text-overflow: ellipsis; }
+.availability-grid[data-card-size="expanded"] .availability-footer > strong { flex: none; }
 .empty-strip { font-size: 10px; color: #999; }
 .table-scroll { overflow: auto; width: 100%; margin-top: 5px; }
 table { border-collapse: collapse; width: 100%; min-width: 390px; text-align: left; font-size: 11px; }
@@ -189,6 +212,7 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
   .compat-cell { display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0; padding: 0 5px; }
   .compat-cell > .dashboard-panel { flex: 1 1 0; min-height: 0; }
   .compat-row.content-sized { flex: 0 1 auto; min-height: 216px; max-height: 45%; }
+  .compat-row.content-sized[data-expanded-row] { flex: 0 0 auto; min-height: 0; max-height: none; }
   .content-sized .compat-cell > .dashboard-panel { flex: 0 1 auto; height: auto; }
   .panel-content > .table-scroll, .panel-content > .host-card-grid { max-height: none !important; overflow: visible; }
   .presentation-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; }

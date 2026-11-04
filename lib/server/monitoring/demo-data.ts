@@ -937,7 +937,7 @@ export function buildDemoPresentation(): { data: PresentationDocument; updatedAt
       revision: 1,
       defaultTvMode: false,
       displayScalePercent: 100,
-      publicMonitorZoomPercent: 100,
+      dashboardZoomPercent: 100, publicMonitorZoomPercent: 100,
       publicMonitorAutoScrollOnLoad: true,
       showStatusBanner: true,
       idlePresentation: { enabled: false, afterMinutes: 5, requestFullscreen: true },

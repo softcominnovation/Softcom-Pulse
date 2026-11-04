@@ -71,10 +71,12 @@ function IndicatorEditor({ selected, onChange }: { selected: IndicatorKey[]; onC
   </div>;
 }
 
-export function BlockOptionsEditor({ block, hosts, onChange, availabilityCatalog = [] }: {
+export function BlockOptionsEditor({ block, hosts, onChange, availabilityCatalog = [], availabilityDivided = false, hasKpis = false }: {
   block: PresentationBlock; hosts: { hostKey: string; name: string }[];
   onChange: (options: NonNullable<PresentationBlock["options"]>) => void;
   availabilityCatalog?: AvailabilityCatalogItem[];
+  availabilityDivided?: boolean;
+  hasKpis?: boolean;
 }) {
   const options = { ...(block.type === "storage_summary" ? { visibleRows: 3 } : effectiveOptions({ type: block.type })), ...block.options } as NonNullable<PresentationBlock["options"]>;
   const set = (key: string, value: string | number | boolean | string[] | number[]) => onChange({ ...options, [key]: value });
@@ -106,6 +108,11 @@ export function BlockOptionsEditor({ block, hosts, onChange, availabilityCatalog
     };
     return <div className="admin-options">
       <div className="admin-fields">
+        <Field label="Tamanho dos minicards" hint="Atual preserva o tamanho existente. Ampliado aumenta a caixa e os textos somente deste bloco; pode precisar de rolagem.">
+          <select value={String(options.cardSize ?? "compact")} onChange={event => onChange({ ...options, cardSize: event.target.value, ...(event.target.value === "compact" && options.rowMode === undefined ? { visibleRows: Math.min(2, Number(options.visibleRows)) } : {}) })}>
+            <option value="compact">Atual</option><option value="expanded">Ampliado</option>
+          </select>
+        </Field>
         <Field label="Conteúdo do bloco" hint="Padrão usa os destaques globais (dashboardEnabled). Personalizado fixa a lista só deste bloco.">
           <select value={selection} onChange={event => {
             const next = event.target.value as "default" | "custom";
@@ -115,12 +122,15 @@ export function BlockOptionsEditor({ block, hosts, onChange, availabilityCatalog
             <option value="custom">Personalizado</option>
           </select>
         </Field>
-        <Field label="Fileiras visíveis" hint="1 = uma fileira (padrão). 2 = até 8 cards. Na grade em duas colunas, use 2 fileiras para preencher a altura da coluna esquerda.">
-          <select value={Number(options.visibleRows)} onChange={event => set("visibleRows", Number(event.target.value))}>
-            <option value={1}>1 fileira · até 4 cards</option>
-            <option value={2}>2 fileiras · até 8 cards</option>
+        <Field label="Fileiras visíveis" hint="Escolha quantas fileiras completas mostrar, mesmo com KPIs. As demais ficam acessíveis por rolagem; com menos cards, a altura acompanha o conteúdo.">
+          <select value={options.rowMode === "manual" ? String(options.visibleRows) : "auto"} onChange={event => onChange({ ...options, rowMode: event.target.value === "auto" ? "auto" : "manual", ...(event.target.value === "auto" ? {} : { visibleRows: Number(event.target.value) }) })}>
+            <option value="auto">Automático</option>
+            <option value="1">1 fileira completa</option>
+            <option value="2">2 fileiras completas</option>
+            <option value="3">3 fileiras completas</option>
           </select>
         </Field>
+        {options.rowMode !== "manual" && <p className="admin-muted">{options.cardSize === "compact" && options.rowMode === undefined ? "Automático mantém o comportamento atual deste bloco. Escolha de 1 a 3 para fixar a quantidade." : `Automático: ${availabilityDivided ? hasKpis ? "2 completas no bloco dividido com KPIs; rolagem a partir da terceira." : "3 completas no bloco dividido sem KPIs; rolagem a partir da quarta." : "2 completas na faixa inteira; rolagem a partir da terceira."}`} Com menos cards, a altura acompanha o conteúdo.</p>}
       </div>
       {selection === "default" ? <>
         <div className="admin-fields">

@@ -1,4 +1,5 @@
 "use client";
+import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 
 import { PlaceLink } from "@/components/layout/place-link";
 import type { ReactElement } from "react";
@@ -36,8 +37,7 @@ export function SignalAvailabilityCard({ item }: { item: SignalCardItem }) {
   const workers = paused ? "Fora da coleta" : signalWorkersLabel(item.activeInstances, item.checkedAt);
   const strip = paused ? [] : item.strip;
   const content = <>
-    <span className={`availability-state tone-${tone}`}><i className="status-dot" />{label}</span>
-    <strong className="availability-name">{item.displayName}</strong>
+    <AvailabilityCardHeader name={item.displayName} label={label} tone={tone} />
     <span className="availability-description">{item.description?.trim() || "Signal"}</span>
     <span className="probe-card-uptime">
       <ProbeStrip reasons={strip} colorFor={signalStateColor} />

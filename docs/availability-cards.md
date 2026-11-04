@@ -1,25 +1,43 @@
 # Minicards de Disponibilidade de Serviços
 
-Storage usa `kind:storage` e UUID da preferência, disponível após configurar a máquina em Serviços. Default inclui os destacados após as famílias anteriores, com ordem interna e criticidade; custom aceita configuração sem destaque. Preserva 120px com CPU e disco ocupado (%), usando a capacidade selecionada e a cor âmbar de disco. No rodapé, RX e TX vêm da interface já escolhida em Serviços, separados e com suas unidades; uptime/leitura ficam na dica e no detalhe. Ausência é “—”, zero é zero e dado antigo mantém identificação. Não acrescenta terceira barra ou faixa de uptime. Abre o painel compartilhado sob demanda, com link por storageKey para Serviços e equivalente público. Disponibilidade usa o mesmo helper do painel. Referência órfã conserva estado neutro; sem preferência recuperável, aplica a política de omissão do custom. Detalhes em [Storage](storage.md).
+Storage usa `kind:storage` e UUID da preferência, disponível após configurar a máquina em Serviços. Default inclui os destacados após as famílias anteriores, com ordem interna e criticidade; custom aceita configuração sem destaque. Preserva 120px no perfil Atual e acompanha a caixa comum no Ampliado, com CPU e disco ocupado (%), usando a capacidade selecionada e a cor âmbar de disco. No rodapé, RX e TX vêm da interface já escolhida em Serviços, separados e com suas unidades; uptime/leitura ficam na dica e no detalhe. Ausência é “—”, zero é zero e dado antigo mantém identificação. Não acrescenta terceira barra ou faixa de uptime. Abre o painel compartilhado sob demanda, com link por storageKey para Serviços e equivalente público. Disponibilidade usa o mesmo helper do painel. Referência órfã conserva estado neutro; sem preferência recuperável, aplica a política de omissão do custom. Detalhes em [Storage](storage.md).
 
 Construção visual pelo [Design system Kobra](design-system.md). Os tokens Pulse abaixo acompanham o tema; cores fixas remanescentes das faixas são paletas de telemetria, não a paleta global.
 
-A grade **Disponibilidade de Serviços** é um único grid. No modo **default** do bloco entram as origens globais nesta ordem: recurso Zabbix destacado, aplicação da sonda, VPS destacada e Signal destacado. No modo **custom**, a ordem é a lista `cards` daquele bloco (`kind:uuid`). Um serviço novo que também apareça aqui entra nessa mesma grade, com o mesmo retângulo. O miolo muda conforme a leitura que o serviço tem. A caixa não muda.
+A grade **Disponibilidade de Serviços** é um único grid. No modo **default** do bloco entram as origens globais nesta ordem: recurso Zabbix destacado, aplicação da sonda, VPS destacada e Signal destacado. No modo **custom**, a ordem é a lista `cards` daquele bloco (`kind:uuid`). Um serviço novo que também apareça aqui entra nessa mesma grade, com o mesmo retângulo. O miolo muda conforme a leitura que o serviço tem. A caixa é uniforme dentro do perfil escolhido.
 
-## A grade
+## Perfis de tamanho por bloco
+
+Em Configurações → tela → **Serviços destacados**, **Tamanho dos minicards** oferece **Atual** (`compact`, padrão) e **Ampliado** (`expanded`, experimental). A preferência pertence ao bloco, em `highlighted_resources.options.cardSize`, e usa o JSON/revisão existentes. Sem o campo, o leitor aplica Atual em memória. **Ver prévia** não grava; **Salvar apresentação** compartilha a escolha. Voltar para Atual restaura a caixa compacta sem alterar seleção, fileiras ou métricas.
+
+No Ampliado, todas as famílias da grade usam a mesma caixa de **140px**, nome de **15px**, estado/descrição/rodapé/leituras de **11px** (line-height de 14px) e medidores de **4px**. Faixas continuam com 40 posições e passam a 20px de altura. Valores longos usam reticências/detalhe; estado, nome e ação conservam seu significado. Painéis grandes, detalhes e minicards fora desse contexto continuam com o envelope atual.
+
+A largura confortável inicial é **260px**. A faixa inteira calcula colunas pela largura útil e distribui a sobra entre elas, inclusive colunas vazias, para um serviço isolado não preencher o painel inteiro. Em split e no par Disponibilidade/Problemas com Storage, há no máximo **três colunas**, reduzidas para duas/uma conforme o contêiner, inclusive sua scrollbar. Não são alteradas as larguras salvas dos blocos.
+
+As medidas ampliadas de caixa, fontes, barras, gaps e paddings acompanham `--dashboard-scale` uma única vez na apresentação privada. No `/monitor`, o fator permanece 1 e o zoom público atua pela camada existente. `availability-sizing.ts` concentra altura, largura confortável, gap e contas de orçamento. O clássico recebe o perfil no HTML inicial, mantém fontes maiores nas atualizações e recalcula colunas em ES5 usando a largura efetiva.
+
+**Proporção e zoom:** `dashboardZoomPercent`, campo **Zoom inicial da Visão geral (%)**, controla somente a raiz `/`; `publicMonitorZoomPercent`, campo **Zoom inicial do /monitor (%)**, controla somente `/monitor`. Ambos aceitam 50–150, padrão 100, e atuam uma vez sobre os aumentos locais dos cards e textos dos KPIs. Com 70%, o card Ampliado de 140px aparece com 98px, e seu nome de 15px com 10,5px. A compensação de largura/altura lógica mantém o preenchimento do viewport. Na raiz, a escala privada de TV/fullscreen continua dentro do zoom próprio; normal mantém esse fator em 1. Detalhes e administração não herdam esses zooms.
+
+**Fileiras visíveis**, no mesmo editor, oferece **Automático**, **1**, **2** ou **3 fileiras completas**. A escolha manual tem prioridade sobre os KPIs e a largura, nos perfis Atual e Ampliado. Pode mostrar três com KPIs, três na faixa inteira ou uma no split. A preferência é por bloco/tela e compartilhada com raiz, monitor e prévia; **Salvar apresentação** publica, enquanto Salvar leitura do telão conserva o rascunho dos blocos.
+
+O JSON reutiliza `visibleRows` como contagem e usa `rowMode: manual | auto` para distinguir a seleção nova do comportamento legado. Em Automático explícito, são duas fileiras no dividido com KPIs, três sem KPIs e duas na faixa inteira. Documentos sem `rowMode` preservam suas regras anteriores: Ampliado automático e Atual com limites/compactação legados. Não há escrita durante leitura/medição. Trocar perfil ou grade preserva uma seleção manual. Com menos cards, não reserva fileiras vazias.
+
+A conta ampliada usa card de 140px, gap de 8px e padding real. Seleções explícitas no Atual usam 120px com gap/padding de 8px, sem a reserva legada de duas linhas no split ou a compactação de 130px. Fileiras com Storage e o clássico medem a altura natural das grades Ampliadas ou com modo explícito. Quando a janela completa e os mínimos inferiores não cabem, a composição inteira rola dentro do shell, preservando os dados e a legenda; não corta cards nem reduz a quantidade manual para simular encaixe. A prévia indica quando a composição precisa rolar. Não há nova seleção de métricas neste complemento.
+
+## A grade do perfil Atual
 
 Classe `availability-grid`.
 
 - Colunas: `repeat(auto-fill, minmax(min(100%, 230px), 230px))`.
 - Espaço entre cards: 8px.
 - Alinhamento: à esquerda, sem esticar o card para preencher a linha.
-- Altura máxima da grade: duas linhas visíveis, com rolagem interna. A conta atual é `var(--service-rows, 2) * 128px`.
+- Altura máxima legada: até duas linhas, com as compactações existentes. Com seleção explícita, a janela de 1–3 linhas usa `fileiras × 128px`, preservando cards completos e rolagem apenas na próxima fileira.
 
 O card novo não altera essas medidas. Não cria uma segunda grade ao lado.
 
 Exceção existente: em `overviewGrid: split`, `.overview-split-grid .availability-grid` usa quatro colunas elásticas e os cards ocupam a largura da coluna (`max-width: none`). A altura dos cards continua 120px. Essa regra de quatro colunas não possui override móvel próprio em `availability.css`; não presumir que empilhar os painéis também reduz suas colunas internas. Reutilizar a grade atual, sem impor largura fixa por componente que quebre esse modo.
 
-## A caixa, comum aos três
+## A caixa do perfil Atual, comum às famílias
 
 Classe `availability-card`. Todo card da grade usa esta classe.
 
@@ -34,12 +52,11 @@ Classe `availability-card`. Todo card da grade usa esta classe.
 | Fundo | `var(--pulse-service)`; hover `var(--pulse-hover)` |
 | Direção | coluna, `overflow: hidden` |
 
-De cima para baixo, todo card tem quatro faixas:
+De cima para baixo, todo card tem cabeçalho, descrição e miolo com rodapé:
 
-1. **Estado.** Classe `availability-state`, com `status-dot` de 6px. Texto de 10px, uma linha. A cor vem de `tone-good`, `tone-warn`, `tone-bad` ou `tone-unknown`.
-2. **Nome.** Classe `availability-name`, 13px, peso 600, uma linha com reticências.
-3. **Descrição.** Classe `availability-description`, 10px, cor muted, uma linha com reticências.
-4. **Miolo preso embaixo.** `margin-top: auto`. É a única zona que muda entre os tipos. Termina no rodapé.
+1. **Nome e estado.** `AvailabilityCardHeader` coloca `availability-name` à esquerda e o badge `availability-state status-pill` à direita. Nome de 13px no Atual e 15px no Ampliado, com reticências e título completo. O badge conserva o estado e usa os mesmos fundos semânticos dos painéis: verde, âmbar, vermelho ou neutro. Nome e badge não se sobrepõem.
+2. **Descrição.** Classe `availability-description`, 10px, cor muted, uma linha com reticências.
+3. **Miolo preso embaixo.** `margin-top: auto`. É a única zona que muda entre os tipos. Termina no rodapé.
 
 O card é um `button` quando abre detalhe. O nome acessível diz o nome, o estado e, quando há faixa, a disponibilidade. O foco usa `var(--ring)` de 2px por dentro do card.
 
@@ -94,6 +111,8 @@ O clique da aplicação abre o modal de histórico. O clique da VPS abre o modal
 A barra de RAM usa `--pulse-blue` → `--info`. A faixa não troca para vermelho só porque o percentual subiu. O estado do texto é que carrega o tom. As faixas SVG ainda recebem cores fixas de seus helpers (`#64d6b0`, `#f2c275`, `#ff8585`, ausência `#9daeb9`); preservar a distinção entre mapa da série e tokens do texto.
 
 ## Especificação para o próximo card
+
+Os valores numéricos abaixo descrevem o perfil Atual. Dentro de um bloco Ampliado, reutilizar as mesmas classes de conteúdo e deixar o contexto aplicar o envelope ampliado; não fixar 120px por família nem repassar o perfil para dentro dos detalhes/modais.
 
 O serviço que for exibido nesta grade implementa um componente no mesmo grid, nesta ordem de blocos. Não inventa largura, altura, raio ou uma terceira fileira de rodapé.
 

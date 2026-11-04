@@ -1,4 +1,5 @@
 "use client";
+import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 import { CardReadings } from "./card-readings";
 
 import type { SignalServiceCard } from "@/lib/monitoring/contracts";
@@ -8,8 +9,7 @@ export function SignalServiceAvailabilityCard({ item }: { item: SignalServiceCar
   const href = `/servicos?signalTarget=${item.targetId}&signalService=${item.id}#signal`;
   const uptime = item.uptimeSeconds == null ? "—" : item.uptimeSeconds >= 3600 ? `${Math.floor(item.uptimeSeconds / 3600)} h` : `${Math.floor(item.uptimeSeconds / 60)} min`;
   return <PlaceLink className="availability-card" href={href} aria-label={`${item.displayName}, ${item.kpiLabel}`}>
-    <span className={`availability-state tone-${item.tone}`}><i className="status-dot" />{item.kpiLabel}</span>
-    <strong className="availability-name">{item.displayName}</strong>
+    <AvailabilityCardHeader name={item.displayName} label={item.kpiLabel} tone={item.tone} />
     <span className="availability-description">{item.servicePrefix}</span>
     <CardReadings pair={item.cardMetrics ?? ["cpu", "memory"]} values={{ cpu: item.cpu, memory: item.memory, disk: item.disk ?? null }} diskLabel="Disco da VM" />
     <span className="availability-footer"><span>{item.vmName ?? item.hostKey ?? "Cluster"}</span><strong>{uptime}</strong></span>

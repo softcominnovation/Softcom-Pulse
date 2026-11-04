@@ -1,7 +1,8 @@
 import { effectiveOptions, type OptionsByType, type PresentationBlock } from "../../config/presentation.ts";
 import { resolveAvailabilityPanel, type AvailabilityPanelCard } from "../../dashboard/availability-cards.ts";
 import { selectProblems, selectVms, sortInventory } from "../../dashboard/block-options.ts";
-import { storageLayout } from "../../dashboard/layout.ts";
+import { isAvailabilityDivided, storageLayout } from "../../dashboard/layout.ts";
+import { availabilityCardSizes, availabilityGridHeight, availabilityPanelMinimum, availabilityRowLimit } from "../../dashboard/availability-sizing.ts";
 import { metricValue, number, timestamp, isOld } from "../../dashboard/format.ts";
 import { currentMetric, serviceAvailability } from "../../dashboard/service-availability.ts";
 import { evidenceExpired } from "../../infrastructure/navigation.ts";
@@ -80,7 +81,7 @@ function resourceDetail(item: ConfiguredResource, stale: boolean, now: number) {
   return `<p class="muted">${h(item.config.resourceType === "host" ? "Host" : "Container")}${item.config.critical ? " · Crítico para a operação" : ""} · ${h(item.config.zabbixHostKey)}</p>${!item.config.enabled ? `<p>Configuração desabilitada</p>` : ""}${!item.resolved ? `<p>${h(resolutionLabel(item))}</p>` : ""}${item.config.description ? `<p>${h(item.config.description)}</p>` : ""}${health ? `<p>${badge(health.label, health.tone, container?.healthValidUntil)} ${h(healthReason)} · Health: ${h(stamp(container?.healthObservedAt))}</p>` : ""}<div class="metric-grid">${resourceReadings(item, stale, now)}${p.showNetwork ? rawMetric("RX", item.metrics.networkReceiveBitsPerSecond, stale, now) + rawMetric("TX", item.metrics.networkTransmitBitsPerSecond, stale, now) : ""}${p.showUptime ? rawMetric("Tempo ativo", item.metrics.uptimeSeconds, stale, now) : ""}</div>${extra ? `<div class="metric-grid storage-extra">${extra}</div>` : ""}<p class="muted">Leitura ${h(stamp(item.resource?.evidence.observedAt))}</p>`;
 }
 function cardFrame(id: string, title: string, description: string | null, state: string, content: string, footer: string, detail: string) {
-  return `<div class="card-wrap"><button type="button" class="availability-card" data-open-detail="${h(id)}" aria-label="Detalhes de ${h(title)}">${state}<strong class="availability-name">${h(title)}</strong><span class="availability-description">${h(description)}</span><span class="availability-content">${content}</span><span class="availability-footer">${footer}</span></button><div id="${h(id)}" class="detail-source" data-detail-title="${h(title)}">${detail}</div></div>`;
+  return `<div class="card-wrap"><button type="button" class="availability-card" data-open-detail="${h(id)}" aria-label="Detalhes de ${h(title)}"><span class="availability-card-heading"><strong class="availability-name" title="${h(title)}">${h(title)}</strong>${state}</span><span class="availability-description">${h(description)}</span><span class="availability-content">${content}</span><span class="availability-footer">${footer}</span></button><div id="${h(id)}" class="detail-source" data-detail-title="${h(title)}">${detail}</div></div>`;
 }
 function miniCard(card: AvailabilityPanelCard, blockId: string, stale: boolean, now: number): string {
   const key = card.kind === "storage" ? card.item.configId ?? card.item.storageKey : card.item.id;
@@ -167,8 +168,11 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
       const resolved = resolveAvailabilityPanel(block.data, options, { probes: model.overview?.data.externalServices ?? [], vps: model.overview?.data.standaloneVps ?? [], signalCards: model.overview?.data.signalCards ?? [] });
       const cards = resolved.cards;
       const split = model.layout === "overview" && model.screen.overviewGrid === "split";
-      const visibleRows = split ? Math.max(2, options.visibleRows) : options.visibleRows;
-      return panel("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${visibleRows * 128 + 2}px">${cards.map(card => miniCard(card, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM / disco conforme configuração · latência nas aplicações · faixa Signal/VPS", "", "box");
+      const divided = isAvailabilityDivided(configuration, model.screen.blocks, split, model.layout === "wall");
+      const configuredRows = split && options.cardSize === "compact" && options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows;
+      const visibleRows = availabilityRowLimit(options.cardSize, configuredRows, divided, model.screen.blocks.some(block => block.enabled && block.type === "summary"), options.rowMode);
+      const dimensions = availabilityCardSizes[options.cardSize];
+      return panel("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" data-card-size="${options.cardSize}" data-card-divided="${divided}"${options.rowMode ? ` data-row-mode="${options.rowMode}"` : ""} data-card-rows="${visibleRows}" data-card-width="${dimensions.minWidth}" data-card-gap="${dimensions.gap}" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${availabilityGridHeight(options.cardSize, visibleRows, options.cardSize === "expanded" || options.rowMode !== undefined)}px">${cards.map(card => miniCard(card, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM / disco conforme configuração · latência nas aplicações · faixa Signal/VPS", "", "box");
     }
     case "asgard_summary": return asgardPanel(block.data as AsgardSummary, configuration, stale, now);
     case "storage_summary": return storagePanel((block.data as { target: StorageView | null }).target, stale, now, effectiveOptions({ ...configuration, type: "storage_summary" }).visibleRows);
@@ -206,6 +210,7 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
 export function renderCompatibleContent(model: CompatibleMonitor) {
   const composition = storageLayout(model.screen.blocks, model.layout === "overview" && model.screen.overviewGrid === "split", model.layout === "wall");
   const enabled = model.screen.blocks.filter(block => block.enabled);
+  const hasKpis = enabled.some(block => block.type === "summary");
   const gridTypes = ["highlighted_resources", "problems", "asgard_summary", "signal_flow"];
   const legacySplit = model.layout === "overview" && model.screen.overviewGrid === "split" && !enabled.some(block => block.type === "storage_summary");
   if (legacySplit && gridTypes.every(type => enabled.filter(block => block.type === type).length <= 1)) {
@@ -217,17 +222,26 @@ export function renderCompatibleContent(model: CompatibleMonitor) {
     }
     // The original non-Storage split has a 1.25 : 1 ratio. Preserve it without CSS Grid.
     const left = 12 * 5 / 9, right = 12 * 4 / 9, side = problems ?? signal;
-    addRow([...(availability ? [{ block: availability, span: left }] : []), ...(side ? [{ block: side, span: right }] : [])], availability ? 90 + 120 * Math.max(2, effectiveOptions({ ...availability, type: "highlighted_resources" }).visibleRows) : 210, true);
+    const options = availability && effectiveOptions({ ...availability, type: "highlighted_resources" });
+    addRow([...(availability ? [{ block: availability, span: left }] : []), ...(side ? [{ block: side, span: right }] : [])], options ? availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows, true, hasKpis, options.rowMode)) : 210, true);
     addRow([...(asgard ? [{ block: asgard, span: problems ? left : 12 }] : []), ...(problems && signal ? [{ block: signal, span: right }] : [])], 210, false);
     for (const block of enabled.filter(block => block.type !== "summary" && !gridTypes.includes(block.type))) addRow([{ block, span: 12 }], 210, false);
     composition.rows = rows;
   }
   for (const row of composition.rows) {
     const availability = row.paired && row.blocks.find(item => item.block.type === "highlighted_resources")?.block;
-    if (availability) row.minimum = Math.max(row.minimum, 90 + 120 * Math.max(2, effectiveOptions({ ...availability, type: "highlighted_resources" }).visibleRows));
+    if (availability) {
+      const options = effectiveOptions({ ...availability, type: "highlighted_resources" });
+      row.minimum = Math.max(row.minimum, availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows, true, hasKpis, options.rowMode)));
+    }
   }
   const summaries = composition.summaries.map(block => `<div class="compat-summary">${renderBlock(model, block)}</div>`).join("");
-  const rows = composition.rows.map(row => `<div class="compat-row${row.contentSized ? " content-sized" : ""}${row.paired ? " split-row" : ""}" data-min-height="${row.minimum}"${row.contentSized ? "" : ` style="min-height:${row.minimum}px"`}>${row.blocks.map(({ block, span }) => `<div class="compat-cell block-${block.type}" style="width:${span / 12 * 100}%" data-block-id="${h(block.id)}">${renderBlock(model, block)}</div>`).join("")}</div>`).join("");
+  const rows = composition.rows.map(row => {
+    const expanded = row.blocks.some(({ block }) => block.type === "highlighted_resources" && effectiveOptions({ ...block, type: "highlighted_resources" }).cardSize === "expanded");
+    const measured = expanded || row.blocks.some(({ block }) => block.type === "highlighted_resources" && effectiveOptions({ ...block, type: "highlighted_resources" }).rowMode !== undefined);
+    const panels = row.blocks.map(({ block, span }) => `<div class="compat-cell block-${block.type}" style="width:${span / 12 * 100}%" data-block-id="${h(block.id)}">${renderBlock(model, block)}</div>`).join("");
+    return `<div class="compat-row${row.contentSized ? " content-sized" : ""}${row.paired ? " split-row" : ""}"${expanded ? ' data-expanded-row="true"' : ""}${measured ? ' data-measured-row="true"' : ""} data-min-height="${row.minimum}"${row.contentSized ? "" : ` style="min-height:${row.minimum}px"`}>${panels}</div>`;
+  }).join("");
   const old = model.error || model.overview?.stale;
   return `<div class="compat-evidence${old ? " is-stale" : ""}" data-updated-at="${h(model.overview?.lastUpdated)}">${old ? `<p class="compat-warning" role="alert">${h(model.error ?? "Dados desatualizados. Confira o horário de cada leitura.")}</p>` : ""}${model.document.showStatusBanner ? `<p class="monitor-status">${h(model.overview?.availability === "ready" ? "Monitoramento atualizado" : "Aguardando dados do monitoramento")} · ${h(stamp(model.overview?.lastUpdated))}</p>` : ""}${summaries}<div class="dashboard-blocks" aria-busy="false" tabindex="0" role="region" aria-label="Composição da tela">${rows}</div><footer class="dashboard-footer"><span><i class="status-dot tone-good"></i>Disponível · <i class="status-dot tone-warn"></i>Atenção · <i class="status-dot tone-bad"></i>Indisponível · <i class="status-dot tone-unknown"></i>Desconhecido / sem dados</span><span>Horários de Fortaleza · UTC−3 · Leitura ${h(stamp(model.overview?.lastUpdated))}</span></footer></div>`;
 }

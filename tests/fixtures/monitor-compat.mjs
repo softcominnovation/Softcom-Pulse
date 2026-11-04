@@ -5,7 +5,7 @@ import { resourceInputSchema } from "../../lib/config/resources.ts";
 import { effectiveOptions, presentationDocumentSchema } from "../../lib/config/presentation.ts";
 import { renderCompatibleContent, renderCompatiblePage, compatibleMonitorState } from "../../lib/server/monitor-compat/render.ts";
 
-export function monitorFixture({ fontScalePercent = 100, summaryEnabled = true, includeStorage = true, split = true } = {}) {
+export function monitorFixture({ fontScalePercent = 100, summaryEnabled = true, includeStorage = true, split = true, cardSize = "compact" } = {}) {
   const now = Date.now(), at = new Date(now).toISOString();
   const metric = (value, unit = "percent") => ({ value, unit, quality: "fresh", observedAt: at, validUntil: new Date(now + 60000).toISOString() });
   const document = buildDemoPresentation().data;
@@ -33,7 +33,7 @@ export function monitorFixture({ fontScalePercent = 100, summaryEnabled = true, 
     ["signal_flow", { target }, "standard"],
     ["storage_summary", { target: storage }, "standard"],
   ];
-  const blocks = pool.map(([type, , width]) => ({ id: randomUUID(), type, enabled: type === "summary" ? summaryEnabled : type !== "storage_summary" || includeStorage, width, options: effectiveOptions({ type, ...(type === "summary" ? { options: { fontScalePercent } } : type === "storage_summary" ? { options: { storageConfigId: storage.configId } } : {}) }) }));
+  const blocks = pool.map(([type, , width]) => ({ id: randomUUID(), type, enabled: type === "summary" ? summaryEnabled : type !== "storage_summary" || includeStorage, width, options: effectiveOptions({ type, ...(type === "summary" ? { options: { fontScalePercent } } : type === "highlighted_resources" ? { options: { cardSize } } : type === "storage_summary" ? { options: { storageConfigId: storage.configId } } : {}) }) }));
   document.screens[0] = { ...document.screens[0], blocks, layout: "overview", overviewGrid: split ? "split" : "default" };
   overview.data.blocks = pool.map(([type, data], index) => ({ blockId: blocks[index].id, type, data, availability: "ready", stale: false, lastUpdated: at }));
   const validated = presentationDocumentSchema.parse(document);

@@ -13,7 +13,7 @@ import type { Overview, OverviewBlock, ProbeCard, ReadResult } from "@/lib/monit
 import { hostSchema, containerSchema, configuredResourceSchema } from "@/lib/monitoring/contracts";
 import { readSchema, EvidenceClock } from "@/components/infrastructure/data";
 import { DashboardBlock } from "@/components/dashboard/blocks";
-import { dashboardGridRows, displayBlockWidth } from "@/lib/dashboard/layout";
+import { dashboardGridRows, displayBlockWidth, isAvailabilityDivided } from "@/lib/dashboard/layout";
 import { Button } from "@/components/ui/button";
 import { Field } from "./shared";
 import { storageInventorySchema } from "@/lib/storage/contracts";
@@ -129,7 +129,18 @@ export function PresentationPreview({ screen, displayScalePercent }: { screen: S
     setFailed(results.some(result => result.status === "rejected")); setLoading(false);
   }, [signature]);
   useEffect(() => { const controller = new AbortController(); const timer = setTimeout(() => { setLoading(true); void read(controller.signal).catch(() => { if (!controller.signal.aborted) { setFailed(true); setLoading(false); } }); }, 250); return () => { clearTimeout(timer); controller.abort(); }; }, [read, reload]);
-  useEffect(() => { const element = content.current; if (!element) return; const check = () => setScroll(element.scrollHeight > window.innerHeight - 180); const observer = new ResizeObserver(check); observer.observe(element); window.addEventListener("resize", check); check(); return () => { observer.disconnect(); window.removeEventListener("resize", check); }; }, []);
+  useEffect(() => {
+    const element = content.current;
+    if (!element) return;
+    const check = () => {
+      const composition = element.querySelector<HTMLElement>(".dashboard-blocks");
+      setScroll(element.scrollHeight > window.innerHeight - 180 || !!composition && composition.scrollHeight > composition.clientHeight + 1);
+    };
+    const observer = new ResizeObserver(check), changes = new MutationObserver(check);
+    observer.observe(element); changes.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ["style", "class"] });
+    window.addEventListener("resize", check); check();
+    return () => { observer.disconnect(); changes.disconnect(); window.removeEventListener("resize", check); };
+  }, []);
   const enabled = screen.blocks.filter(block => block.enabled);
   const split = screen.layout === "overview" && screen.overviewGrid === "split";
   const wall = screen.layout === "wall";
@@ -140,7 +151,7 @@ export function PresentationPreview({ screen, displayScalePercent }: { screen: S
   const renderPreviewBlock = (block: Screen["blocks"][number]) => {
     const data = blocks?.find(item => item.blockId === block.id);
     const width = displayBlockWidth(block, enabled, { split, wall });
-    return <div key={block.id} className={`dashboard-block width-${width} block-${block.type}`}>{data ? <DashboardBlock block={data} failed={false} /> : <p className="panel-empty">Carregando prévia…</p>}</div>;
+    return <div key={block.id} className={`dashboard-block width-${width} block-${block.type}`}>{data ? <DashboardBlock block={data} hasKpis={enabled.some(item => item.type === "summary")} availabilityDivided={isAvailabilityDivided(block, enabled, split, wall)} failed={false} /> : <p className="panel-empty">Carregando prévia…</p>}</div>;
   };
   return <section className="admin-preview" aria-label="Prévia da composição"><div className="admin-actions"><h3>Prévia local · não salva · {screen.name}</h3><Button type="button" onClick={() => setReload(value => value + 1)}>Atualizar prévia</Button></div><Field label="Visualização da prévia"><select value={tvPreview ? "tv" : "normal"} onChange={event => setTvPreview(event.target.value === "tv")}><option value="normal">Normal · 100%</option><option value="tv">Telão · {displayScalePercent}%</option></select></Field><p className="admin-muted">Dados reais disponíveis, na largura atual do navegador. As alterações só serão compartilhadas ao salvar.</p>{(scroll || hasStorage && compositionScroll) && <p className="admin-notice">Esta composição precisa de rolagem nesta altura de tela. Reduza linhas/blocos ou distribua o conteúdo entre telas.</p>}{failed && <p role="alert" className="admin-notice">Parte dos dados não pôde ser lida. Os blocos afetados indicam indisponibilidade.</p>}<EvidenceClock><div ref={content} className={`dashboard dashboard-preview ${screen.layout} ${screen.layout === "overview" ? "balanced" : ""} ${tvPreview ? "tv-mode" : ""}`} data-display-scale={scale} style={{ "--dashboard-scale": scale / 100 } as CSSProperties} aria-busy={loading}><div data-fit-rows={!hasStorage || undefined} style={!hasStorage ? { "--dashboard-grid-rows": dashboardGridRows(enabled, split, wall) } as CSSProperties : undefined} className={`dashboard-blocks${split ? " overview-split" : ""}${hasStorage ? " has-storage" : ""}`}>{hasStorage && <StorageComposition blocks={enabled} split={split} wall={wall} render={renderPreviewBlock} onOverflow={setCompositionScroll} />}{!hasStorage && !split && enabled.map(renderPreviewBlock)}{!hasStorage && split && <>{enabled.filter(block => block.type === "summary").map(renderPreviewBlock)}{hasGrid && <div className={`overview-split-grid${hasProblems ? "" : " no-problems"}`}>{enabled.filter(block => block.type === "highlighted_resources").map(renderPreviewBlock)}{enabled.filter(block => block.type === "problems").map(renderPreviewBlock)}{enabled.filter(block => block.type === "asgard_summary").map(renderPreviewBlock)}{enabled.filter(block => block.type === "signal_flow").map(renderPreviewBlock)}</div>}{enabled.filter(block => block.type !== "summary" && !gridTypes.has(block.type)).map(renderPreviewBlock)}</>}</div></div></EvidenceClock></section>;
 }

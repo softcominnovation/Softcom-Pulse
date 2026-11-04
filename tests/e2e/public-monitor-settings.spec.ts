@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { signIn } from "../fixtures/infrastructure";
+import { effectiveOptions } from "../../lib/config/presentation";
 
 test("saved monitor zoom and scroll reach anonymous readers, initial HTML and reload", async ({ page, request, baseURL }) => {
   await signIn(page);
@@ -12,7 +13,7 @@ test("saved monitor zoom and scroll reach anonymous readers, initial HTML and re
   let savedRevision = revision;
   try {
     const savedResponse = await page.request.put('/api/settings/presentation', {
-      headers, data: { expectedRevision: revision, settings: { ...settings, publicMonitorZoomPercent: 70, publicMonitorAutoScrollOnLoad: false } },
+      headers, data: { expectedRevision: revision, settings: { ...settings, schemaVersion: 2, publicMonitorZoomPercent: 70, publicMonitorAutoScrollOnLoad: false, screens: settings.screens.map((screen: typeof settings.screens[number]) => ({ ...screen, blocks: screen.blocks.map((block: typeof screen.blocks[number]) => ({ ...block, options: { ...effectiveOptions(block), ...(block.type === "summary" ? { fontScalePercent: 150 } : {}) } })) })) } },
     });
     expect(savedResponse.ok()).toBe(true);
     savedRevision = (await savedResponse.json()).data.revision;
@@ -21,6 +22,9 @@ test("saved monitor zoom and scroll reach anonymous readers, initial HTML and re
     const shared = (await publicResponse.json()).data;
     expect(shared.publicMonitorZoomPercent).toBe(70);
     expect(shared.publicMonitorAutoScrollOnLoad).toBe(false);
+    expect(shared.screens[0].blocks.find((block: { type: string }) => block.type === "summary").options.fontScalePercent).toBe(150);
+    const savedSettings = await page.request.get('/api/settings/presentation', { headers });
+    expect((await savedSettings.json()).data.screens[0].blocks.find((block: { type: string }) => block.type === "summary").options.fontScalePercent).toBe(150);
     const react = await request.get('/monitor?compat=0');
     expect(react.ok()).toBe(true);
     const reactHtml = await react.text();

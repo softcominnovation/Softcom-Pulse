@@ -45,7 +45,7 @@ h1 { font-size: 20px; margin: 0; }
 .kpi-heading { display: flex; align-items: center; justify-content: space-between; }
 .kpi-heading .compat-icon { color: #aaa; margin-left: 7px; }
 .dashboard-kpi p { font-size: 10px; color: #aaa; margin: 8px 0 0; }
-.dashboard-kpi .kpi-value { color: #fafafa; font: 29px monospace; margin: 12px 0 9px; }
+.dashboard-kpi .kpi-value { color: #fafafa; font: 29px monospace; margin: 12px 0 9px; word-wrap: break-word; }
 .compat-row { display: table; table-layout: fixed; width: 100%; border-spacing: 10px 5px; }
 .compat-cell { display: table-cell; vertical-align: top; height: inherit; min-width: 0; }
 .dashboard-panel { display: flex; flex-direction: column; height: 100%; width: 100%; min-width: 0; overflow: hidden; border: 1px solid #303030; border-radius: 14px; background: #171717; }

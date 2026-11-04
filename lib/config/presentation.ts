@@ -20,9 +20,10 @@ const unique = <T>(values: T[]) => new Set(values).size === values.length;
 export const indicatorKeys = ["hosts", "containers_running", "containers_stopped", "problems", "jobs_waiting"] as const;
 export const defaultIndicators = ["hosts", "containers_running", "containers_stopped", "problems"] as const;
 export type IndicatorKey = typeof indicatorKeys[number];
+export const kpiFontScaleOptions = [100, 110, 125, 150] as const;
 export const overviewGridModes = ["default", "split"] as const;
 export const blockOptionsSchemas = {
-  summary: z.strictObject({ indicators: z.array(z.enum(indicatorKeys)).min(1).max(4).refine(unique).default([...defaultIndicators]) }),
+  summary: z.strictObject({ indicators: z.array(z.enum(indicatorKeys)).min(1).max(4).refine(unique).default([...defaultIndicators]), fontScalePercent: z.union([z.literal(100), z.literal(110), z.literal(125), z.literal(150)]).default(100) }),
   asgard_summary: z.strictObject({ sortBy: z.enum(["name", "state", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows, states: z.array(z.enum(["running", "stopped", "paused", "unknown"])).min(1).max(4).refine(unique).default(["running", "stopped", "paused", "unknown"]) }),
   problems: z.strictObject({ sortBy: z.enum(["severity", "recent"]).default("severity"), sortDirection: z.enum(["asc", "desc"]).default("desc"), visibleRows: rows, severities: z.array(z.number().int().min(0).max(5)).min(1).max(6).refine(unique).default([0, 1, 2, 3, 4, 5]) }),
   highlighted_resources: z.strictObject({

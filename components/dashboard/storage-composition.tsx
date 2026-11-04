@@ -18,9 +18,9 @@ export function StorageComposition({ blocks, split, wall, render, onOverflow }: 
     const check = () => {
       const scale = Number(getComputedStyle(element).getPropertyValue("--dashboard-scale")) || 1;
       const rowGap = rowContainer ? parseFloat(getComputedStyle(rowContainer).rowGap) || 0 : 0;
-      const summaryHeight = summary ? summary.getBoundingClientRect().height + (parseFloat(getComputedStyle(element).rowGap) || 0) : 0;
-      const needed = sizing.rows.reduce((total, row, index) => total + (row.contentSized ? rows[index]?.getBoundingClientRect().height ?? 0 : row.minimum * scale), 0) + Math.max(0, rows.length - 1) * rowGap + summaryHeight;
-      const compact = matchMedia("(min-width:1201px) and (min-height:740px)").matches;
+      const summaryHeight = summary ? summary.offsetHeight + (parseFloat(getComputedStyle(element).rowGap) || 0) : 0;
+      const needed = sizing.rows.reduce((total, row, index) => total + (row.contentSized ? rows[index]?.offsetHeight ?? 0 : row.minimum * scale), 0) + Math.max(0, rows.length - 1) * rowGap + summaryHeight;
+      const compact = matchMedia(element.closest(".public-monitor-stage") ? "(min-width:1201px) and (min-height:480px)" : "(min-width:1201px) and (min-height:740px)").matches;
       const next = compact && element.clientHeight > 0 && needed > element.clientHeight + 1;
       setOverflow(next); onOverflow?.(next);
     };

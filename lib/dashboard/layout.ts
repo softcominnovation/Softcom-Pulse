@@ -13,6 +13,28 @@ export function isBalancedComposition(blocks: PresentationBlock[]) {
 
 type WidthMode = { split: boolean; wall?: boolean };
 
+export function dashboardGridRows(blocks: PresentationBlock[], split: boolean, wall = false): string {
+  const enabled = blocks.filter(block => block.enabled);
+  const flexible = "minmax(200px, 1fr)";
+  if (split) {
+    const gridTypes = new Set(["highlighted_resources", "problems", "asgard_summary", "signal_flow"]);
+    return [
+      ...enabled.filter(block => block.type === "summary").map(() => "max-content"),
+      ...(enabled.some(block => gridTypes.has(block.type)) ? [flexible] : []),
+      ...enabled.filter(block => block.type !== "summary" && !gridTypes.has(block.type)).map(() => flexible),
+    ].join(" ");
+  }
+  const rows: PresentationBlock[][] = [];
+  let occupied = 12;
+  for (const block of enabled) {
+    const width = displayBlockWidth(block, enabled, { split: false, wall });
+    const span = width === "full" ? 12 : width === "wide" ? 6 : 4;
+    if (occupied + span > 12) { rows.push([]); occupied = 0; }
+    rows.at(-1)!.push(block); occupied += span;
+  }
+  return rows.map(row => row.every(block => block.type === "summary" || block.type === "highlighted_resources") ? "max-content" : flexible).join(" ");
+}
+
 function pairSiblings(enabled: PresentationBlock[]) {
   const nonFull = enabled.filter(item => item.width !== "full");
   return {

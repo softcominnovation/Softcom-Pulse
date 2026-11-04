@@ -209,7 +209,7 @@
   function applyDensity() {
     syncViewport();
     var ratio = 1;
-    var fonts = [['.panel-heading h2', 13], ['.availability-name', 12], ['.availability-description', 10], ['.availability-footer', 9], ['.reading', 10], ['.reading strong', 11], ['.panel-foot', 9], ['.dashboard-kpi h2', 12], ['.dashboard-kpi .kpi-value', 28], ['table', 10], ['.presentation-toolbar h1', 20]];
+    var fonts = [['.panel-heading h2', 13], ['.availability-name', 12], ['.availability-description', 10], ['.availability-footer', 9], ['.reading', 10], ['.reading strong', 11], ['.panel-foot', 9], ['table', 10], ['.presentation-toolbar h1', 20]];
     var rules = '';
     each(fonts, function (font) { rules += font[0] + '{font-size:' + Math.round(font[1] * ratio * 100) / 100 + 'px;}'; });
     var style = byId('compat-density');

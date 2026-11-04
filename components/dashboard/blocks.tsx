@@ -73,7 +73,7 @@ function SummaryBlock({ data, stale, options }: { data: Summary; stale: boolean;
       unit: "jobs",
     },
   };
-  return <section className={`dashboard-kpis ${stale ? "is-stale" : ""}`} aria-label="Indicadores da operação">{options.indicators.map(key => {
+  return <section className={`dashboard-kpis ${stale ? "is-stale" : ""}`} data-kpi-font-scale={options.fontScalePercent} style={{ "--kpi-font-scale": options.fontScalePercent / 100 } as CSSProperties} aria-label="Indicadores da operação">{options.indicators.map(key => {
     const item = catalog[key];
     const jobsFoot = key === "jobs_waiting"
       ? item.value === null ? item.note : stale ? "Dados desatualizados" : item.note

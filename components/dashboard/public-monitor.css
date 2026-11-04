@@ -10,12 +10,14 @@
   .public-monitor-stage .dashboard { display: flex; flex-direction: column; flex: 1; width: 100%; min-height: 0; }
   .public-monitor-stage .dashboard > :not(.dashboard-blocks) { flex-shrink: 0; }
   .public-monitor-stage .dashboard-blocks { flex: 1; min-height: 0; overflow: auto; align-content: stretch; }
-  .public-monitor-stage .balanced .dashboard-blocks:not(.overview-split) { grid-template-rows: max-content max-content; grid-auto-rows: minmax(0, 1fr); }
-  .public-monitor-stage .balanced .dashboard-blocks.overview-split { grid-template-rows: max-content minmax(0, 1fr); }
+  .public-monitor-stage .balanced .dashboard-blocks:not(.overview-split) { grid-template-rows: var(--dashboard-grid-rows, max-content max-content); grid-auto-rows: minmax(0, 1fr); }
+  .public-monitor-stage .balanced .dashboard-blocks.overview-split { grid-template-rows: var(--dashboard-grid-rows, max-content minmax(0, 1fr)); }
   .public-monitor-stage .balanced .overview-split-grid { height: 100%; grid-template-rows: max-content minmax(0, 1fr); }
+  .public-monitor-stage .dashboard-blocks[data-fit-rows] > .overview-split-grid { grid-template-rows: max-content minmax(200px, 1fr); }
   .public-monitor-stage .dashboard-panel { min-height: 0; height: 100%; overflow: hidden; display: flex; flex-direction: column; }
   .public-monitor-stage .panel-heading, .public-monitor-stage .panel-foot { flex-shrink: 0; }
   .public-monitor-stage .problem-list, .public-monitor-stage .asgard-content, .public-monitor-stage .asgard-machines, .public-monitor-stage .signal-flow-body, .public-monitor-stage .vm-table-scroll { flex: 1; min-height: 0; overflow: auto; }
+  .public-monitor-stage .asgard-panel .asgard-machines { flex: 1 0 96px; }
   .public-monitor-stage .storage-composition-row { flex: 1 1 0; min-height: 0; }
   .public-monitor-stage .storage-composition-scroll .storage-composition-row { flex: 0 0 auto; min-height: calc(var(--row-minimum) * 1px); }
   .public-monitor-stage .storage-composition-row-content, .public-monitor-stage .storage-composition-scroll .storage-composition-row-content { flex: 0 0 auto; min-height: 0; }

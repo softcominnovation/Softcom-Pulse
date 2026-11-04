@@ -182,7 +182,7 @@
   .dashboard.balanced .asgard-compact .asgard-context { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 12px; }
   .dashboard.balanced .asgard-compact .storage-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .dashboard.balanced .dashboard-kpi { padding-top: 6px; padding-bottom: 6px; }
-  .dashboard.balanced .kpi-value { font-size: 26px; margin: 2px 0; }
+  .dashboard.balanced .kpi-value { font-size: calc(26px * var(--kpi-font-scale, 1)); margin: 2px 0; }
   .dashboard.balanced .asgard-panel .panel-heading, .dashboard.balanced .block-problems .panel-heading { padding-top: 5px; padding-bottom: 5px; }
   .dashboard.balanced .asgard-compact .asgard-context { padding-bottom: 4px; }
   .dashboard.balanced .asgard-panel .panel-foot { padding-top: 4px; padding-bottom: 4px; }

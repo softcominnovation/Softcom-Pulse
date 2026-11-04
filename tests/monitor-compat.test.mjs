@@ -12,6 +12,18 @@ import { initialPublicMonitorSettings } from "../lib/server/monitor-compat/setti
 import { buildDemoHosts, buildDemoOverview, buildDemoPresentation } from "../lib/server/monitoring/demo-data.ts";
 import { monitorFixture } from "./fixtures/monitor-compat.mjs";
 
+test("classic KPI text scales before scripts and hidden indicators leave no summary band", () => {
+  const model = monitorFixture({ fontScalePercent: 150 });
+  const html = renderCompatibleContent(model);
+  assert.match(html, /data-kpi-font-scale="150"/);
+  assert.match(html, /<h2 style="font-size:18px;line-height:1.45"/);
+  assert.match(html, /class="kpi-value" style="font-size:42px;line-height:1.15"/);
+  assert.match(html, /<p style="font-size:15px;line-height:1.45"/);
+  const hidden = renderCompatibleContent(monitorFixture({ summaryEnabled: false }));
+  assert.doesNotMatch(hidden, /class="compat-summary"|class="dashboard-kpis"/);
+  assert.match(hidden, /block-asgard_summary/);
+});
+
 test("classic routing detects old engines without downgrading supported browsers", () => {
   for (const ua of ["Chrome/83.0", "Firefox/127.0", "Version/16.3 Safari/605", "TV Browser", ""]) assert.equal(needsCompatibleMonitor(ua), true, ua);
   for (const ua of ["Chrome/145.0", "Firefox/128.0", "Version/16.4 Safari/605"]) assert.equal(needsCompatibleMonitor(ua), false, ua);

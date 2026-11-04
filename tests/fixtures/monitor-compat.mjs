@@ -5,7 +5,7 @@ import { resourceInputSchema } from "../../lib/config/resources.ts";
 import { effectiveOptions, presentationDocumentSchema } from "../../lib/config/presentation.ts";
 import { renderCompatibleContent, renderCompatiblePage, compatibleMonitorState } from "../../lib/server/monitor-compat/render.ts";
 
-export function monitorFixture() {
+export function monitorFixture({ fontScalePercent = 100, summaryEnabled = true, includeStorage = true, split = true } = {}) {
   const now = Date.now(), at = new Date(now).toISOString();
   const metric = (value, unit = "percent") => ({ value, unit, quality: "fresh", observedAt: at, validUntil: new Date(now + 60000).toISOString() });
   const document = buildDemoPresentation().data;
@@ -33,14 +33,14 @@ export function monitorFixture() {
     ["signal_flow", { target }, "standard"],
     ["storage_summary", { target: storage }, "standard"],
   ];
-  const blocks = pool.map(([type, , width]) => ({ id: randomUUID(), type, enabled: true, width, options: effectiveOptions({ type, ...(type === "storage_summary" ? { options: { storageConfigId: storage.configId } } : {}) }) }));
-  document.screens[0] = { ...document.screens[0], blocks, layout: "overview", overviewGrid: "split" };
+  const blocks = pool.map(([type, , width]) => ({ id: randomUUID(), type, enabled: type === "summary" ? summaryEnabled : type !== "storage_summary" || includeStorage, width, options: effectiveOptions({ type, ...(type === "summary" ? { options: { fontScalePercent } } : type === "storage_summary" ? { options: { storageConfigId: storage.configId } } : {}) }) }));
+  document.screens[0] = { ...document.screens[0], blocks, layout: "overview", overviewGrid: split ? "split" : "default" };
   overview.data.blocks = pool.map(([type, data], index) => ({ blockId: blocks[index].id, type, data, availability: "ready", stale: false, lastUpdated: at }));
   const validated = presentationDocumentSchema.parse(document);
   return { document: validated, screens: validated.screens, screen: validated.screens[0], overview, error: null, layout: "overview", tv: true, theme: "dark", now, refreshAfterMs: 5000 };
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const model = monitorFixture();
+  const model = monitorFixture(process.argv[4] ? JSON.parse(process.argv[4]) : undefined);
   if (process.argv[2]) model.document = presentationDocumentSchema.parse({ ...model.document, publicMonitorZoomPercent: Number(process.argv[2]), displayScalePercent: 125 });
   if (process.argv[3] !== undefined) {
     if (!['true', 'false'].includes(process.argv[3])) throw Error('Invalid scroll startup fixture');

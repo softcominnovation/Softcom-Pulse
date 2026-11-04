@@ -29,6 +29,12 @@ Modo TV e tela cheia usam o mesmo shell. A escala de leitura (`--dashboard-scale
 
 ## Como o encaixe funciona
 
+As trilhas externas do grid React são derivadas dos blocos habilitados por `dashboardGridRows`, em vez de reservar posições fixas para os Indicadores. O mesmo cálculo alimenta a prévia e a raiz pública. Uma faixa de Indicadores ou de Disponibilidade isolada acompanha o conteúdo; fileiras de painéis recebem a altura restante. Sem Indicadores, não fica uma trilha vazia absorvendo o espaço de ASGARD/Signal. UUIDs, ordem e larguras continuam os da composição salva.
+
+As fileiras flexíveis sem Storage conservam mínimo de leitura de 200px lógicos; a composição com Storage mantém seus mínimos próprios. O miolo do ASGARD também pode rolar quando suas métricas ocupam a altura disponível, preservando uma janela útil para a tabela. Se fontes maiores, múltiplas faixas ou zoom deixarem espaço insuficiente, a composição rola dentro do shell em vez de comprimir ASGARD/Signal até zerar seus corpos; cabeçalho e legenda permanecem visíveis. A prévia desktop recebe uma altura delimitada para mostrar esse mesmo comportamento sem aplicar a trava à página administrativa inteira.
+
+Cada bloco de Indicadores pode usar `fontScalePercent` (100/110/125/150). A variável local `--kpi-font-scale` multiplica a tipografia do recorte atual, sem escalar ícones, paddings ou os demais blocos. Múltiplas faixas têm fatores independentes. As medições da composição com Storage usam `offsetHeight`/`clientHeight` em pixels lógicos coerentes, evitando misturar retângulos físicos reduzidos pelo zoom com o orçamento lógico; observadores de tamanho reagem às fontes maiores e à remoção das faixas.
+
 A partir de 1201×740, `.dashboard-shell:has(.balanced)` fica com `height: 100dvh` e `overflow: hidden`. A barra superior não encolhe. O miolo (`.dashboard-main`) ocupa o resto, com `min-height: 0`, para o grid poder ceder altura.
 
 `.dashboard.balanced` é uma coluna. Tudo que não é `.dashboard-blocks` — navegação, título, avisos, legenda — tem `flex-shrink: 0`. A grade `.dashboard-blocks` recebe `flex: 1` e `min-height: 0`. Cada `.dashboard-panel` dentro dela tem `height: 100%`, `min-height: 0` e `overflow: hidden`.

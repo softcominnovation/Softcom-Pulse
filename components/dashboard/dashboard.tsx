@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { isAutomaticScroll } from "@/lib/client/automatic-scroll-events";
 import { useStore } from "zustand";
 import { Activity, RefreshCw, TriangleAlert } from "lucide-react";
@@ -8,7 +8,7 @@ import { isAxiosError } from "axios";
 import { presentationDocumentSchema, type PresentationDocument } from "@/lib/config/presentation";
 import type { Overview, ReadResult } from "@/lib/monitoring/contracts";
 import { createPlayerStore, playableScreens } from "@/lib/dashboard/player";
-import { displayBlockWidth } from "@/lib/dashboard/layout";
+import { dashboardGridRows, displayBlockWidth } from "@/lib/dashboard/layout";
 import { timestamp } from "@/lib/dashboard/format";
 import { api } from "@/lib/client/api";
 import { useUiStore } from "@/store/ui.store";
@@ -124,7 +124,7 @@ export function Dashboard({ initialTvMode, onPresentation, extraControls }: { in
             {payload ? <DashboardBlock block={payload} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
           </div>;
         };
-        return <div data-dashboard-content className={`dashboard-blocks${split ? " overview-split" : ""}${hasStorage ? " has-storage" : ""}`} aria-busy={overview.loading}>
+        return <div data-dashboard-content data-fit-rows={!hasStorage || undefined} style={!hasStorage ? { "--dashboard-grid-rows": dashboardGridRows(enabled, split, wall) } as CSSProperties : undefined} className={`dashboard-blocks${split ? " overview-split" : ""}${hasStorage ? " has-storage" : ""}`} aria-busy={overview.loading}>
           {!result && !overview.failed && <DashboardSkeleton label="Carregando os indicadores da tela…" />}
           {result && hasStorage && <StorageComposition blocks={enabled} split={split} wall={wall} render={renderBlock} />}
           {result && !hasStorage && !split && enabled.map(renderBlock)}
@@ -132,14 +132,15 @@ export function Dashboard({ initialTvMode, onPresentation, extraControls }: { in
             const gridTypes = new Set(["highlighted_resources", "problems", "asgard_summary", "signal_flow"]);
             const byType = (type: string) => enabled.filter(block => block.type === type);
             const hasProblems = byType("problems").length > 0;
+            const hasGrid = enabled.some(block => gridTypes.has(block.type));
             return <>
               {byType("summary").map(renderBlock)}
-              <div className={`overview-split-grid${hasProblems ? "" : " no-problems"}`}>
+              {hasGrid && <div className={`overview-split-grid${hasProblems ? "" : " no-problems"}`}>
                 {byType("highlighted_resources").map(renderBlock)}
                 {byType("problems").map(renderBlock)}
                 {byType("asgard_summary").map(renderBlock)}
                 {byType("signal_flow").map(renderBlock)}
-              </div>
+              </div>}
               {enabled.filter(block => !gridTypes.has(block.type) && block.type !== "summary").map(renderBlock)}
             </>;
           })()}

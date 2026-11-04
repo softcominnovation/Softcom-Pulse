@@ -116,6 +116,7 @@ function miniCard(card: AvailabilityPanelCard, blockId: string, stale: boolean, 
   }
 }
 function summaryBlock(data: Summary, options: OptionsByType["summary"], stale: boolean) {
+  const scale = options.fontScalePercent / 100;
   const catalog = {
     hosts: { icon: "server", label: "Hosts monitorados", value: data.hostsKnown, note: `${number(data.hostsReachable)} alcançáveis · ${number(data.vms)} VMs no hipervisor` },
     containers_running: { icon: "box", label: "Containers em execução", value: data.containersRunning, note: `${number(data.containersTotal)} containers no total` },
@@ -123,7 +124,7 @@ function summaryBlock(data: Summary, options: OptionsByType["summary"], stale: b
     problems: { icon: "warning", label: "Problemas ativos", value: data.problems, note: `${number(data.criticalAffected)} recursos críticos afetados` },
     jobs_waiting: { icon: "activity", label: "Jobs aguardando", value: data.jobsWaiting, note: data.jobsWaitingOldestSeconds == null ? "Sem idade informada" : `Mais antigo: ${metricValue({ value: data.jobsWaitingOldestSeconds, unit: "seconds", quality: "fresh", observedAt: null })}` },
   } as const;
-  return `<div class="dashboard-kpis">${options.indicators.map(key => { const item = catalog[key]; return `<article class="dashboard-kpi"><div class="kpi-heading"><h2>${h(item.label)}</h2>${monitorIcon(item.icon)}</div><p class="kpi-value">${h(number(item.value))}</p><p>${h(stale ? "Dados desatualizados · " : "")}${h(item.note)}</p></article>`; }).join("")}</div>`;
+  return `<div class="dashboard-kpis" data-kpi-font-scale="${options.fontScalePercent}">${options.indicators.map(key => { const item = catalog[key]; return `<article class="dashboard-kpi"><div class="kpi-heading"><h2 style="font-size:${12 * scale}px;line-height:1.45">${h(item.label)}</h2>${monitorIcon(item.icon)}</div><p class="kpi-value" style="font-size:${28 * scale}px;line-height:1.15">${h(number(item.value))}</p><p style="font-size:${10 * scale}px;line-height:1.45">${h(stale ? "Dados desatualizados · " : "")}${h(item.note)}</p></article>`; }).join("")}</div>`;
 }
 function asgardPanel(data: AsgardSummary, block: PresentationBlock, stale: boolean, now: number) {
   const options = effectiveOptions({ ...block, type: "asgard_summary" }), host = data.host;
@@ -226,7 +227,7 @@ export function renderCompatibleContent(model: CompatibleMonitor) {
     if (availability) row.minimum = Math.max(row.minimum, 90 + 120 * Math.max(2, effectiveOptions({ ...availability, type: "highlighted_resources" }).visibleRows));
   }
   const summaries = composition.summaries.map(block => `<div class="compat-summary">${renderBlock(model, block)}</div>`).join("");
-  const rows = composition.rows.map(row => `<div class="compat-row${row.contentSized ? " content-sized" : ""}${row.paired ? " split-row" : ""}" data-min-height="${row.minimum}">${row.blocks.map(({ block, span }) => `<div class="compat-cell block-${block.type}" style="width:${span / 12 * 100}%" data-block-id="${h(block.id)}">${renderBlock(model, block)}</div>`).join("")}</div>`).join("");
+  const rows = composition.rows.map(row => `<div class="compat-row${row.contentSized ? " content-sized" : ""}${row.paired ? " split-row" : ""}" data-min-height="${row.minimum}"${row.contentSized ? "" : ` style="min-height:${row.minimum}px"`}>${row.blocks.map(({ block, span }) => `<div class="compat-cell block-${block.type}" style="width:${span / 12 * 100}%" data-block-id="${h(block.id)}">${renderBlock(model, block)}</div>`).join("")}</div>`).join("");
   const old = model.error || model.overview?.stale;
   return `<div class="compat-evidence${old ? " is-stale" : ""}" data-updated-at="${h(model.overview?.lastUpdated)}">${old ? `<p class="compat-warning" role="alert">${h(model.error ?? "Dados desatualizados. Confira o horário de cada leitura.")}</p>` : ""}${model.document.showStatusBanner ? `<p class="monitor-status">${h(model.overview?.availability === "ready" ? "Monitoramento atualizado" : "Aguardando dados do monitoramento")} · ${h(stamp(model.overview?.lastUpdated))}</p>` : ""}${summaries}<div class="dashboard-blocks" aria-busy="false" tabindex="0" role="region" aria-label="Composição da tela">${rows}</div><footer class="dashboard-footer"><span><i class="status-dot tone-good"></i>Disponível · <i class="status-dot tone-warn"></i>Atenção · <i class="status-dot tone-bad"></i>Indisponível · <i class="status-dot tone-unknown"></i>Desconhecido / sem dados</span><span>Horários de Fortaleza · UTC−3 · Leitura ${h(stamp(model.overview?.lastUpdated))}</span></footer></div>`;
 }

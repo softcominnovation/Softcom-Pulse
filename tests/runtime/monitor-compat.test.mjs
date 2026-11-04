@@ -194,6 +194,77 @@ function getWithHost(address, host, headers = {}) {
 }
 const oldUa = "Mozilla/5.0 (Linux; Android 11; TV) AppleWebKit/537.36 Version/4.0 Chrome/83.0.4103.120 Safari/537.36";
 
+test("classic KPI scale survives snapshots and opaque iframe zoom with indicators hidden", { timeout: 90000 }, async () => {
+  await shipped(async base => {
+    const browser = await chromium.launch();
+    try {
+      for (const includeStorage of [false, true]) {
+        const fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', '--input-type=module', '-e', `
+          import { monitorFixture } from './tests/fixtures/monitor-compat.mjs';
+          import { renderCompatibleContent, renderCompatiblePage, compatibleMonitorState } from './lib/server/monitor-compat/render.ts';
+          const model = monitorFixture({ includeStorage: ${includeStorage}, fontScalePercent: 150 });
+          model.document.publicMonitorAutoScrollOnLoad = false;
+          const snapshot = () => ({ html: renderCompatibleContent(model), state: compatibleMonitorState(model) });
+          const page = renderCompatiblePage(model, 'KPI fixture'), variants = [];
+          for (const scale of [100,110,125,150]) {
+            model.screen.blocks.find(block => block.type === 'summary').options.fontScalePercent = scale;
+            model.document.revision++; variants.push(snapshot());
+          }
+          model.screen.blocks.find(block => block.type === 'summary').enabled = false;
+          model.document.revision++;
+          process.stdout.write(JSON.stringify({ page, variants, hidden: snapshot() }));
+        `], { cwd: fileURLToPath(root), encoding: 'utf8', windowsHide: true, maxBuffer: 8 * 1024 * 1024 }));
+        let current = fixture.variants[3];
+        const server = createServer(async (request, response) => {
+          response.setHeader('Access-Control-Allow-Origin', '*');
+          if (request.url === '/') {
+            response.setHeader('Content-Type', 'text/html');
+            response.end('<style>body{margin:0}iframe{width:1280px;height:720px;border:0}</style><iframe sandbox="allow-scripts" src="/monitor?compat=1"></iframe>');
+          } else if (request.url === '/monitor?compat=1') {
+            response.setHeader('Content-Type', 'text/html'); response.end(fixture.page);
+          } else if (request.url.startsWith('/monitor/compat?fragment=1')) {
+            response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(current));
+          } else {
+            const upstream = await fetch(base + request.url);
+            response.statusCode = upstream.status;
+            response.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/octet-stream');
+            response.end(Buffer.from(await upstream.arrayBuffer()));
+          }
+        });
+        const address = await listen(server), context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+        try {
+          const noJs = await browser.newContext({ javaScriptEnabled: false });
+          try {
+            const initial = await noJs.newPage(); await initial.goto(address + '/monitor?compat=1');
+            assert.equal(await initial.locator('.kpi-value').first().evaluate(node => getComputedStyle(node).fontSize), '42px');
+          } finally { await noJs.close(); }
+          const page = await context.newPage(); await page.goto(address);
+          const frame = page.frameLocator('iframe');
+          await frame.locator('#compat-content[data-monitor-controller="ready"]').waitFor();
+          for (const [index, scale] of [100,110,125,150].entries()) {
+            current = fixture.variants[index]; await frame.locator('#compat-refresh').click();
+            await expect(frame.locator('.dashboard-kpis')).toHaveAttribute('data-kpi-font-scale', String(scale));
+            const styles = await frame.locator('.dashboard-kpi').first().evaluate(node => ({ value: parseFloat(getComputedStyle(node.querySelector('.kpi-value')).fontSize), label: parseFloat(getComputedStyle(node.querySelector('h2')).fontSize), note: parseFloat(getComputedStyle(node.querySelector('p:last-child')).fontSize), icon: getComputedStyle(node.querySelector('svg')).width }));
+            assert.ok(Math.abs(styles.value - 28 * scale / 100) < .01, JSON.stringify(styles));
+            assert.ok(Math.abs(styles.label - 12 * scale / 100) < .01);
+            assert.ok(Math.abs(styles.note - 10 * scale / 100) < .01);
+            assert.equal(styles.icon, '18px');
+          }
+          current = fixture.hidden; await frame.locator('#compat-refresh').click();
+          await expect(frame.locator('.dashboard-kpis')).toHaveCount(0);
+          for (const zoom of [50,70,100,125,150]) {
+            await frame.locator('html').evaluate((node, zoom) => { node.style.zoom = zoom + '%'; }, zoom);
+            await expect.poll(() => frame.locator('#compat-shell').evaluate(node => Math.round(node.getBoundingClientRect().width))).toBe(1280);
+            const bounds = await frame.locator('#compat-shell').evaluate(node => ({ footer: node.querySelector('.dashboard-footer').getBoundingClientRect().bottom, bottom: Math.max(...Array.from(node.querySelectorAll('.compat-row'), row => row.getBoundingClientRect().bottom)), body: node.querySelector('.block-asgard_summary .panel-content').clientHeight }));
+            assert.ok(bounds.footer <= 721 && bounds.footer >= 690, JSON.stringify({ zoom, bounds }));
+            assert.ok(bounds.footer - bounds.bottom < 45 && bounds.body > 40, JSON.stringify({ zoom, bounds }));
+          }
+        } finally { await context.close(); await new Promise(resolve => server.close(resolve)); }
+      }
+    } finally { await browser.close(); }
+  });
+});
+
 test("shipped classic monitor preserves Host behind an HTTPS tunnel and serves anonymous opaque frames", { timeout: 90000 }, async () => {
   await shipped(async base => {
     for (const path of ["/monitor", "/monitor?compat=1"]) {
@@ -490,10 +561,24 @@ test("modern monitor uses its own zoom, keeps TV scale neutral and leaves the pr
           shellHeight: element.querySelector('.dashboard-shell').getBoundingClientRect().height,
           footer: element.querySelector('.dashboard-footer').getBoundingClientRect().bottom,
           panelsBottom: Math.max(...Array.from(element.querySelectorAll('.dashboard-panel'), panel => panel.getBoundingClientRect().bottom)),
+          zoom: element.parentElement.getAttribute('data-public-monitor-zoom'),
+          rows: getComputedStyle(element.querySelector('.dashboard-blocks')).gridTemplateRows,
+          contentHeight: element.querySelector('.dashboard-blocks').clientHeight,
+          contentScrollHeight: element.querySelector('.dashboard-blocks').scrollHeight,
         }));
         assert.ok(Math.abs(current.width - width) < 2 && Math.abs(current.height - height) < 2, JSON.stringify(current));
         assert.ok(Math.abs(current.shellHeight - height) < 2 && current.footer > height - 32 && current.footer <= height + 1, JSON.stringify(current));
-        assert.ok(current.panelsBottom > height - 60 && current.panelsBottom <= height, JSON.stringify(current));
+        if (current.contentScrollHeight > current.contentHeight + 1) {
+          // High zoom preserves useful panel bodies by scrolling the composition, rather than collapsing them.
+          const composition = page.locator('.dashboard-blocks');
+          await composition.evaluate(element => { element.scrollTop = element.scrollHeight; });
+          const lastBottom = await page.locator('.dashboard-panel').last().evaluate(element => element.getBoundingClientRect().bottom);
+          assert.ok(lastBottom > height - 60 && lastBottom <= height, JSON.stringify({ ...current, lastBottom }));
+          assert.ok(await page.locator('.asgard-content').evaluate(element => element.clientHeight > 40));
+          await composition.evaluate(element => { element.scrollTop = 0; });
+        } else {
+          assert.ok(current.panelsBottom > height - 60 && current.panelsBottom <= height, JSON.stringify(current));
+        }
       }
       const bounds = await page.locator('.public-monitor-stage').evaluate(element => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height, shellHeight: element.querySelector('.dashboard-shell').getBoundingClientRect().height, scale: element.querySelector('.dashboard-shell').getAttribute('data-display-scale'), footer: element.querySelector('.dashboard-footer').getBoundingClientRect().bottom }));
       assert.ok(Math.abs(bounds.width - 1920) < 2 && Math.abs(bounds.height - 1080) < 2, JSON.stringify(bounds));

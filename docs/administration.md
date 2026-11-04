@@ -52,6 +52,16 @@ Falhas preservam o rascunho; 409 informa edição concorrente. “Recarregar par
 
 ## Tamanho dos elementos no telão
 
+### Textos dos KPIs por bloco
+
+Em **Configurações → Tela → Indicadores**, **Tamanho dos textos dos KPIs** oferece 100%, 110%, 125% e 150%, com 100% como padrão. Aumenta somente números, títulos, unidades e legendas daquele bloco, preservando ícones, minicards e demais painéis. **Restaurar textos dos KPIs** volta o rascunho a 100%. Use **Ver prévia** para comparar sem gravar e **Salvar apresentação** para compartilhar a escolha; **Salvar leitura do telão** conserva esse rascunho separado.
+
+Para ocultar a faixa, desmarque **Bloco habilitado** em Indicadores e use **Salvar apresentação**. Reabilitar conserva a seleção, ordem e escala. Sem Indicadores, os painéis restantes continuam aproveitando a altura disponível; não é necessário manter os KPIs ativos para obter encaixe.
+
+`summary.options.fontScalePercent` integra o JSON de apresentação e a mesma revisão. Documentos anteriores usam 100% na leitura, sem regravação nem migration. A opção funciona na raiz, prévia e `/monitor` React/clássico; não altera o zoom público nem as preferências de áudio. A altura dos KPIs acompanha o texto, podendo exigir a rolagem já prevista para composições sem espaço suficiente.
+
+### Escala geral existente
+
 Em `/admin/configuracoes`, a seção **Leitura no telão** oferece **100%, 110%, 120% e 125%**, com **110% como padrão**. A opção é compartilhada pelas telas salvas e pelos dispositivos. “Restaurar tamanho padrão” volta o rascunho para 110%; **Salvar leitura do telão** grava tamanho e inatividade no PostgreSQL com proteção de revisão. Não utiliza localStorage.
 
 O botão do bloco preserva as configurações já confirmadas de telas/reprodução e não grava nem descarta rascunhos de outras seções, mesmo quando estiverem inválidos. A revisão devolvida vira a base do próximo salvamento; “Cancelar alterações” restaura também as opções do telão que acabaram de ser confirmadas. Falha/conflito aparece no bloco e mantém o rascunho. O botão “Salvar apresentação” do rodapé continua salvando o formulário inteiro. Não há novo endpoint ou persistência paralela.

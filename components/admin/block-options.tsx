@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowDown, ArrowUp } from "lucide-react";
-import { defaultIndicators, effectiveOptions, indicatorKeys, type IndicatorKey, type PresentationBlock } from "@/lib/config/presentation";
+import { defaultIndicators, effectiveOptions, indicatorKeys, kpiFontScaleOptions, type IndicatorKey, type PresentationBlock } from "@/lib/config/presentation";
 import {
   availabilityCardKinds, formatAvailabilityCardRef, parseAvailabilityCardRef,
   type AvailabilityCardKind,
@@ -80,7 +80,7 @@ export function BlockOptionsEditor({ block, hosts, onChange, availabilityCatalog
   const set = (key: string, value: string | number | boolean | string[] | number[]) => onChange({ ...options, [key]: value });
   const checkList = (key: string, values: (string | number)[], names?: string[]) => <div className="admin-checks">{values.map((value, index) => <Check key={value} label={names?.[index] ?? labels[value] ?? String(value)}><input type="checkbox" checked={(options[key] as (string | number)[]).includes(value)} onChange={event => { const selected = options[key] as (string | number)[]; set(key, (event.target.checked ? [...selected, value] : selected.filter(item => item !== value)) as string[] | number[]); }} /></Check>)}</div>;
   if (block.type === "summary") {
-    return <IndicatorEditor selected={(options.indicators as IndicatorKey[]) ?? [...defaultIndicators]} onChange={next => set("indicators", next)} />;
+    return <><Field label="Tamanho dos textos dos KPIs" hint="Aumenta somente números, títulos e legendas deste bloco. Salve em Salvar apresentação." action={<Button type="button" onClick={() => set("fontScalePercent", 100)}>Restaurar textos dos KPIs</Button>}><select value={Number(options.fontScalePercent ?? 100)} onChange={event => set("fontScalePercent", Number(event.target.value))}>{kpiFontScaleOptions.map(value => <option key={value} value={value}>{value}%{value === 100 ? " · padrão" : ""}</option>)}</select></Field><IndicatorEditor selected={(options.indicators as IndicatorKey[]) ?? [...defaultIndicators]} onChange={next => set("indicators", next)} /></>;
   }
   if (block.type === "resource_card") return <p className="admin-muted">Métricas e estados seguem as preferências salvas do recurso.</p>;
   if (block.type === "storage_summary") {

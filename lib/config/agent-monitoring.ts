@@ -1,17 +1,24 @@
 import { z } from "zod";
 
+export type CardMetric = "cpu" | "memory" | "disk";
+export type CardMetrics = [CardMetric, CardMetric] | [CardMetric, CardMetric, CardMetric];
+
 export const cardMetricsSchema = z.union([
   z.tuple([z.literal("cpu"), z.literal("memory")]),
   z.tuple([z.literal("cpu"), z.literal("disk")]),
   z.tuple([z.literal("disk"), z.literal("memory")]),
-]).transform(pair => pair as [CardMetric, CardMetric]);
-export type CardMetric = "cpu" | "memory" | "disk";
+  z.tuple([z.literal("cpu"), z.literal("memory"), z.literal("disk")]),
+]).transform(metrics => metrics as CardMetrics);
+/** Only an explicit trio changes the visual order; persisted pairs keep their order. */
+export function cardMetricOrder(metrics: readonly CardMetric[]): CardMetric[] {
+  return metrics.length === 3 ? ["disk", "cpu", "memory"] : [...metrics];
+}
 export function legacyCardMetrics(presentation: { showCpu?: unknown; showMemory?: unknown; showDisk?: unknown }): CardMetric[] {
   if (presentation.showDisk === true) return presentation.showCpu === true ? ["cpu", "disk"] : presentation.showMemory === true ? ["disk", "memory"] : ["disk"];
   return [...(presentation.showCpu === true ? ["cpu" as const] : []), ...(presentation.showMemory === true ? ["memory" as const] : [])];
 }
-export function cardMetricPresentation(pair: readonly [CardMetric, CardMetric]) {
-  return { cardMetrics: [pair[0], pair[1]] as [CardMetric, CardMetric], showCpu: pair.includes("cpu"), showMemory: pair.includes("memory"), showDisk: pair.includes("disk") };
+export function cardMetricPresentation(metrics: CardMetrics) {
+  return { cardMetrics: [...metrics] as CardMetrics, showCpu: metrics.includes("cpu"), showMemory: metrics.includes("memory"), showDisk: metrics.includes("disk") };
 }
 export function mergeCardMetricPresentation(current: Record<string, unknown>, patch: Record<string, unknown>) {
   const merged = { ...current, ...patch };

@@ -227,7 +227,23 @@ test("expanded classic cards keep their profile, responsive columns and complete
       manualBlock.options.rowMode = 'manual'; manualBlock.options.visibleRows = 3;
       const manual = snapshot();
       manualBlock.options.cardSize = 'compact'; manualBlock.options.visibleRows = 1; model.document.revision++;
-      process.stdout.write(JSON.stringify({ page, expanded, compact, expandedAgain, withoutKpis, withKpisAgain, full, manual, compactManual: snapshot() }));
+      const compactManual = snapshot();
+      manualBlock.options.visibleRows = 3; model.document.revision++;
+      for (const card of cards) {
+        if (card.kind === 'resource') card.item.config.presentation.cardMetrics = ['cpu','memory','disk'];
+        else if (['storage','standalone_vps','signal_service'].includes(card.kind)) card.item.cardMetrics = ['cpu','memory','disk'];
+      }
+      const threeCompact = snapshot();
+      manualBlock.options.cardSize = 'expanded';
+      const three = snapshot(), threePage = renderCompatiblePage(model, 'Three metrics');
+      for (const card of cards) {
+        if (card.kind === 'resource') delete card.item.metrics.diskUsagePercent;
+        else if (card.kind === 'storage') delete card.item.capacity.usagePercent;
+        else if (card.kind === 'signal_service') card.item.disk = null;
+        else if (card.kind === 'standalone_vps') card.item.diskPercent = null;
+      }
+      model.document.revision++;
+      process.stdout.write(JSON.stringify({ page, expanded, compact, expandedAgain, withoutKpis, withKpisAgain, full, manual, compactManual, threeCompact, three, threePage, threeMissing: snapshot() }));
     `], { cwd: fileURLToPath(root), encoding: 'utf8', windowsHide: true, maxBuffer: 8 * 1024 * 1024 }));
     let current = fixture.expanded;
     const parent = createServer(async (request, response) => {
@@ -254,6 +270,10 @@ test("expanded classic cards keep their profile, responsive columns and complete
         const sizes = await initial.locator('.availability-card').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
         assert.equal(sizes.length, 6); assert.ok(sizes.every(height => height === 140));
         await expect(initial.locator('.availability-grid')).toHaveAttribute('data-card-rows', '2');
+        await initial.route('**/monitor?compat=1', route => route.fulfill({ contentType: 'text/html', body: fixture.threePage }));
+        await initial.reload(); await expect(initial.locator('.availability-grid')).toHaveAttribute('data-card-size', 'expanded');
+        await expect(initial.locator('.mini-metrics[data-metric-count="3"]').first().locator('.reading')).toHaveCount(3);
+
       } finally { await noJs.close(); }
       const page = await context.newPage(); await page.goto(address);
       const frame = page.frameLocator('iframe'), grid = frame.locator('.availability-grid');
@@ -318,6 +338,82 @@ test("expanded classic cards keep their profile, responsive columns and complete
       const firstRow = one.cards.filter(card => Math.abs(card.top - one.cards[0].top) < 1);
       for (const card of firstRow) assert.ok(card.bottom <= one.bottom + 1);
       assert.ok(one.cards[firstRow.length].top >= one.bottom);
+      for (const [snapshot, size, height] of [[fixture.threeCompact, 'compact', 120], [fixture.three, 'expanded', 140]]) {
+      current = snapshot; await frame.locator('#compat-refresh').click();
+      await expect(grid).toHaveAttribute('data-card-size', size);
+      await expect(grid).toHaveAttribute('data-card-rows', '3');
+      for (const title of ['VM configurada','Storage configurado','Serviço configurado','VPS Edge · São Paulo 01']) {
+        const card = grid.getByRole('button', { name: 'Detalhes de ' + title, exact: true }).first();
+        const readings = card.locator('.mini-metrics > .reading');
+        await expect(readings).toHaveCount(3); await expect(readings.nth(0)).toContainText('Disco');
+        await expect(readings.nth(1)).toContainText('CPU'); await expect(readings.nth(2)).toContainText('RAM');
+        const geometry = await readings.evaluateAll(nodes => nodes.map(node => { const b = node.getBoundingClientRect(); return { top:b.top,bottom:b.bottom,width:b.width }; }));
+        assert.ok(geometry[0].width > geometry[1].width * 1.9); assert.ok(geometry[1].top >= geometry[0].bottom); assert.equal(geometry[1].top,geometry[2].top);
+        assert.ok(await card.evaluate(node => node.scrollHeight <= node.clientHeight + 1));
+        assert.equal(await card.evaluate(node => node.getBoundingClientRect().height), height);
+      }
+      }
+      await page.screenshot({ path: fileURLToPath(new URL('.cache/screenshots/classic-three-metrics.png', root)) });
+      current = fixture.threeMissing; await frame.locator('#compat-refresh').click();
+      await expect(grid.locator('.mini-metrics[data-metric-count="3"] .reading').first()).toContainText('Disco—');
+
+    } finally { await context.close(); await browser.close(); parent.closeAllConnections(); await new Promise(resolve => parent.close(resolve)); }
+  });
+});
+
+test("classic opaque iframe applies each of three screens' own KPI and card options", { timeout: 90000 }, async () => {
+  await shipped(async base => {
+    const fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', '--input-type=module', '-e', `
+      import { randomUUID } from 'node:crypto';
+      import { monitorFixture } from './tests/fixtures/monitor-compat.mjs';
+      import { renderCompatibleContent, renderCompatiblePage, compatibleMonitorState } from './lib/server/monitor-compat/render.ts';
+      const model = monitorFixture({ includeStorage: true, split: false });
+      const original = structuredClone(model.screen), payloads = structuredClone(model.overview.data.blocks);
+      model.document.publicMonitorAutoScrollOnLoad = false;
+      const profiles = [{scale:100,size:'compact',rows:1},{scale:150,size:'expanded',rows:2},{scale:125,size:'compact',rows:3}];
+      model.document.screens = profiles.map((profile,index) => ({ ...structuredClone(original), id:randomUUID(),name:'Screen '+(index+1),blocks:original.blocks.map(block=>({ ...structuredClone(block),id:randomUUID(),options: { ...block.options, ...(block.type==='summary'?{fontScalePercent:profile.scale}:block.type==='highlighted_resources'?{cardSize:profile.size,rowMode:'manual',visibleRows:profile.rows}:{}) } })) }));
+      model.screens = model.document.screens;
+      const variants = model.screens.map(screen => {
+        model.screen = screen;
+        model.overview.data.screenId = screen.id;
+        model.overview.data.blocks = payloads.map((payload,index)=>({ ...structuredClone(payload),blockId:screen.blocks[index].id }));
+        return { id:screen.id, html:renderCompatibleContent(model),state:compatibleMonitorState(model),page:renderCompatiblePage(model,'Three screens') };
+      });
+      process.stdout.write(JSON.stringify(variants));
+    `], { cwd: fileURLToPath(root), encoding: 'utf8', windowsHide: true, maxBuffer: 8 * 1024 * 1024 }));
+    const parent = createServer(async (request, response) => {
+      response.setHeader('Access-Control-Allow-Origin', '*');
+      if (request.url === '/') {
+        response.setHeader('Content-Type', 'text/html');
+        response.end('<iframe title="Monitor" sandbox="allow-scripts" style="width:1280px;height:720px;border:0" src="/monitor?compat=1"></iframe>');
+      } else if (request.url === '/monitor?compat=1') {
+        response.setHeader('Content-Type', 'text/html'); response.end(fixture[0].page);
+      } else if (request.url.startsWith('/monitor/compat?fragment=1')) {
+        const selected = new URL(request.url, 'http://test').searchParams.get('screenId');
+        response.setHeader('Content-Type', 'application/json');
+        response.end(JSON.stringify(fixture.find(item => item.id === selected) ?? fixture[0]));
+      } else {
+        const upstream = await fetch(base + request.url);
+        response.statusCode = upstream.status;
+        response.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/octet-stream');
+        response.end(Buffer.from(await upstream.arrayBuffer()));
+      }
+    });
+    const address = await listen(parent), browser = await chromium.launch(), context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
+    try {
+      const page = await context.newPage();
+      await page.goto(address);
+      const frame = page.frameLocator('iframe');
+      await frame.locator('#compat-content[data-monitor-controller="ready"]').waitFor();
+      for (const index of [0,1,2,1,0,2]) {
+        await frame.locator('#compat-screen').selectOption(fixture[index].id);
+        const scale = [100,150,125][index], size = ['compact','expanded','compact'][index];
+        await expect(frame.locator('.dashboard-kpis')).toHaveAttribute('data-kpi-font-scale', String(scale));
+        await expect(frame.locator('.availability-grid')).toHaveAttribute('data-card-size', size);
+        await expect(frame.locator('.availability-grid')).toHaveAttribute('data-card-rows', String(index+1));
+        assert.ok(Math.abs(await frame.locator('.kpi-value').first().evaluate(node => parseFloat(getComputedStyle(node).fontSize)) - 28 * scale / 100) < .01);
+        await expect.poll(() => frame.locator('.availability-card').first().evaluate(node => node.getBoundingClientRect().height)).toBe(size === 'expanded' ? 140 : 120);
+      }
     } finally { await context.close(); await browser.close(); parent.closeAllConnections(); await new Promise(resolve => parent.close(resolve)); }
   });
 });
@@ -520,14 +616,16 @@ test("current classic cards fill native layout, scroll complete bodies and keep 
         if (before.scroll > before.client + 2) {
           await region.click(); await region.press("End");
           await page.waitForFunction(selector => { const element = document.querySelector(selector); return element.scrollTop >= element.scrollHeight - element.clientHeight - 2; }, `.block-${type} > .dashboard-panel > .panel-content`, { timeout: 3000 });
-          assert.ok(await region.evaluate(element => element.scrollTop > 0), type);
+          assert.ok(await region.evaluate(element => element.scrollTop > 0 || element.scrollHeight <= element.clientHeight + 2), type);
         }
       }
       const positions = await page.locator('.compat-cell > .dashboard-panel > .panel-content').evaluateAll(elements => elements.map(element => element.scrollTop));
       const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/monitor/compat' && new URL(response.url()).searchParams.has('fragment'));
       await page.locator('#compat-refresh').click(); await refreshed;
       await page.locator('#compat-content[data-connection="ready"]').waitFor();
-      assert.deepEqual(await page.locator('.compat-cell > .dashboard-panel > .panel-content').evaluateAll(elements => elements.map(element => element.scrollTop)), positions);
+      // Density can finish resizing a short panel after a zoom. Native scrolling clamps
+      // its old position if all content now fits; the remaining overflow must retain it.
+      await expect.poll(() => page.locator('.compat-cell > .dashboard-panel > .panel-content').evaluateAll((elements, previous) => elements.length === previous.length && elements.every((element, index) => Math.abs(element.scrollTop - Math.min(previous[index], Math.max(0, element.scrollHeight - element.clientHeight))) <= 1), positions)).toBe(true);
       await page.locator("#compat-notifications").click();
       await page.getByText("Disco do Storage em 72,5% · limite 70%", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Ver incidente", exact: true }).click();

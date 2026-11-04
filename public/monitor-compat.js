@@ -31,6 +31,7 @@
         if (element.className.indexOf('metric-old') < 0) element.className += ' metric-old';
         if (element.title.indexOf('Dado desatualizado') !== 0) element.title = 'Dado desatualizado · ' + (element.title || 'Confira a última leitura.');
         each(element.querySelectorAll('.metric-meter i'), function (bar) { bar.style.width = '0%'; });
+        if (element.hasAttribute('data-current-only')) text(element.querySelector('strong'), '—');
       }
     });
   }

@@ -272,7 +272,7 @@ export function SignalServicesPanel() {
             </Button>}
           </div>
           <p className="admin-muted">Máquinas do inventário associadas a este Signal (manager, workers etc.).</p>
-          {target.links.length ? <ul className="signal-linked-grid">{target.links.map(link => {
+          {target.links.length ? <ul className="signal-linked-grid availability-group" data-card-size={target.links.some(link => link.cardMetrics?.length === 3) ? "expanded" : "compact"}>{target.links.map(link => {
             const vm = agentVms.find(item => item.parentHostKey === (link.parentHostKey ?? link.hostKey) && item.vmKey === link.vmKey);
             return <li key={link.id} className="signal-linked-card-wrap">
               <LinkedVmCard link={link} fallbackName={vm?.name} />
@@ -333,7 +333,7 @@ function LinkedVmCard({ link, fallbackName }: { link: LinkItem; fallbackName?: s
   const cpu = link.cpuUsagePercent;
   const ram = link.memoryUsagePercent;
   const footerRight = link.inventoryStatus === "missing" ? "Sem leitura" : link.inventoryStatus === "stale" ? "Desatualizado" : ready ? "Inventário" : "Sem leitura";
-  return <article className="availability-card signal-linked-card" aria-label={`${name}: ${status.label}`}>
+  return <article className="availability-card signal-linked-card" data-metric-count={link.cardMetrics?.length} aria-label={`${name}: ${status.label}`}>
     <AvailabilityCardHeader name={name} label={status.label} tone={status.tone} />
     <span className="availability-description">{role}</span>
     <CardReadings pair={link.cardMetrics ?? ["cpu", "memory"]} values={{ cpu: ready ? cpu ?? null : null, memory: ready ? ram ?? null : null, disk: ready ? link.diskUsagePercent ?? null : null }} />

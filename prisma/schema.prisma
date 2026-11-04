@@ -99,6 +99,7 @@ model ExternalServiceSample {
 }
 
 model StandaloneVps {
+  cardMetrics Json? @map("card_metrics")
   id                String    @id @default(uuid()) @db.Uuid
   name              String    @db.VarChar(120)
   provider          String?   @db.VarChar(120)
@@ -245,6 +246,7 @@ model VmTemplateConfig {
 }
 
 model StorageConfig {
+  cardMetrics Json @default("[\"cpu\",\"disk\"]") @map("card_metrics")
   id                          String   @id @default(uuid()) @db.Uuid
   storageKey                  String   @unique @map("storage_key") @db.VarChar(40)
   zabbixHostId                 String   @unique @map("zabbix_host_id") @db.VarChar(64)

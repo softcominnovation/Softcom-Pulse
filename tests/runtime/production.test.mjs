@@ -11,11 +11,12 @@ import { zabbixFixture } from "../fixtures/zabbix.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import pg from "pg";
 import { createClient } from "redis";
+import { pulseAlertTabIcon, pulseTabIcon } from "../../lib/notifications/tab-icon.ts";
 
 const root = new URL("../../", import.meta.url);
 const standalone = new URL(".next/standalone/", root);
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= fileURLToPath(new URL(".cache/ms-playwright", root));
-const { chromium } = await import("@playwright/test");
+const { chromium, expect } = await import("@playwright/test");
 const authKey = randomBytes(32).toString("base64");
 const privateCanary = "pulse-private-runtime-canary-734021";
 before(async () => {
@@ -231,6 +232,44 @@ test("one standalone build accepts different public runtime settings", { timeout
     });
   } finally { await browser.close(); }
 });
+test("notification favicon preserves React metadata through background and production client navigation", { timeout: 60000 }, async () => {
+  const upstream = await startAuthUpstream(), browser = await chromium.launch();
+  try {
+    await withServer({ API_BASE_URL: upstream.url, PULSE_DEMO_MODE: "1", PULSE_PUBLIC_HOSTS: "127.0.0.1" }, async base => {
+      const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+      try {
+        const page = await context.newPage(), errors = [];
+        page.on("pageerror", error => errors.push(error.stack ?? error.message));
+        await page.route("**/api/**notifications**", route => {
+          const counts = { unreadCount: 1, activeCount: 1 }, runtime = { enabled: false, deliveryRevision: "1" }, serverTime = new Date().toISOString();
+          return route.fulfill({ json: new URL(route.request().url()).pathname.endsWith("/changes")
+            ? { changes: [], nextCursor: "1", hasMore: false, counts, runtime, serverTime }
+            : { events: [], incidents: [], counts, sources: [], syncCursor: "1", nextPageCursor: null, runtime, serverTime } });
+        });
+        await page.goto(base + "/login");
+        await page.getByLabel("E-mail", { exact: true }).fill("standalone@example.test");
+        await page.getByLabel("Senha", { exact: true }).fill("test-password");
+        await page.getByRole("button", { name: "Entrar", exact: true }).click();
+        await page.waitForURL(base + "/");
+        for (const surface of ["/", "/monitor?compat=0"]) {
+          await page.goto(base + surface);
+          await expect(page.getByRole("button", { name: /^Notificações: 1 não lidas/ })).toBeVisible();
+          const icons = await page.locator('link[rel="icon"]').elementHandles();
+          assert.ok(icons.length > 0);
+          for (const hidden of [true, false, true, false]) {
+            await page.evaluate(hidden => { Object.defineProperty(document, "hidden", { configurable: true, value: hidden }); document.dispatchEvent(new Event("visibilitychange")); }, hidden);
+            await expect(page.locator('link[rel="icon"]').first()).toHaveAttribute("href", hidden ? pulseAlertTabIcon : pulseTabIcon);
+          }
+          for (const icon of icons) assert.equal(await icon.evaluate(node => node.isConnected), true);
+          for (const destination of ["Serviços", "Visão geral", "Infraestrutura", "Visão geral"]) await page.getByRole("link", { name: destination, exact: true }).click();
+          await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar.", exact: true })).toBeVisible();
+          assert.deepEqual(errors, []);
+        }
+      } finally { await context.close(); }
+    });
+  } finally { await browser.close(); await upstream.close(); }
+});
+
 test("real HTTP health failure distinguishes database and cache without leaking private configuration", { timeout: 30000 }, async () => {
   const unavailableDb = new URL(process.env.DATABASE_URL);
   unavailableDb.port = "1";

@@ -7,6 +7,33 @@ import { publicStorage } from "../../lib/storage/presentation";
 import { enterNativeFullscreen, exitNativeFullscreen } from "../fixtures/fullscreen";
 import { notificationFixture } from "../fixtures/notifications";
 
+for (const width of [390, 1366]) test(`Storage minicard metrics and notification forms preserve each other's configuration at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  const state = await storageUiFixture(page), notifications = await notificationFixture(page);
+  const config = state.configs[0];
+  Object.assign(config, { diskWarningPercent: 70, filesystemKeys: state.items[0].capacity.filesystemKeys });
+  notifications.targets.push({ ref: `storage:${config.id}`, label: config.displayName!, critical: true, enabled: true });
+  await signIn(page); await page.goto("/servicos#storages");
+  const panel = page.locator("#storages");
+  await panel.getByRole("button", { name: /Configurar Storage/ }).click();
+  const editor = page.getByRole("dialog", { name: "Configuração de Storage", exact: true });
+  await expect(editor.getByLabel("Métricas do minicard", { exact: true })).toHaveValue("cpu,disk");
+  await editor.getByLabel("Métricas do minicard", { exact: true }).selectOption("cpu,memory,disk");
+  await editor.getByRole("button", { name: "Salvar Storage", exact: true }).click(); await expect(editor).toHaveCount(0);
+  expect(state.writes.at(-1)!.cardMetrics).toEqual(["cpu", "memory", "disk"]); expect(config.diskWarningPercent).toBe(70);
+  await panel.getByRole("button", { name: "Notificações deste serviço", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Notificações do serviço", exact: true });
+  await dialog.getByLabel("Limite de disco (%)", { exact: true }).fill("75");
+  await dialog.getByRole("button", { name: "Salvar alerta de disco", exact: true }).click();
+  await expect.poll(() => state.writes.at(-1)?.diskWarningPercent).toBe(75);
+  await expect(dialog.getByLabel("Limite de disco (%)", { exact: true })).toHaveValue("75");
+  expect(state.writes.at(-1)!.cardMetrics).toEqual(["cpu", "memory", "disk"]); expect(config.diskWarningPercent).toBe(75);
+  await page.keyboard.press("Escape");
+  await panel.getByRole("button", { name: /Configurar Storage/ }).click();
+  await expect(editor.getByLabel("Métricas do minicard", { exact: true })).toHaveValue("cpu,memory,disk");
+  expect(await editor.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+});
+
 test("Storage Services edits real preferences, keeps drafts on conflict/poll and confirms reset", async ({ page }) => {
   const state = await storageUiFixture(page);
   await signIn(page); await page.goto("/servicos#storages");

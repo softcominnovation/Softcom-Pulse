@@ -49,6 +49,46 @@ async function geometry(grid: Locator) {
   });
 }
 
+for (const size of ["compact", "expanded"] as const) for (const split of [false, true]) for (const storage of [false, true]) for (const route of ["/", "/monitor"]) for (const zoom of [70, 100]) test(`explicit trio respects ${size} in a mixed grid and manual rows: ${route} at ${zoom}%, split=${split}, Storage=${storage}`, async ({ page }, testInfo) => {
+  const { state, highlights, panel, count } = await fixture(page, split, storage);
+  Object.assign(highlights.options!, { cardSize: size, rowMode: "manual", visibleRows: 2 });
+  state.document.dashboardZoomPercent = zoom; state.document.publicMonitorZoomPercent = zoom;
+  const tv = route === "/" && zoom === 70 && split && !storage;
+  if (tv) { state.document.defaultTvMode = true; state.document.displayScalePercent = 125; }
+  for (const card of panel.cards) {
+    if (card.kind === "resource") card.item.config.presentation.cardMetrics = ["cpu", "memory", "disk"];
+    else if (card.kind === "storage" || card.kind === "signal_service" || card.kind === "standalone_vps") {
+      card.item.cardMetrics = ["cpu", "memory", "disk"];
+      if (card.kind === "standalone_vps") Object.assign(card.item, { monitorConfigured: true, monitorPaused: false, monitorState: "up", checkedAt: new Date().toISOString(), cpuPercent: 0, memoryPercent: 44, diskPercent: 63 });
+    }
+  }
+  // count() clones its original pool; expand the live set explicitly for this test.
+  const original = structuredClone(panel.cards); count(13);
+  panel.cards.forEach((card, index) => {
+    const source = original[index % original.length];
+    if (card.kind === "resource" && source.kind === "resource") card.item.config.presentation.cardMetrics = source.item.config.presentation.cardMetrics;
+    else if ((card.kind === "storage" || card.kind === "signal_service" || card.kind === "standalone_vps") && (source.kind === "storage" || source.kind === "signal_service" || source.kind === "standalone_vps")) Object.assign(card.item, { cardMetrics: source.item.cardMetrics, ...(card.kind === "standalone_vps" && source.kind === "standalone_vps" ? { monitorConfigured: source.item.monitorConfigured, monitorPaused: source.item.monitorPaused, monitorState: source.item.monitorState, checkedAt: source.item.checkedAt, cpuPercent: source.item.cpuPercent, memoryPercent: source.item.memoryPercent, diskPercent: source.item.diskPercent } : {}) });
+  });
+  await page.setViewportSize({ width: 1920, height: 1440 }); await signIn(page); await page.goto(route);
+  const grid = page.locator(".availability-grid"), panelElement = page.locator(".availability-panel");
+  await expect(panelElement).toHaveAttribute("data-card-size", size); await expect(panelElement).toHaveAttribute("data-service-rows", "2");
+  await expect(grid.locator(".availability-card")).toHaveCount(13);
+  const expected = (size === "expanded" ? 140 * (tv ? 1.25 : 1) : 120) * zoom / 100;
+  const all = await geometry(grid);
+  for (const card of all.cards) { expect(card.height).toBeCloseTo(expected, 0); expect(card.fits).toBe(true); expect(card.footer).toBe(true); }
+  for (const card of await grid.locator('.availability-card[data-metric-count="3"]').all()) expect(await card.locator('.availability-description').evaluate((node, zoom) => node.getBoundingClientRect().height >= parseFloat(getComputedStyle(node).lineHeight) * zoom / 100 - 1, zoom)).toBe(true);
+  const vps = grid.locator('.vps-card-highlight').first();
+  await expect(vps.locator('.availability-reading').nth(0)).toContainText('Disco63%'); await expect(vps.locator('.availability-reading').nth(1)).toContainText('CPU0%');
+  const trio = grid.locator('.availability-card[data-metric-count="3"]').first();
+  const metrics = trio.locator(".availability-reading"); await expect(metrics).toHaveCount(3);
+  await expect(metrics.first()).toContainText("Disco"); await expect(metrics.nth(1)).toContainText("CPU"); await expect(metrics.nth(2)).toContainText("RAM");
+  const shape = await metrics.evaluateAll(nodes => nodes.map(node => { const box = node.getBoundingClientRect(); return { top: box.top, bottom: box.bottom, width: box.width }; }));
+  expect(shape[0].width).toBeGreaterThan(shape[1].width * 1.9); expect(shape[1].top).toBeGreaterThan(shape[0].bottom); expect(shape[1].top).toBe(shape[2].top);
+  await expect(page.locator(".dashboard-footer")).toBeInViewport();
+  expect(highlights.options!.cardSize).toBe(size); expect(highlights.options!.visibleRows).toBe(2); expect(state.writes).toHaveLength(0);
+  if (route === "/" && zoom === 100 && split && storage) await page.screenshot({ path: testInfo.outputPath("mixed-three-metrics.png"), fullPage: true });
+});
+
 for (const split of [false, true]) for (const storage of [false, true]) for (const hasKpis of [false, true]) test(`expanded availability exposes complete rows before scrolling, split=${split}, Storage=${storage}, KPIs=${hasKpis}`, async ({ page }, testInfo) => {
   const { count, state } = await fixture(page, split, storage);
   state.document.showStatusBanner = false;

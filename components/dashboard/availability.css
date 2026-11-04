@@ -228,27 +228,46 @@
   max-height: calc(var(--service-rows) * var(--availability-row-step));
   height: auto;
 }
-.availability-panel[data-card-size="expanded"] .availability-card {
-  height: var(--availability-card-height); min-height: var(--availability-card-height); max-height: var(--availability-card-height);
-  max-width: none; padding: calc(12px * var(--dashboard-scale, 1)); gap: calc(4px * var(--dashboard-scale, 1));
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) {
+  height: var(--availability-card-height, calc(140px * var(--dashboard-scale, 1))); min-height: var(--availability-card-height, calc(140px * var(--dashboard-scale, 1))); max-height: var(--availability-card-height, calc(140px * var(--dashboard-scale, 1)));
+  padding: calc(12px * var(--dashboard-scale, 1)); gap: calc(4px * var(--dashboard-scale, 1));
 }
-.availability-panel[data-card-size="expanded"] .availability-state,
-.availability-panel[data-card-size="expanded"] .availability-description,
-.availability-panel[data-card-size="expanded"] .availability-footer,
-.availability-panel[data-card-size="expanded"] .availability-reading > span:first-child {
+.availability-panel[data-card-size="expanded"] .availability-card,
+.availability-group[data-card-size="expanded"] .availability-card { max-width: none; }
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-state,
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-description,
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-footer,
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-reading > span:first-child {
   font-size: calc(11px * var(--dashboard-scale, 1)); line-height: calc(14px * var(--dashboard-scale, 1));
 }
-.availability-panel[data-card-size="expanded"] .availability-name { font-size: calc(15px * var(--dashboard-scale, 1)); line-height: calc(20px * var(--dashboard-scale, 1)); }
-.availability-panel[data-card-size="expanded"] .availability-reading strong,
-.availability-panel[data-card-size="expanded"] .availability-footer strong { font-size: calc(11px * var(--dashboard-scale, 1)); line-height: calc(14px * var(--dashboard-scale, 1)); }
-.availability-panel[data-card-size="expanded"] .availability-readings { gap: calc(12px * var(--dashboard-scale, 1)); }
-.availability-panel[data-card-size="expanded"] .availability-meter { height: calc(4px * var(--dashboard-scale, 1)); margin-top: calc(3px * var(--dashboard-scale, 1)); }
-.availability-panel[data-card-size="expanded"] .availability-state .status-dot { width: calc(6px * var(--dashboard-scale, 1)); height: calc(6px * var(--dashboard-scale, 1)); }
-.availability-panel[data-card-size="expanded"] .availability-state { padding: calc(2px * var(--dashboard-scale, 1)) calc(6px * var(--dashboard-scale, 1)); gap: calc(5px * var(--dashboard-scale, 1)); }
-.availability-panel[data-card-size="expanded"] .availability-footer { gap: calc(6px * var(--dashboard-scale, 1)); padding-top: calc(5px * var(--dashboard-scale, 1)); margin-top: calc(3px * var(--dashboard-scale, 1)); }
-.availability-panel[data-card-size="expanded"] .probe-card-uptime { gap: calc(7px * var(--dashboard-scale, 1)); }
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-name { font-size: calc(15px * var(--dashboard-scale, 1)); line-height: calc(20px * var(--dashboard-scale, 1)); }
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-reading strong,
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-footer strong { font-size: calc(11px * var(--dashboard-scale, 1)); line-height: calc(14px * var(--dashboard-scale, 1)); }
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-readings { gap: calc(12px * var(--dashboard-scale, 1)); }
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-meter { height: calc(4px * var(--dashboard-scale, 1)); margin-top: calc(3px * var(--dashboard-scale, 1)); }
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-state .status-dot { width: calc(6px * var(--dashboard-scale, 1)); height: calc(6px * var(--dashboard-scale, 1)); }
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-state { padding: calc(2px * var(--dashboard-scale, 1)) calc(6px * var(--dashboard-scale, 1)); gap: calc(5px * var(--dashboard-scale, 1)); }
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .availability-footer { gap: calc(6px * var(--dashboard-scale, 1)); padding-top: calc(5px * var(--dashboard-scale, 1)); margin-top: calc(3px * var(--dashboard-scale, 1)); }
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .probe-card-uptime { gap: calc(7px * var(--dashboard-scale, 1)); }
 .availability-panel[data-card-size="expanded"] .probe-card .availability-footer { margin-top: 0; }
-.availability-panel[data-card-size="expanded"] .uptime-strip { height: calc(20px * var(--dashboard-scale, 1)); }
+:is(.availability-panel[data-card-size="expanded"] .availability-card, .availability-group[data-card-size="expanded"] .availability-card, .availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card))) .uptime-strip { height: calc(20px * var(--dashboard-scale, 1)); }
 @media (min-width: 1201px) and (min-height: 740px) and (max-height: 900px) {
   .dashboard.balanced .dashboard-blocks:not(.overview-split) .availability-panel[data-card-size="expanded"] .availability-grid { max-height: calc(var(--service-rows) * var(--availability-row-step)); }
 }
+
+/* Disk takes a full row only in the trio; the containing panel owns the size. */
+.availability-readings[data-metric-count="3"] > :first-child { grid-column: 1 / -1; }
+.availability-card[data-metric-count="3"],
+:is(.availability-panel, .availability-group)[data-card-size="expanded"] .availability-card[data-metric-count="3"] {
+  padding: calc(8px * var(--dashboard-scale, 1)) calc(12px * var(--dashboard-scale, 1));
+  gap: calc(3px * var(--dashboard-scale, 1));
+}
+.availability-card[data-metric-count="3"] .availability-description { flex-shrink: 0; }
+.availability-card[data-metric-count="3"] .availability-readings[data-metric-count="3"] { row-gap: calc(3px * var(--dashboard-scale, 1)); }
+.availability-panel[data-card-size="compact"] .availability-card[data-metric-count="3"] { padding: 8px 12px; gap: 3px; }
+.availability-panel[data-card-size="compact"] .availability-card[data-metric-count="3"] .availability-readings { row-gap: 3px; }
+.availability-card[data-metric-count="3"] .availability-footer,
+:is(.availability-panel, .availability-group)[data-card-size="expanded"] .availability-card[data-metric-count="3"] .availability-footer { margin-top: 0; }
+
+.availability-card[data-metric-count="3"]:not(:where(.availability-panel .availability-card)) { max-width: calc(260px * var(--dashboard-scale, 1)); }
+.availability-panel[data-card-size="expanded"] .availability-card[data-metric-count="3"], .availability-group[data-card-size="expanded"] .availability-card[data-metric-count="3"] { max-width: none; }

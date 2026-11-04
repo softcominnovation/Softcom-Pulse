@@ -48,6 +48,24 @@ async function signalDialogFixture(page: Page) {
   return state;
 }
 
+test("Signal cluster registration offers the explicit trio and preserves its VM disk meaning", async ({ page }) => {
+  const state = await signalDialogFixture(page); state.conflict = false;
+  await signIn(page); await page.goto("/servicos#signal");
+  const cluster = page.getByRole("region", { name: "Serviços do cluster", exact: true });
+  await cluster.getByRole("button", { name: "Adicionar serviço", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Adicionar serviço do cluster", exact: true });
+  await dialog.getByLabel("Nome", { exact: true }).fill("Trio database");
+  await dialog.getByLabel("Prefixo do serviço", { exact: true }).fill("stack_postgres");
+  await dialog.getByLabel("Métricas do novo minicard", { exact: true }).selectOption("cpu,memory,disk");
+  await dialog.getByRole("button", { name: "Adicionar", exact: true }).click(); await expect(dialog).toHaveCount(0);
+  expect(state.serviceWrites.at(-1)!.cardMetrics).toEqual(["cpu", "memory", "disk"]);
+  const card = cluster.locator(".signal-cluster-card");
+  await expect(card.locator(".availability-reading")).toHaveCount(3);
+  await expect(card.locator(".availability-reading").first()).toContainText("Disco da VM—");
+  await expect(cluster.getByLabel("Métricas do minicard", { exact: true })).toHaveValue("cpu,memory,disk");
+  expect((await card.boundingBox())!.height).toBe(140);
+});
+
 for (const width of [390, 1366]) test(`Signal cluster registration modal preserves drafts, candidates and revisions at ${width}px`, async ({ page }) => {
   const height = width > 700 ? 768 : 844;
   await page.setViewportSize({ width, height });

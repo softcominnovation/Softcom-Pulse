@@ -228,3 +228,11 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
 .notification-tabs { display: flex; flex-wrap: wrap; margin-bottom: 12px; }
 .notification-tabs button { margin: 0 6px 6px 0; }
 .notification-error { color: #ed5158; }
+
+/* Flex wrapping is supported by the legacy WebView; do not rely on modern Grid/gap. */
+.availability-content .mini-metrics { display: flex; flex-wrap: wrap; border-spacing: 0; }
+.availability-content .mini-metrics > .reading { display: block; width: 50%; padding: 0 3px 3px; }
+.availability-content .mini-metrics > .reading > span:first-child { float: left; margin-bottom: 0; }
+.availability-content .mini-metrics > .reading > strong { float: right; }
+.availability-content .mini-metrics .metric-meter { clear: both; }
+.availability-content .mini-metrics[data-metric-count="3"] > .reading:first-child { width: 100%; }

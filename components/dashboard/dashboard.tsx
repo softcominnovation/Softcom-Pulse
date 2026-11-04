@@ -120,8 +120,10 @@ export function Dashboard({ initialTvMode, onPresentation, extraControls }: { in
         const renderBlock = (block: typeof enabled[number]) => {
           const payload = result?.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
           const width = displayBlockWidth(block, enabled, { split, wall });
+          // Keep layout and content options on the same active-screen configuration.
+          // The overview supplies evidence; omitted/older payload options must not reset a block.
           return <div className={`dashboard-block width-${width} block-${block.type}`} data-block-id={block.id} key={block.id}>
-            {payload ? <DashboardBlock block={payload} hasKpis={enabled.some(item => item.type === "summary")} availabilityDivided={isAvailabilityDivided(block, enabled, split, wall)} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
+            {payload ? <DashboardBlock block={{ ...payload, options: block.options }} hasKpis={enabled.some(item => item.type === "summary")} availabilityDivided={isAvailabilityDivided(block, enabled, split, wall)} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
           </div>;
         };
         return <div data-dashboard-content data-fit-rows={!hasStorage || undefined} style={!hasStorage ? { "--dashboard-grid-rows": dashboardGridRows(enabled, split, wall) } as CSSProperties : undefined} className={`dashboard-blocks${split ? " overview-split" : ""}${hasStorage ? " has-storage" : ""}`} aria-busy={overview.loading}>

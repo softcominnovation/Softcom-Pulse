@@ -186,8 +186,8 @@ test("Storage migration, revisioned preferences, isolated snapshots and authenti
     await assert.rejects(saveStorageConfig(key, { expectedRevision: 1, filesystemKeys: [volumes[0].key], diskWarningPercent: 70 }), error => error.code === "storage_capacity_unavailable");
     await publish(result.entries);
     const invalid = await storageSettingsPut(req(`settings/storages/${key}`, { expectedRevision: 1, filesystemKeys: volumes.map(item => item.key) }), context); assert.equal(invalid.status, 400);
-    const updated = await saveStorageConfig(key, { expectedRevision: 1, displayName: "Archive One", dashboardEnabled: true, filesystemKeys: volumes.map(item => item.key), independentVolumesConfirmed: true, diskWarningPercent: 70 }); assert.equal(updated.revision, 2); assert.equal(updated.diskWarningPercent, 70);
-    const legacy = await saveStorageConfig(key, { expectedRevision: 2, displayName: "Archive One", dashboardEnabled: true, filesystemKeys: updated.filesystemKeys, independentVolumesConfirmed: true }); assert.equal(legacy.diskWarningPercent, 70);
+    const updated = await saveStorageConfig(key, { expectedRevision: 1, displayName: "Archive One", dashboardEnabled: true, filesystemKeys: volumes.map(item => item.key), independentVolumesConfirmed: true, diskWarningPercent: 70, cardMetrics: ["cpu","memory","disk"] }); assert.deepEqual(updated.cardMetrics, ["cpu","memory","disk"]); assert.equal(updated.revision, 2); assert.equal(updated.diskWarningPercent, 70);
+    const legacy = await saveStorageConfig(key, { expectedRevision: 2, displayName: "Archive One", dashboardEnabled: true, filesystemKeys: updated.filesystemKeys, independentVolumesConfirmed: true }); assert.equal(legacy.diskWarningPercent, 70); assert.deepEqual(legacy.cardMetrics, ["cpu","memory","disk"]); assert.deepEqual((await readStorages()).data.items[0].cardMetrics, ["cpu","memory","disk"]);
     const p = (await getPresentation()).data, { revision, ...settings } = p;
     settings.schemaVersion = 2; settings.screens[0].blocks.push({ id: randomUUID(), type: "storage_summary", enabled: true, width: "wide", options: { storageConfigId: config.id, visibleRows: 3 } });
     await savePresentation({ expectedRevision: revision, settings });
@@ -212,7 +212,7 @@ test("Storage migration, revisioned preferences, isolated snapshots and authenti
     assert.equal((await readStorages()).data.orphans[0].resolution, "tag_missing");
     const reset = await saveStorageConfig(key, { expectedRevision: 3, diskWarningPercent: null }); assert.equal(reset.id, config.id); assert.equal(reset.revision, 4);
     const scopeAfter = await getPrisma().pulseSetting.findUnique({ where: { key: "monitoringScope" } }); assert.deepEqual(scopeAfter.value, scopeBefore.value);
-    const rows = await getDatabase().query("SELECT column_name FROM information_schema.columns WHERE table_name='storage_config'"); assert.ok(!rows.rows.some(row => /metric|availability|cpu|memory|tags/.test(row.column_name)));
+    const rows = await getDatabase().query("SELECT column_name FROM information_schema.columns WHERE table_name='storage_config'"); assert.ok(!rows.rows.some(row => row.column_name !== "card_metrics" && /metric|availability|cpu|memory|tags/.test(row.column_name)));
   } finally {
     if (previousEditors === undefined) delete process.env.PULSE_EDITOR_EMAILS; else process.env.PULSE_EDITOR_EMAILS = previousEditors;
     if (previousHosts === undefined) delete process.env.PULSE_PUBLIC_HOSTS; else process.env.PULSE_PUBLIC_HOSTS = previousHosts;

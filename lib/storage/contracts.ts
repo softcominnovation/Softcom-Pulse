@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cardMetricsSchema } from "../config/agent-monitoring.ts";
 import { isoSchema, metricSchema, metricsSchema, type Metric } from "../monitoring/contracts.ts";
 import { storageDeviceKeySchema, storageKeySchema } from "../config/storages.ts";
 
@@ -25,6 +26,7 @@ export const storageCapacitySchema = z.object({
   usedBytes: metricSchema.optional(), totalBytes: metricSchema.optional(), availableBytes: metricSchema.optional(), usagePercent: metricSchema.optional(),
 });
 export const storageViewSchema = z.object({
+  cardMetrics: cardMetricsSchema.optional(),
   storageKey: storageKeySchema, technicalName: z.string(), displayName: z.string(), description: z.string().nullable(),
   configId: z.uuid().nullable(), revision: z.number().int().nonnegative(), dashboardEnabled: z.boolean(), critical: z.boolean(), displayOrder: z.number().int(),
   presentationStatus: z.enum(["ready", "unavailable"]), resolution: storageResolutionSchema, monitoringEnabled: z.boolean(),

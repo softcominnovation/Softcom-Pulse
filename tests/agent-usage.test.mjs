@@ -44,8 +44,8 @@ test("capacity is weighted and never silently drops a missing or invalid volume"
   assert.equal(filesystemCapacity([{...volumes[0],metrics:{diskUsedBytes:metric(200),diskTotalBytes:metric(100)}}]).coverage,"incomplete");
 });
 test("configuration validates pairs, limits, volume ownership syntax and independent selection", () => {
-  for(const pair of [["cpu","memory"],["cpu","disk"],["disk","memory"]]) assert.deepEqual(cardMetricsSchema.parse(pair),pair);
-  for(const pair of [["cpu","cpu"],["cpu","memory","disk"],["ram","cpu"]]) assert.equal(cardMetricsSchema.safeParse(pair).success,false);
+  for(const pair of [["cpu","memory"],["cpu","disk"],["disk","memory"],["cpu","memory","disk"]]) assert.deepEqual(cardMetricsSchema.parse(pair),pair);
+  for(const pair of [["cpu","cpu"],["disk","cpu","memory"],["cpu","disk","disk"],["ram","cpu"]]) assert.equal(cardMetricsSchema.safeParse(pair).success,false);
   const config={schemaVersion:1,vmBinding:{parentHostKey:"PARENT",vmKey:"vm-"+"a".repeat(32)},capacity:{filesystemKeys:[],independentVolumesConfirmed:false},thresholds:{cpu:null,memory:70,disk:null}};
   assert.equal(agentMonitoringSchema.safeParse(config).success,true);
   assert.equal(agentMonitoringSchema.safeParse({...config,thresholds:{...config.thresholds,disk:70}}).success,false);

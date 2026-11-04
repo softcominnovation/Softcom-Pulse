@@ -10,6 +10,8 @@ import { toast } from "@/components/ui/toast";
 import { Check, Field, errorText, useAdminRead, useMutation } from "@/components/admin/shared";
 import { ConfirmationDialog } from "@/components/confirmation-dialog";
 import { metricValue } from "@/lib/dashboard/format";
+import { cardMetricsSchema } from "@/lib/config/agent-monitoring";
+import { CardMetricOptions } from "@/components/admin/card-metric-options";
 
 export function StorageEditor({ item, onSaved, onCancel }: { item: StorageView; onSaved: () => void; onCancel: () => void }) {
   const saved = useAdminRead("/settings/storages", data => z.object({ data: storageConfigSchema.array() }).parse(data).data);
@@ -18,11 +20,12 @@ export function StorageEditor({ item, onSaved, onCancel }: { item: StorageView; 
 }
 function StorageForm({ item, config, onSaved, onCancel, reload }: { item: StorageView; config: StorageConfig | null; onSaved: () => void; onCancel: () => void; reload: () => void }) {
   const defaults: StorageWrite = { ...storagePreferencesSchema.parse(config ? {
-    displayName: config.displayName, description: config.description, dashboardEnabled: config.dashboardEnabled, critical: config.critical, displayOrder: config.displayOrder, filesystemKeys: config.filesystemKeys, independentVolumesConfirmed: config.independentVolumesConfirmed, networkInterfaceKey: config.networkInterfaceKey, diskWarningPercent: config.diskWarningPercent,
+    displayName: config.displayName, description: config.description, dashboardEnabled: config.dashboardEnabled, critical: config.critical, displayOrder: config.displayOrder, filesystemKeys: config.filesystemKeys, independentVolumesConfirmed: config.independentVolumesConfirmed, networkInterfaceKey: config.networkInterfaceKey, diskWarningPercent: config.diskWarningPercent, cardMetrics: config.cardMetrics,
   } : {}), expectedRevision: config?.revision ?? 0 };
   const form = useForm<StorageWrite>({ defaultValues: defaults }), mutation = useMutation();
   const [error, setError] = useState("");
   const selected = useWatch({ control: form.control, name: "filesystemKeys" });
+  const cardMetrics = useWatch({ control: form.control, name: "cardMetrics" }) ?? ["cpu", "disk"];
   const warning = config?.diskWarningPercent ?? null;
   const validInventory = !item.stale && item.resolution === "resolved";
   const unknownKeys = (selected ?? []).filter(key => !item.volumes.some(volume => volume.key === key));
@@ -54,6 +57,7 @@ function StorageForm({ item, config, onSaved, onCancel, reload }: { item: Storag
       <Field label="Nome do Storage" error={form.formState.errors.displayName?.message} hint="Em branco, usa o nome retornado pelo Zabbix."><input maxLength={120} {...form.register("displayName")} /></Field>
       <Field label="Descrição" error={form.formState.errors.description?.message}><input maxLength={240} {...form.register("description")} /></Field>
       <Field label="Ordem" error={form.formState.errors.displayOrder?.message}><input type="number" min={0} max={100000} {...form.register("displayOrder", { valueAsNumber: true })} /></Field>
+      <Field label="Métricas do minicard" hint="Disco usa a capacidade dos volumes monitorados. Três métricas usam o tamanho Ampliado, sem alterar o alerta."><select value={cardMetrics.join(",")} onChange={event => form.setValue("cardMetrics", cardMetricsSchema.parse(event.target.value.split(",")), { shouldDirty: true })}><CardMetricOptions /></select></Field>
       <Field label="Interface de rede" hint="RX/TX desta interface aparecem no minicard e no painel de detalhes. O tráfego nunca é somado entre interfaces."><select disabled={!validInventory} {...form.register("networkInterfaceKey", { setValueAs: value => value || null })}><option value="">Não exibir tráfego</option>{item.interfaces.map(network => <option value={network.key} key={network.key}>{network.name}</option>)}{config?.networkInterfaceKey && !item.interfaces.some(network => network.key === config.networkInterfaceKey) && <option value={config.networkInterfaceKey}>Interface configurada ausente</option>}</select></Field>
     </div>
     <Check label="Destacar em Disponibilidade de Serviços"><input type="checkbox" {...form.register("dashboardEnabled")} /></Check>

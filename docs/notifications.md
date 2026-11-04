@@ -55,6 +55,8 @@ O navegador pode atrasar o polling de uma aba oculta ou suspender/descartar a p�
 
 Enquanto a aba está fora de foco, com incidente ativo e notificação ainda não lida, o ícone da aba ganha um X vermelho. Marcar as notificações como lidas tira o X, mesmo que o incidente continue aberto. A recuperação do serviço também tira o X. Ao focar, o ícone volta ao traço normal. Sair de novo só recoloca o X se ainda houver incidente ativo e notificação não lida. O contador do sino continua sendo o de não lidas.
 
+O favicon normal pertence aos metadados do Next/React. `setTabProblemIcon` atualiza `href`/`type` dos links existentes no lugar e só cria um link se nenhum existir. Não remover/substituir esses elementos para sinalizar uma notificação: o React mantém referências para liberar o metadado na navegação cliente e a remoção externa provoca `Cannot read properties of null (reading 'removeChild')`, interrompendo a renderização. A regressão inclui notificação não lida → aba oculta/visível → navegação pelos links → dashboard/segunda tela, na raiz e no monitor React, em desenvolvimento e produção. O renderer clássico já atualiza seu link existente e mantém o contrato.
+
 O sino fica por último nas ações do cabeçalho. **Ctrl+Shift+K** abre e fecha a central; **Ctrl+K** continua sendo a busca e ignora Shift e Alt. A central abre em Não lidas e oferece, nessa ordem, Não lidas, Incidentes atuais e Histórico.
 
 O aviso operacional segue a posição salva na política. O padrão é o centro da faixa do header, 16 px acima do meio dessa faixa. Canto inferior direito entra na pilha dos avisos comuns. Canto superior direito usa uma pilha própria no topo. A posição vale para a instalação e chega nas telas pelo `runtime`; não é exceção por serviço.

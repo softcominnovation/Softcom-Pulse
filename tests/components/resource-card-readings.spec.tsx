@@ -1,6 +1,24 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import { ResourceCardReadingsFixture } from "../fixtures/resource-card-readings";
 
+test("resource trio respects both panel sizes with full-width disk above CPU/RAM", async ({ mount }) => {
+  for (const size of ["compact", "expanded"] as const) for (const scale of [100, 125]) for (const mode of ["selected", "missing", "zero", "ram-bytes"] as const) {
+    const component = await mount(<ResourceCardReadingsFixture pair={["cpu", "memory", "disk"]} size={size} mode={mode} scale={scale} width={size === "expanded" ? 260 * scale / 100 : 230} />);
+    const card = component.locator(".availability-card"), readings = card.locator(".availability-reading");
+    await expect(readings).toHaveCount(3);
+    await expect(readings.first()).toContainText(mode === "missing" ? "Disco—" : mode === "zero" ? "Disco0%" : "Disco20%");
+    await expect(readings.nth(1)).toContainText("CPU12,9%");
+    await expect(readings.nth(2)).toContainText(mode === "ram-bytes" ? "RAM—" : "RAM40%");
+    const boxes = await readings.evaluateAll(nodes => nodes.map(node => { const rect = node.getBoundingClientRect(); return { top: rect.top, bottom: rect.bottom, width: rect.width }; }));
+    expect(boxes[0].width).toBeGreaterThan(boxes[1].width * 1.9);
+    expect(boxes[1].top).toBeGreaterThan(boxes[0].bottom); expect(boxes[1].top).toBe(boxes[2].top);
+    expect((await card.boundingBox())!.height).toBeCloseTo(size === "expanded" ? 140 * scale / 100 : 120, 1);
+    expect(await card.locator(".availability-description").evaluate(node => node.getBoundingClientRect().height >= parseFloat(getComputedStyle(node).lineHeight) - 1)).toBe(true);
+    expect(await card.evaluate(node => node.scrollHeight <= node.clientHeight + 1 && node.querySelector(".availability-footer")!.getBoundingClientRect().bottom < node.getBoundingClientRect().bottom)).toBe(true);
+    await component.unmount();
+  }
+});
+
 test("expanded resources keep their metric pair and complete footer at every presentation scale", async ({ mount }) => {
   for (const scale of [100, 110, 120, 125]) for (const pair of [["cpu", "memory"], ["cpu", "disk"], ["disk", "memory"]] as const) {
     const component = await mount(<ResourceCardReadingsFixture size="expanded" scale={scale} width={260 * scale / 100} pair={[...pair]} />);

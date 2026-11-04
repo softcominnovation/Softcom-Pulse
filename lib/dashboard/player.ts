@@ -27,6 +27,8 @@ export function createPlayerStore() {
         rotating: state.rotating && screens.length > 1, notice: state.screenId && !retained ? "A tela anterior foi removida ou desabilitada. A primeira tela disponível foi selecionada." : null };
     }
     function select(id: string) {
+      // A manual screen change is an explicit presentation boundary too.
+      if (get().pending) set(apply(get().pending!));
       if (!playableScreens(get().document).some(screen => screen.id === id)) return;
       set({ screenId: id, readingPaused: true, deadline: null, remaining: duration(get().document), layoutOverride: null });
     }
@@ -53,6 +55,7 @@ export function createPlayerStore() {
       format(layout) { get().stop(); set({ layoutOverride: layout }); },
       select,
       step(direction) {
+        if (get().pending) set(apply(get().pending!));
         const state = get(), screens = playableScreens(state.document);
         if (screens.length) select(screens[(screens.findIndex(screen => screen.id === state.screenId) + direction + screens.length) % screens.length].id);
       },

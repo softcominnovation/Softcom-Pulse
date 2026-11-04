@@ -107,7 +107,7 @@ test("growing inventories stay inside panels without losing rows or stretching t
   }
   await page.screenshot({ path: ".cache/screenshots/dashboard-dense-1366.png", fullPage: true });
 });
-test("custom compositions keep their saved order and small heights use natural page scrolling", async ({ page }) => {
+test("custom compositions keep their saved order and short desktop viewports scroll the composition", async ({ page }) => {
   await page.setViewportSize({width:1280,height:600});
   const state = await mock(page);
   state.document.screens[0].blocks.reverse();
@@ -116,7 +116,12 @@ test("custom compositions keep their saved order and small heights use natural p
   const types = await page.locator(".dashboard-block").evaluateAll(nodes => nodes.map(node => [...node.classList].find(name => name.startsWith("block-"))));
   expect(types).toEqual(state.document.screens[0].blocks.map(block => "block-"+block.type));
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  expect(await page.evaluate(() => document.documentElement.scrollHeight > innerHeight)).toBe(true);
+  await expect(page.locator(".dashboard-footer")).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1)).toBe(true);
+  const composition = page.locator("[data-dashboard-content]");
+  expect(await composition.evaluate(node => node.scrollHeight > node.clientHeight && getComputedStyle(node).overflowY === "auto")).toBe(true);
+  await composition.evaluate(node => { node.scrollTop = node.scrollHeight; });
+  await expect(page.locator(".dashboard-block").last()).toBeInViewport();
 });
 test("ASGARD summary follows the prototype and opens the protected detailed view on desktop and mobile", async ({ page }) => {
   await page.goto("/asgard"); await expect(page).toHaveURL(/\/login$/);

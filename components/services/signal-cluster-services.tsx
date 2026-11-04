@@ -1,4 +1,5 @@
 "use client";
+import { CardMetricOptions } from "@/components/admin/card-metric-options";
 import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 import { AgentMonitoringDialog } from "@/components/admin/agent-monitoring";
 import { CardReadings } from "@/components/dashboard/card-readings";
@@ -112,15 +113,15 @@ export function SignalClusterServices({ targetId, revision, services, editor, on
   return <section className="signal-vm-links" aria-label="Serviços do cluster">
     <div className="panel-heading signal-linked-heading"><h3 ref={createHeading} tabIndex={-1}>Serviços do cluster</h3>{editor && <Button ref={createTrigger} type="button" size="sm" variant="outline" data-sound="open" aria-haspopup="dialog" aria-expanded={creating} disabled={mutation.busy || services.length >= 20} onClick={() => setCreating(true)}><Plus aria-hidden="true" />Adicionar serviço</Button>}</div>
     <p className="admin-muted">Postgres, Redis e outros containers das VMs vinculadas. O vínculo é o nome do serviço, não o id da task. Sem enumeração completa do Docker, um container que some fica como Sem leitura, não como Fora.</p>
-    {visible.length ? <ul className="signal-linked-grid">{visible.map(service => <li key={service.id} id={`signal-service-${service.id}`} className="signal-linked-card-wrap">
-      <article className="availability-card signal-cluster-card" aria-current={focus === service.id ? "true" : undefined}>
+    {visible.length ? <ul className="signal-linked-grid availability-group" data-card-size={visible.some(service => service.cardMetrics?.length === 3) ? "expanded" : "compact"}>{visible.map(service => <li key={service.id} id={`signal-service-${service.id}`} className="signal-linked-card-wrap">
+      <article className="availability-card signal-cluster-card" data-metric-count={service.cardMetrics?.length} aria-current={focus === service.id ? "true" : undefined}>
         <AvailabilityCardHeader name={service.displayName} label={service.kpiLabel} tone={service.tone} />
         <span className="availability-description">{service.servicePrefix}</span>
         <CardReadings pair={service.cardMetrics ?? ["cpu", "memory"]} values={{ cpu: service.cpu ?? null, memory: service.memory ?? null, disk: service.disk ?? null }} diskLabel="Disco da VM" />
         <span className="availability-footer"><span>{service.vmName ?? service.hostKey ?? "Sem container único"}</span><strong>{service.flowKpi === "database" ? "Banco" : service.flowKpi === "redis" ? "Redis" : "Fora dos KPIs"}</strong></span>
       </article>
       {editor && <div className="admin-actions">
-        <Field label="Métricas do minicard" hint="Disco da VM é a ocupação da máquina hospedeira, não do volume exclusivo do serviço."><select value={(service.cardMetrics ?? ["cpu", "memory"]).join(",")} onChange={event => void save(service, { cardMetrics: cardMetricsSchema.parse(event.target.value.split(",")) })}><option value="cpu,memory">CPU e RAM</option><option value="cpu,disk">CPU e Disco da VM</option><option value="disk,memory">Disco da VM e RAM</option></select></Field>
+        <Field label="Métricas do minicard" hint="Disco da VM é a ocupação da máquina hospedeira, não do volume exclusivo do serviço."><select value={(service.cardMetrics ?? ["cpu", "memory"]).join(",")} onChange={event => void save(service, { cardMetrics: cardMetricsSchema.parse(event.target.value.split(",")) })}><CardMetricOptions vm /></select></Field>
         <Check label="Crítico"><input type="checkbox" checked={service.critical} onChange={event => void save(service, { critical: event.target.checked })} /></Check>
         <Check label="Card"><input type="checkbox" checked={service.dashboardEnabled} onChange={event => void save(service, { dashboardEnabled: event.target.checked })} /></Check>
         <Check label="Painel"><input type="checkbox" checked={service.panelEnabled} onChange={event => void save(service, { panelEnabled: event.target.checked })} /></Check>
@@ -176,7 +177,7 @@ export function SignalClusterServices({ targetId, revision, services, editor, on
           return <option key={option.suggestedPrefix} value={option.suggestedPrefix}>{draft.flowKpi ? option.suggestedPrefix : `${role} · ${option.suggestedPrefix}`}</option>;
         })}
       </select></Field>
-      <Field label="Métricas do novo minicard" hint="Disco da VM usa a seleção de volumes configurada em Alertas e exibição da VM."><select value={draft.cardMetrics} onChange={event => setDraft(value => ({ ...value, cardMetrics: event.target.value }))}><option value="cpu,memory">CPU e RAM</option><option value="cpu,disk">CPU e Disco da VM</option><option value="disk,memory">Disco da VM e RAM</option></select></Field>
+      <Field label="Métricas do novo minicard" hint="Disco da VM usa a seleção de volumes configurada em Alertas e exibição da VM."><select value={draft.cardMetrics} onChange={event => setDraft(value => ({ ...value, cardMetrics: event.target.value }))}><CardMetricOptions vm /></select></Field>
       </div>
       <Check label="Crítico, para notificar"><input type="checkbox" checked={draft.critical} onChange={event => setDraft(value => ({ ...value, critical: event.target.checked }))} /></Check>
       <Check label="Card na Disponibilidade"><input type="checkbox" checked={draft.dashboardEnabled} onChange={event => setDraft(value => ({ ...value, dashboardEnabled: event.target.checked }))} /></Check>

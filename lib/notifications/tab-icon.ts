@@ -9,13 +9,19 @@ export function tabProblemVisible(hidden: boolean, activeCount: number, unreadCo
 }
 
 export function setTabProblemIcon(problem: boolean) {
-  if (typeof document === "undefined") return;
+  if (typeof document === "undefined" || !document.head) return;
   const href = problem ? pulseAlertTabIcon : pulseTabIcon;
-  const current = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-  if (current?.getAttribute("href") === href && document.querySelectorAll('link[rel="icon"]').length === 1) return;
-  for (const link of document.querySelectorAll('link[rel="icon"]')) link.remove();
-  const link = document.createElement("link");
-  link.rel = "icon";
-  link.href = href;
-  document.head.append(link);
+  const links = [...document.querySelectorAll<HTMLLinkElement>('link[rel="icon"]')];
+  if (!links.length) {
+    const link = document.createElement("link");
+    link.rel = "icon";
+    document.head.append(link);
+    links.push(link);
+  }
+  // Next/React owns the metadata nodes. Removing or replacing them breaks
+  // the next client navigation when React releases its hoisted <link>.
+  for (const link of links) {
+    if (link.getAttribute("href") !== href) link.setAttribute("href", href);
+    if (link.getAttribute("type") !== "image/svg+xml") link.setAttribute("type", "image/svg+xml");
+  }
 }

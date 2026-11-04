@@ -90,7 +90,7 @@ test("classic cards preserve current resource and Signal metric pairs, capacity 
   const mini = name => html.slice(html.indexOf('aria-label="Detalhes de ' + name + '"')).split('class="detail-source"')[0];
   assert.match(mini("VM configurada"), />CPU</); assert.match(mini("VM configurada"), />Disco</);
   assert.doesNotMatch(mini("VM configurada"), />RAM</);
-  assert.match(mini("Serviço configurado"), />Disco</); assert.match(mini("Serviço configurado"), />RAM</);
+  assert.match(mini("Serviço configurado"), />Disco da VM</); assert.match(mini("Serviço configurado"), />RAM</);
   assert.doesNotMatch(mini("Serviço configurado"), />CPU</);
   assert.match(mini("Serviço configurado"), /2 h/);
   assert.match(mini("VM configurada"), /Volumes configurados/);

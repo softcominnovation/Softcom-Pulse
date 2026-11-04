@@ -22,6 +22,7 @@ export async function readStorages(options: { batch?: SnapshotBatch; publicRead?
     const resolution = !source ? snapshot?.status === "ok" && !envelope.stale ? snapshot.absent.find(item => item.hostid === config?.zabbixHostId)?.resolution ?? "inventory_unavailable" : "inventory_unavailable" : !source.monitoringEnabled ? "monitoring_disabled" : "resolved";
     const capacity = storageCapacity(technical?.volumes ?? [], config);
     return {
+      cardMetrics: config?.cardMetrics ?? ["cpu", "disk"],
       storageKey: source?.storageKey ?? config!.storageKey, technicalName: source?.technicalName ?? config!.originalName,
       displayName: config?.displayName ?? source?.name ?? config!.originalName, description: config?.description ?? null,
       configId: config?.id ?? null, revision: config?.revision ?? 0, critical: config?.critical ?? false, displayOrder: config?.displayOrder ?? 0, dashboardEnabled: config?.dashboardEnabled ?? false,

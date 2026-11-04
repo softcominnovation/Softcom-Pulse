@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { cardMetricsSchema } from "./agent-monitoring.ts";
 
 const control = /[\u0000-\u001F\u007F]/;
 const notesControl = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
@@ -79,6 +80,7 @@ const ip = z.string().trim().refine(isStandaloneIp);
 const apiKey = z.string().max(4096).refine(value => value.trim().length > 0 && !control.test(value));
 
 export const standaloneVpsWriteSchema = z.strictObject({
+  cardMetrics: cardMetricsSchema.nullable().optional(),
   name: label(120),
   provider: optionalText(120, "null"),
   ip,
@@ -92,6 +94,7 @@ export const standaloneVpsWriteSchema = z.strictObject({
   timeoutMs: z.number().int().min(1000).max(30000).default(vpsDefaultTimeoutMs),
 });
 export const standaloneVpsPatchSchema = z.strictObject({
+  cardMetrics: cardMetricsSchema.nullable().optional(),
   expectedRevision: z.number().int().positive(),
   name: label(120).optional(),
   provider: optionalText(120, "keep"),
@@ -129,6 +132,7 @@ export const vpsStackPatchSchema = z.strictObject({
 export type StandaloneVpsInput = z.infer<typeof standaloneVpsWriteSchema>;
 const monitorStateSchema = z.enum(["inactive", "not_configured", "pending", "up", "down", "paused"]);
 export const standaloneVpsCardSchema = z.object({
+  cardMetrics: cardMetricsSchema.nullable().optional(),
   critical: z.boolean().optional(),
   id: z.uuid(), name: z.string(), provider: z.string().nullable(), ip: z.string(), domain: z.string().nullable(), managerUrl: z.string().nullable(), baseUrl: z.string().nullable(),
   monitorConfigured: z.boolean(), enabled: z.boolean(), monitorPaused: z.boolean().default(false), dashboardEnabled: z.boolean(), timeoutMs: z.number(), revision: z.number(), monitorState: monitorStateSchema, apiKey: z.string().nullable().optional(),
@@ -139,6 +143,7 @@ export const standaloneVpsCardSchema = z.object({
 export type StandaloneVpsCard = z.infer<typeof standaloneVpsCardSchema>;
 /** Lean payload for dashboard availability cards and their modal. No secrets, recipe or history. */
 export const standaloneVpsHighlightSchema = z.object({
+  cardMetrics: cardMetricsSchema.nullable().optional(),
   critical: z.boolean().optional(),
   id: z.uuid(), name: z.string(), provider: z.string().nullable(), ip: z.string(),
   enabled: z.boolean(), monitorConfigured: z.boolean(), monitorPaused: z.boolean().default(false), monitorState: monitorStateSchema,

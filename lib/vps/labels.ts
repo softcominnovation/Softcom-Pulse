@@ -1,4 +1,12 @@
-import type { MonitorState } from "@/lib/config/standalone-vps";
+import type { MonitorState, StandaloneVpsHighlight } from "../config/standalone-vps.ts";
+
+// Three missed cycles at the maximum supported monitor interval (120s).
+export const vpsCardReadingMaxAgeMs = 3 * 120_000;
+export function vpsCardValues(item: StandaloneVpsHighlight, now = Date.now()) {
+  const age = item.checkedAt ? now - Date.parse(item.checkedAt) : NaN;
+  const current = item.enabled && item.monitorConfigured && !item.monitorPaused && item.monitorState === "up" && age >= 0 && age < vpsCardReadingMaxAgeMs;
+  return { cpu: current ? item.cpuPercent : null, memory: current ? item.memoryPercent : null, disk: current ? item.diskPercent : null };
+}
 
 /** Shown on the public monitor instead of the VPS IP (keeps card/list density without sounding like missing data). */
 export const publicVpsNetworkLabel = "Rede interna";

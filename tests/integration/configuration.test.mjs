@@ -145,6 +145,74 @@ const evidence = () => ({ source: "zabbix", observedAt: at(), basis: "item" });
 const host = (hostKey = "asgard") => ({ hostKey, name: hostKey, role: "unknown", availability: "reachable", metrics: { cpuUsagePercent: metric(0) }, storages: [], filesystems: [], interfaces: [], vms: [], evidence: evidence() });
 const container = (name = "evolution.1.a", hostKey = "asgard") => ({ reference: randomUUID(), hostKey, name, image: "example:1", status: "running", health: "not_configured", metrics: { cpuUsagePercent: metric(0) }, evidence: evidence(), containerId: "private-transient-id" });
 
+test("three metric migration upgrades existing choices and defaults without changing other configuration", async () => {
+  const client = await getDatabase().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`CREATE TEMP TABLE monitored_resource_config(id int, resource_type text, presentation jsonb CONSTRAINT resource_presentation_check CHECK(presentation->'cardMetrics' IN ('["cpu","memory"]','["cpu","disk"]','["disk","memory"]'))) ON COMMIT DROP;
+      CREATE TEMP TABLE signal_service(id int, card_metrics jsonb CONSTRAINT signal_service_card_metrics_check CHECK(card_metrics IN ('["cpu","memory"]','["cpu","disk"]','["disk","memory"]'))) ON COMMIT DROP;
+      CREATE TEMP TABLE storage_config(id int, filesystem_keys jsonb, disk_warning_percent int, critical boolean) ON COMMIT DROP;
+      CREATE TEMP TABLE standalone_vps(id int, monitor_paused boolean, critical boolean) ON COMMIT DROP;
+      INSERT INTO monitored_resource_config VALUES(1,'host','{"cardMetrics":["cpu","disk"],"showCpu":true,"showMemory":false,"showDisk":true,"metricsSource":"agent"}');
+      INSERT INTO signal_service VALUES(1,'["disk","memory"]');
+      INSERT INTO storage_config VALUES(1,'["root"]',70,true);
+      INSERT INTO standalone_vps VALUES(1,true,true);`);
+    const sql = await readFile(new URL("../../prisma/migrations/20261103190000_minicard_three_metrics/migration.sql", import.meta.url), "utf8");
+    await client.query(sql);
+    assert.deepEqual((await client.query("SELECT presentation->'cardMetrics' AS metrics FROM monitored_resource_config")).rows[0].metrics, ["cpu", "disk"]);
+    assert.deepEqual((await client.query("SELECT card_metrics FROM signal_service")).rows[0].card_metrics, ["disk", "memory"]);
+    assert.deepEqual((await client.query("SELECT * FROM storage_config")).rows[0], { id: 1, filesystem_keys: ["root"], disk_warning_percent: 70, critical: true, card_metrics: ["cpu", "disk"] });
+    assert.deepEqual((await client.query("SELECT * FROM standalone_vps")).rows[0], { id: 1, monitor_paused: true, critical: true, card_metrics: null });
+    for (const metrics of [["cpu", "memory"], ["cpu", "disk"], ["disk", "memory"], ["cpu", "memory", "disk"]]) {
+      for (const table of ["signal_service", "storage_config", "standalone_vps"]) await client.query(`UPDATE ${table} SET card_metrics=$1`, [JSON.stringify(metrics)]);
+      await client.query("UPDATE monitored_resource_config SET presentation=jsonb_set(presentation,'{cardMetrics}',$1)", [JSON.stringify(metrics)]);
+    }
+    for (const metrics of [["disk", "cpu", "memory"], ["cpu", "disk", "disk"], null, ["cpu"]]) for (const table of ["signal_service", "storage_config", "standalone_vps", "monitored_resource_config"]) {
+      await client.query("SAVEPOINT invalid_choice");
+      await assert.rejects(client.query(table === "monitored_resource_config" ? "UPDATE monitored_resource_config SET presentation=jsonb_set(presentation,'{cardMetrics}',$1)" : `UPDATE ${table} SET card_metrics=$1`, [JSON.stringify(metrics)]), error => error.code === "23514");
+      await client.query("ROLLBACK TO SAVEPOINT invalid_choice");
+    }
+  } finally { await client.query("ROLLBACK"); client.release(); }
+});
+
+test("resource, Agent and VPS persist the explicit trio and legacy omitted writes preserve it", async () => {
+  const h = host("trio-resource"); await publish({ [keys.hosts]: [h] });
+  const trio = ["cpu", "memory", "disk"];
+  const created = await createResource({ ...hostConfig, zabbixHostKey: h.hostKey, presentation: { cardMetrics: trio } });
+  assert.deepEqual((await getResource(created.id)).presentation.cardMetrics, trio);
+  const changed = await updateResource(created.id, { expectedRevision: created.revision, description: "Presentation retained" });
+  assert.deepEqual(changed.presentation.cardMetrics, trio);
+  await assert.rejects(updateResource(created.id, { expectedRevision: created.revision, presentation: { cardMetrics: ["disk", "memory"] } }), error => error.status === 409);
+  await deleteResource(created.id);
+  const response = await result(await handlers.standaloneVpsPost(request("/", "POST", { ...vpsInput({ name: "Trio VPS", ip: "10.88.0.3" }), cardMetrics: trio })));
+  assert.equal(response.status, 201); const id = response.body.data.id;
+  assert.deepEqual(response.body.data.cardMetrics, trio);
+  const preserved = await result(await handlers.standaloneVpsPatch(request("/", "PATCH", { expectedRevision: 1, provider: "Updated" }), params({ id })));
+  assert.equal(preserved.status, 200); assert.deepEqual(preserved.body.data.cardMetrics, trio);
+  assert.deepEqual((await getPrisma().standaloneVps.findUniqueOrThrow({ where: { id } })).cardMetrics, trio);
+  assert.equal((await handlers.standaloneVpsPatch(request("/", "PATCH", { expectedRevision: 1, cardMetrics: null }), params({ id }))).status, 409);
+  const strip = await result(await handlers.standaloneVpsPatch(request("/", "PATCH", { expectedRevision: 2, cardMetrics: null }), params({ id })));
+  assert.equal(strip.status, 200); assert.equal(strip.body.data.cardMetrics, null);
+  assert.equal((await getPrisma().standaloneVps.findUniqueOrThrow({ where: { id } })).cardMetrics, null);
+  await handlers.standaloneVpsDelete(request("/", "DELETE"), params({ id }));
+});
+
+test("Signal service trio survives omitted PATCH and revision conflicts through its real BFF", async () => {
+  const trio = ["cpu", "memory", "disk"];
+  const target = await getPrisma().signalTarget.create({ data: { displayName: "Three metrics target", baseUrl: "https://three-metrics.example" } });
+  try {
+    const created = await result(await handlers.signalServicePost(request("/", "POST", { expectedTargetRevision: 1, displayName: "Database", servicePrefix: "trio_stack_postgres", cardMetrics: trio }), params({ id: target.id })));
+    assert.equal(created.status, 201);
+    const service = created.body.data.services[0]; assert.deepEqual(service.cardMetrics, trio);
+    assert.deepEqual((await getPrisma().signalService.findUniqueOrThrow({ where: { id: service.id } })).cardMetrics, trio);
+    const changed = await result(await handlers.signalServicePatch(request("/", "PATCH", { expectedTargetRevision: 2, expectedRevision: 1, displayName: "Friendly database" }), params({ id: target.id, serviceId: service.id })));
+    assert.equal(changed.status, 200); assert.deepEqual(changed.body.data.services[0].cardMetrics, trio);
+    assert.equal((await handlers.signalServicePatch(request("/", "PATCH", { expectedTargetRevision: 2, expectedRevision: 1, cardMetrics: ["cpu", "disk"] }), params({ id: target.id, serviceId: service.id }))).status, 409);
+    const read = await result(await handlers.signalServiceGet(request(), params({ id: target.id, serviceId: service.id })));
+    assert.equal(read.status, 200); assert.deepEqual(read.body.data.cardMetrics, trio);
+  } finally { await getPrisma().signalTarget.delete({ where: { id: target.id } }); }
+});
+
 before(async () => {
   const db = new URL(process.env.DATABASE_URL), redis = new URL(process.env.REDIS_URL);
   for (const target of [db, redis]) assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(target.hostname), "Integration requires local services");
@@ -742,6 +810,47 @@ test("reading scale defaults without a database rewrite and persists through the
   assert.equal((await getPresentation()).data.displayScalePercent, 125);
 });
 
+test("three screens keep independent KPI and availability options through persistence and real overviews", async () => {
+  const current = (await getPresentation()).data;
+  const document = initialV2(randomUUID);
+  const baseline = document.screens[0];
+  document.dashboardZoomPercent = 80; document.publicMonitorZoomPercent = 70;
+  document.screens = [
+    { scale: 100, size: "compact", rows: 1 },
+    { scale: 150, size: "expanded", rows: 2 },
+    { scale: 125, size: "compact", rows: 3 },
+  ].map((options, index) => ({
+    ...structuredClone(baseline), id: randomUUID(), name: `Independent ${index + 1}`,
+    blocks: baseline.blocks.map(block => ({
+      ...structuredClone(block), id: randomUUID(),
+      options: block.type === "summary" ? { ...block.options, fontScalePercent: options.scale }
+        : block.type === "highlighted_resources" ? { ...block.options, cardSize: options.size, visibleRows: options.rows, rowMode: "manual" } : block.options,
+    })),
+  }));
+  const { revision: _revision, ...settings } = document; void _revision;
+  const saved = await handlers.presentationPut(request("/", "PUT", { expectedRevision: current.revision, settings }));
+  assert.equal(saved.status, 200);
+  const confirmed = (await saved.json()).data;
+  assert.deepEqual(confirmed.screens, document.screens);
+  for (const screen of confirmed.screens) {
+    const response = await handlers.overviewGet(request("/?screenId=" + screen.id));
+    assert.equal(response.status, 200);
+    const overview = (await response.json()).data;
+    assert.equal(overview.screenId, screen.id); assert.equal(overview.presentationRevision, confirmed.revision);
+    for (const block of screen.blocks) assert.deepEqual(overview.blocks.find(item => item.blockId === block.id).options, effectiveOptions(block));
+  }
+  // Move screen 3, then change just one of its block options. Neither sibling may change.
+  const next = structuredClone(settings), selected = next.screens[2];
+  selected.blocks.find(block => block.type === "summary").options.fontScalePercent = 110;
+  next.screens = [selected, next.screens[0], next.screens[1]];
+  assert.equal((await handlers.presentationPut(request("/", "PUT", { expectedRevision: confirmed.revision, settings: next }))).status, 200);
+  const after = (await getPresentation()).data;
+  assert.deepEqual(after.screens.slice(1), confirmed.screens.slice(0, 2));
+  assert.equal(after.dashboardZoomPercent, 80); assert.equal(after.publicMonitorZoomPercent, 70);
+  const selectedOverview = await (await handlers.overviewGet(request("/?screenId=" + selected.id))).json();
+  assert.equal(selectedOverview.data.blocks.find(block => block.type === "summary").options.fontScalePercent, 110);
+});
+
 test("manual availability rows persist per block and legacy reads do not rewrite automatic preferences", async () => {
   const legacy = initialV2(randomUUID);
   await getDatabase().query("UPDATE pulse_settings SET value=$1::jsonb WHERE key='dashboardPresentation'", [JSON.stringify(legacy)]);
@@ -1260,5 +1369,10 @@ test("VM Agent preferences share one resource, preserve availability identity an
  const sealedResource=await getResource(resource.id);assert.deepEqual(sealedResource.presentation.cardMetrics,["cpu","disk"]);
  assert.equal(sealedResource.presentation.showCpu,true);assert.equal(sealedResource.presentation.showMemory,false);assert.equal(sealedResource.presentation.showDisk,true);
  assert.deepEqual(sealedResource.agentMonitoring,fixedLegacy.agentMonitoring);
- await deleteResource(resource.id,sealed.revision);
+ const triple=await saveAgentMonitoring(agent.hostKey,{...diskOnly,expectedRevision:sealed.revision,capacity:legacyRead.settings.capacity,thresholds:legacyRead.settings.thresholds,cardMetrics:["cpu","memory","disk"]});
+ assert.deepEqual((await getResource(resource.id)).presentation.cardMetrics,["cpu","memory","disk"]);
+ assert.deepEqual((await readAgentMonitoring(agent.hostKey)).cardMetrics,["cpu","memory","disk"]);
+ assert.deepEqual(triple.settings.thresholds,sealed.settings.thresholds);
+ assert.equal((await getDatabase().query("SELECT epoch FROM notification_target_state WHERE target_ref=$1 AND condition_key='$lifecycle'",["resource:"+resource.id])).rows[0].epoch,epoch);
+ await deleteResource(resource.id,triple.revision);
 });

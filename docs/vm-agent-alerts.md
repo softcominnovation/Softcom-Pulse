@@ -7,14 +7,14 @@ VMs com Agent Linux associado podem acompanhar CPU, RAM e ocupação do armazena
 1. Em **ASGARD e VMs**, abra a VM e use **Alertas e exibição**. O mesmo editor fica junto das VMs vinculadas e dos serviços de container em **Serviços → Signal**.
 2. Ative somente os limites desejados e informe um percentual inteiro de 1 a 100. Nenhum limite é ativado automaticamente.
 3. Para disco, selecione os filesystems que compõem o armazenamento monitorado. Mais de um exige confirmar que são independentes. Bind mounts e volumes que compartilham capacidade não devem ser somados.
-4. Escolha CPU/RAM, CPU/Disco ou Disco/RAM e a fonte de CPU/RAM do minicard. Salve **Alertas e exibição**. A primeira gravação cria o recurso, se necessário, sem colocá-lo automaticamente no dashboard.
+4. Escolha CPU/RAM, CPU/Disco, Disco/RAM ou CPU/RAM/Disco e a fonte de CPU/RAM do minicard. Salve **Alertas e exibição**. A primeira gravação cria o recurso, se necessário, sem colocá-lo automaticamente no dashboard.
 5. Confira a criticidade e **Notificações deste serviço**. A política geral, o escopo de críticos e as exceções continuam valendo. Essa política tem salvamento próprio.
 
 É possível habilitar somente disco, deixando CPU/RAM desmarcados e mantendo o minicard CPU/RAM. O percentual sozinho não define quais volumes serão monitorados: marque ao menos um em **Armazenamento monitorado**. O formulário destaca essa seção e informa a pendência antes de enviar. Requisições diretas sem volumes retornam `400 capacity_required`; nenhuma seleção é inferida ou salva automaticamente.
 
 Os alertas de CPU/RAM sempre usam o Agent. A fonte dos cards existentes permanece configurável: hipervisor, Agent ou automática. A prévia do editor identifica os valores como Agent; não promete o mesmo número quando o card usa hipervisor. As colunas do inventário ASGARD mantêm sua origem e composição anteriores.
 
-Em **Serviços do cluster**, o seletor **Métricas do minicard** configura o par de cada serviço. CPU/RAM são do container; **Disco da VM** é da máquina onde o container resolveu nessa leitura. O botão **Alertas e exibição** abre a seleção de capacidade dessa VM. Mudar de worker passa a usar o Agent do novo worker; não conserva o disco da máquina anterior nem cria outro alerta de uso por container.
+Em **Serviços do cluster**, o seletor **Métricas do minicard** configura o par ou trio de cada serviço. CPU/RAM são do container; **Disco da VM** é da máquina onde o container resolveu nessa leitura. O botão **Alertas e exibição** abre a seleção de capacidade dessa VM. Mudar de worker passa a usar o Agent do novo worker; não conserva o disco da máquina anterior nem cria outro alerta de uso por container.
 
 ## Capacidade e ausência de leitura
 
@@ -42,7 +42,7 @@ Histórico/leitura são compartilhados. O evento salva valor, limite, margem de 
 ## Contratos e operação
 
 - `monitored_resource_config.agent_monitoring`: vínculo VM, seleção de volumes e limites; `{}` significa não configurado. `revision` cobre todas as alterações do recurso.
-- `presentation.cardMetrics`: par opcional do minicard host, editável também em Recursos por um único seletor. Recursos e o editor da VM sincronizam o par e as flags legadas ao salvar; não há checkboxes de CPU/RAM/disco independentes no host. Ausente mantém até duas leituras legadas das flags, com prioridade para disco quando marcado. A adoção de um par legado ao abrir Recursos é somente um rascunho até salvar.
+- `presentation.cardMetrics`: par ou trio opcional do minicard host, editável também em Recursos por um único seletor. Recursos e o editor da VM sincronizam a seleção e as flags legadas ao salvar; não há checkboxes de CPU/RAM/disco independentes no host. Ausente mantém até duas leituras legadas das flags, com prioridade para disco quando marcado. A adoção de um par legado ao abrir Recursos é somente um rascunho até salvar.
 - `signal_service.card_metrics`: par do serviço do cluster, padrão CPU/RAM, usando as revisões existentes.
 - `notification_event.metric_context`: contexto imutável do evento; não armazena série de telemetria.
 - `GET/PUT /api/settings/agent-monitoring/:hostKey`: editor autenticado. PUT exige `expectedRevision` (zero na criação), contexto, capacidade e limites. GET não cria recurso.
@@ -56,3 +56,5 @@ O recurso avulso sem `agentMonitoring` pode exibir a leitura percentual da raiz 
 A migration `20261029090000_agent_usage_alerts` é aditiva e não ativa limites. Para uma publicação futura autorizada, atualizar Web e Collector como uma entrega compatível, aplicar migrations e reiniciar o Collector existente antes de ativar regras. Recarregar clientes abertos. Não servir leitores antigos que desconheçam `usage`. Um retorno de versão precisa preservar a leitura desse contrato/histórico ou restaurar um conjunto aplicação/banco compatível; desativar novos limites, sozinho, não torna eventos existentes compatíveis com leitores antigos.
 
 Consulte [Notificações](notifications.md), [BFF](bff.md), [Minicards](availability-cards.md), [Workers](workers.md), [Design system](design-system.md) e [Sons](interface-sounds.md).
+
+A escolha explícita de três métricas coloca Disco acima de CPU/RAM. Na Disponibilidade, respeita o perfil Padrão (120px) ou Ampliado (140px) do bloco; prévias isoladas e grupos do Signal mantêm 140px. O mesmo campo é compartilhado com Recursos; não há configuração duplicada no vínculo Signal. Nenhum limite é ativado ao escolher as métricas. O trio conserva a capacidade/vínculo/fonte existentes e não pode substituir um volume ausente pela raiz.

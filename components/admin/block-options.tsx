@@ -108,9 +108,9 @@ export function BlockOptionsEditor({ block, hosts, onChange, availabilityCatalog
     };
     return <div className="admin-options">
       <div className="admin-fields">
-        <Field label="Tamanho dos minicards" hint="Atual preserva o tamanho existente. Ampliado aumenta a caixa e os textos somente deste bloco; pode precisar de rolagem.">
+        <Field label="Tamanho dos minicards" hint="Padrão usa cards de 120px. Ampliado usa 140px e textos maiores somente neste bloco. A escolha é respeitada também com três métricas; o zoom da rota é aplicado sobre esse tamanho.">
           <select value={String(options.cardSize ?? "compact")} onChange={event => onChange({ ...options, cardSize: event.target.value, ...(event.target.value === "compact" && options.rowMode === undefined ? { visibleRows: Math.min(2, Number(options.visibleRows)) } : {}) })}>
-            <option value="compact">Atual</option><option value="expanded">Ampliado</option>
+            <option value="compact">Padrão</option><option value="expanded">Ampliado</option>
           </select>
         </Field>
         <Field label="Conteúdo do bloco" hint="Padrão usa os destaques globais (dashboardEnabled). Personalizado fixa a lista só deste bloco.">

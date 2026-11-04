@@ -1,6 +1,7 @@
 import "server-only";
 import { Prisma } from "../../../generated/prisma/client.ts";
 import { ZodError } from "zod";
+import { cardMetricsSchema } from "../../config/agent-monitoring.ts";
 import {
   monitorState, standaloneVpsLimit, standaloneVpsPatchSchema, standaloneVpsWriteSchema, vpsHistoryRangeSchema, vpsSampleRetentionMs, vpsStackLimit, vpsStackPatchSchema, vpsStackWriteSchema, vpsStripLength,
   type StandaloneVpsInput, type VpsStackInput,
@@ -11,6 +12,7 @@ import { deleteVpsResult, readVpsResult } from "./store.ts";
 import { openVpsMonitorKey, sealVpsMonitorKey } from "./secret.ts";
 
 type VpsRow = {
+  cardMetrics: Prisma.JsonValue | null;
   critical: boolean;
   id: string; name: string; provider: string | null; ip: string; domain: string | null; managerUrl: string | null; baseUrl: string | null; apiKeyCiphertext: string | null;
   enabled: boolean; monitorPaused: boolean; progressStartedAt: Date | null; dashboardEnabled: boolean; timeoutMs: number; revision: number; createdAt: Date; updatedAt: Date;
@@ -30,6 +32,7 @@ function publicVps(row: VpsRow, sample: SampleRow | null, strip: number[]) {
   const monitorConfigured = row.baseUrl !== null;
   const visible = row.enabled && monitorConfigured && !row.monitorPaused;
   return {
+    cardMetrics: cardMetricsSchema.safeParse(row.cardMetrics).data ?? null,
     critical: row.critical,
     id: row.id, name: row.name, provider: row.provider, ip: row.ip, domain: row.domain, managerUrl: row.managerUrl, baseUrl: row.baseUrl, monitorConfigured,
     enabled: row.enabled, monitorPaused: row.monitorPaused, progressStartedAt: row.progressStartedAt?.toISOString() ?? null, dashboardEnabled: row.dashboardEnabled, timeoutMs: row.timeoutMs, revision: row.revision,
@@ -93,6 +96,7 @@ export function listStandaloneVps() {
 }
 function highlightCard(item: Awaited<ReturnType<typeof cards>>[number]) {
   return {
+    cardMetrics: item.cardMetrics,
     critical: item.critical,
     id: item.id, name: item.name, provider: item.provider, ip: item.ip,
     enabled: item.enabled, monitorConfigured: item.monitorConfigured, monitorPaused: item.monitorPaused, monitorState: item.monitorState,
@@ -136,13 +140,13 @@ export async function updateStandaloneVps(id: string, body: unknown) {
     const current = await tx.standaloneVps.findUnique({ where: { id } });
     if (!current) throw new BffError(404, "standalone_vps_not_found");
     if (current.revision !== patch.expectedRevision) throw new BffError(409, "revision_conflict");
-    const { expectedRevision, apiKey, ...changes } = patch;
+    const { expectedRevision, apiKey, cardMetrics, ...changes } = patch;
     void expectedRevision;
     const baseUrl = changes.baseUrl !== undefined ? changes.baseUrl : current.baseUrl;
     const ciphertext = nextKey(current.apiKeyCiphertext, apiKey, baseUrl);
     monitorPair(baseUrl, ciphertext !== null);
     const resumed = patch.monitorPaused === false && current.monitorPaused;
-    return tx.standaloneVps.update({ where: { id }, data: { ...changes, baseUrl, apiKeyCiphertext: ciphertext, revision: { increment: 1 }, ...(resumed ? { progressStartedAt: new Date() } : {}) } });
+    return tx.standaloneVps.update({ where: { id }, data: { ...changes, ...(cardMetrics !== undefined ? { cardMetrics: cardMetrics ?? Prisma.DbNull } : {}), baseUrl, apiKeyCiphertext: ciphertext, revision: { increment: 1 }, ...(resumed ? { progressStartedAt: new Date() } : {}) } });
   })).then(row => adminCards([row as VpsRow]).then(items => items[0]));
 }
 export function deleteStandaloneVps(id: string) {
@@ -203,9 +207,9 @@ function publicStack(stack: { id: string; vpsId: string; name: string; link: str
   return { id: stack.id, vpsId: stack.vpsId, name: stack.name, link: stack.link, notes: stack.notes, createdAt: stack.createdAt.toISOString(), updatedAt: stack.updatedAt.toISOString() };
 }
 function dataFor(input: StandaloneVpsInput, apiKeyCiphertext: string | null): Prisma.StandaloneVpsCreateInput {
-  const { apiKey, ...data } = input;
+  const { apiKey, cardMetrics, ...data } = input;
   void apiKey;
-  return { ...data, apiKeyCiphertext };
+  return { ...data, cardMetrics: cardMetrics ?? Prisma.DbNull, apiKeyCiphertext };
 }
 export async function recordVpsSample(vpsId: string, checkedAt: Date, reason: number, latencyMs: number | null, cpuPercent: number | null, memoryPercent: number | null, diskPercent: number | null) {
   return database(() => getPrisma().vpsMonitorSample.create({ data: { vpsId, checkedAt, reason, latencyMs, cpuPercent, memoryPercent, diskPercent } }));

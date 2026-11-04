@@ -33,6 +33,7 @@ function asProbeCard(item: z.infer<typeof externalServicePublicSchema>): ProbeCa
 
 function asVpsHighlight(item: z.infer<typeof standaloneVpsCardSchema>): StandaloneVpsHighlight {
   return {
+    cardMetrics: item.cardMetrics,
     id: item.id, name: item.name, provider: item.provider, ip: item.ip, enabled: item.enabled,
     monitorConfigured: item.monitorConfigured, monitorPaused: item.monitorPaused, monitorState: item.monitorState,
     cpuPercent: item.cpuPercent, memoryPercent: item.memoryPercent, diskPercent: item.diskPercent,

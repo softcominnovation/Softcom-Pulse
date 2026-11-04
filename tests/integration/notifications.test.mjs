@@ -304,7 +304,12 @@ test("Storage disk usage shares durable notifications, cancels only its rule and
   await Promise.all([collect(at+31000),collect(at+31000)]);
   let data=await listNotifications(query); assert.equal(data.events.length,1); assert.equal(data.events[0].targetRef,selected.ref); assert.equal(data.events[0].sound,"warning");
   assert.equal(data.events[0].metricContext.valuePercent,80); assert.equal(data.events[0].metricContext.thresholdPercent,70);
-  await markNotificationsRead({ids:[data.events[0].id]},"reader@example.test"); await collect(at+40000);
+  await markNotificationsRead({ids:[data.events[0].id]},"reader@example.test");
+  const beforePresentation = await getDatabase().query("SELECT id,status,condition_key,revision FROM notification_incident WHERE target_ref=$1",[selected.ref]);
+  await getDatabase().query('UPDATE storage_config SET card_metrics=$2,revision=revision+1 WHERE id=$1',[id,JSON.stringify(["cpu","memory","disk"])]);
+  assert.deepEqual((await getDatabase().query("SELECT id,status,condition_key,revision FROM notification_incident WHERE target_ref=$1",[selected.ref])).rows,beforePresentation.rows);
+  assert.equal((await notificationTargets()).find(target=>target.id===id).epoch,selected.epoch);
+  await collect(at+40000);
   assert.equal((await listNotifications(query)).events.length,1);
   const failed=snapshot(at+50000,20);failed.status="failed";await recordStorageUsage([selected],failed,at+50000);
   assert.equal((await listNotifications(query)).counts.activeCount,1);

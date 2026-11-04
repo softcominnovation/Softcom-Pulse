@@ -26,7 +26,7 @@ export function PlayerToolbar({ store, extraControls }: { store: ReturnType<type
       <div><h1>Toda a operação. Um só lugar.</h1><p className="dashboard-subtitle">Infraestrutura, serviços e evidências da operação.</p></div>
       {(player.rotating && paused || !player.rotating && player.pending) && <div className="player-controls">
         {player.rotating && paused && <Button onClick={() => player.start()} disabled={player.hidden || player.dialog}><Play aria-hidden="true" />Continuar alternância</Button>}
-        {!player.rotating && player.pending && <Button onClick={() => player.stop()}>Aplicar configuração atualizada</Button>}
+        {player.pending && <Button disabled={player.hidden || player.dialog} onClick={() => player.rotating && player.screenId ? player.select(player.screenId) : player.stop()}>Aplicar configuração atualizada</Button>}
       </div>}
     </div>
     <div className="screen-controls">
@@ -42,7 +42,7 @@ export function PlayerToolbar({ store, extraControls }: { store: ReturnType<type
       <p className="player-status">{player.rotating ? paused ? "Alternância pausada para leitura" : `Próxima tela em ${player.remaining}s` : "Exibição estática"}</p>
       {!canRotate && <p id="rotation-reason">A alternância requer pelo menos duas telas habilitadas.</p>}
     </div>
-    {player.pending && <p className="configuration-notice" role="status">Configuração atualizada. {!player.rotating ? "Use Aplicar configuração atualizada para carregar a nova versão." : paused ? "Será aplicada ao continuar a alternância." : "Será aplicada na próxima troca de tela."}</p>}
+    {player.pending && <p className="configuration-notice" role="status">Configuração atualizada. {!player.rotating ? "Use Aplicar configuração atualizada para carregar a nova versão." : paused ? "Aplique agora, selecione uma tela ou continue a alternância." : "Será aplicada na próxima troca de tela."}</p>}
     {player.notice && <p className="configuration-notice" role="status">{player.notice}</p>}
   </div>;
 }

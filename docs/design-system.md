@@ -90,7 +90,7 @@ Ao estender uma família existente, reutilizar seu componente/helper de cores. U
 
 ## 3. Tipografia, densidade e marca
 
-Disponibilidade de Serviços oferece uma variante experimental por bloco, **Atual / Ampliado**, configurada em Serviços destacados. O Ampliado usa caixa de 140px, largura confortável inicial de 260px e nome de 15px para todas as famílias; seus textos e dimensões acompanham a escala privada uma vez. O perfil Atual continua sendo o default e mantém suas medidas. Essa opção é de domínio, não um token global ou nova variante das primitivas Kobra. Reutilizar as classes atuais, cores, estados e ações, conforme [perfis dos minicards](availability-cards.md#perfis-de-tamanho-por-bloco).
+Disponibilidade de Serviços oferece uma variante experimental por bloco, **Padrão / Ampliado**, configurada em Serviços destacados. O Ampliado usa caixa de 140px, largura confortável inicial de 260px e nome de 15px para todas as famílias; seus textos e dimensões acompanham a escala privada uma vez. O perfil Padrão continua sendo o default e mantém suas medidas. Essa opção é de domínio, não um token global ou nova variante das primitivas Kobra. Reutilizar as classes atuais, cores, estados e ações, conforme [perfis dos minicards](availability-cards.md#perfis-de-tamanho-por-bloco).
 
 Fontes de sistema: `--font-sans` / `--font-ui` para texto e `--font-mono` / `--font-numeric` para números, IDs e horários. `font-mono` e `pulse-mono` aplicam números tabulares nos estilos globais. Body de 14px, line-height 1.45. Em Tailwind, `font-medium` está configurado como **400**, `font-semibold` e `font-bold` como **700**. CSS específico ainda usa pesos 500/550/600/650; não assumir que todos os nomes de utilitários correspondem ao peso nativo usual.
 
@@ -99,6 +99,8 @@ Fontes de sistema: `--font-sans` / `--font-ui` para texto e `--font-mono` / `--f
 `Brand` é a marca atual: `IconActivityHeartbeat` de Tabler em uma caixa com fundo `--foreground` e traço `--background`, mais o nome em cor neutra. Tamanho normal 32px; `AppShell` passa 42px em apresentação, com override de 45px até 1200px de largura e de 43px no dashboard balanceado acima de 1200px com altura entre 740 e 900px. O favicon principal é um SVG embutido em `app/layout.tsx`; o apple icon ainda aponta para `/logo.png`. Reutilizar `Brand` e suas props; não reconstruir a marca nem restaurar a palavra laranja ou o logo antigo a partir de instruções históricas.
 
 Tabler é usado nas novas primitivas, shell e WhatsApp; Lucide continua nos domínios anteriores. Para novos controles Kobra, acompanhar Tabler e os tamanhos do componente. Não substituir ícones existentes em massa como efeito colateral de uma funcionalidade.
+
+O sinal de notificações no favicon preserva os links de metadados gerenciados pelo Next/React; altera seus atributos sem remover/recriar os nós. Removê-los por código imperativo corrompe as referências de reconciliação e pode interromper a navegação e atualização de telas. Usar o helper de [notificações](notifications.md) em vez de apagar os favicons da página.
 
 ## 4. Componentes e composição
 
@@ -191,7 +193,7 @@ O encaixe de `overview` em >=1201×740 usa flex/grid com `min-height: 0` e rolag
 
 TV, fullscreen e alternância são estados distintos. O shell aplica `--dashboard-scale` uma vez apenas no dashboard em apresentação (100/110/120/125). Componentes de domínio usam `calc(... * var(--dashboard-scale, 1))` nas medidas previstas. Não usar zoom ou transform global, nem fazer formulário/modal herdar o tamanho do telão. Controles Kobra do cabeçalho são ocultos quando TV ou fullscreen estão ativos; isso não equivale a mutar áudio.
 
-Os zooms explícitos por rota são exceções de domínio limitadas aos seus wrappers: `dashboardZoomPercent` na raiz e `publicMonitorZoomPercent` no monitor, independentes, de 50–150% e default 100. Compensam a área lógica e multiplicam uma vez as medidas locais; não escrevem zoom no documento global nem afetam formulários/detalhes. Na raiz TV/fullscreen, a escala privada permanece dentro desse zoom. Em minicards, reutilizar `AvailabilityCardHeader`: nome à esquerda e badge à direita na mesma linha, com fundos `--pulse-good-bg`, `--pulse-warn-bg`, `--pulse-bad-bg` ou `--pulse-unknown-bg`. A base revisada Ampliada é 140px; Atual é 120px. O clássico usa o cabeçalho e fundos equivalentes sem depender de CSS moderno.
+Os zooms explícitos por rota são exceções de domínio limitadas aos seus wrappers: `dashboardZoomPercent` na raiz e `publicMonitorZoomPercent` no monitor, independentes, de 50–150% e default 100. Compensam a área lógica e multiplicam uma vez as medidas locais; não escrevem zoom no documento global nem afetam formulários/detalhes. Na raiz TV/fullscreen, a escala privada permanece dentro desse zoom. Em minicards, reutilizar `AvailabilityCardHeader`: nome à esquerda e badge à direita na mesma linha, com fundos `--pulse-good-bg`, `--pulse-warn-bg`, `--pulse-bad-bg` ou `--pulse-unknown-bg`. A base revisada Ampliada é 140px; Padrão é 120px. O clássico usa o cabeçalho e fundos equivalentes sem depender de CSS moderno.
 
 Em Disponibilidade, **Fileiras visíveis** é opção do bloco, não token global: Automático/1/2/3. A escolha manual prevalece sobre KPIs/largura em ambos os perfis e conserva fileiras completas. Se os mínimos não couberem, rola a composição; não reduzir a quantidade configurada nem alterar fontes/zoom para aparentar encaixe. Reutilizar `availabilityRowLimit`, os metadados e a medição existentes na prévia e nos renderers.
 
@@ -218,3 +220,7 @@ Novas mensagens usam pt-BR, nomes acessíveis para botões de ícone e sucesso a
 7. Ao ampliar um componente compartilhado, atualizar este guia/guia de som e o contrato de domínio correspondente. Uma mudança de layout/tema global requer intenção explícita; uma funcionalidade usa os padrões atuais.
 
 Esta revisão foi documental, baseada em fontes, dependências instaladas e histórico Git. Não representa uma nova homologação visual ou auditiva; não houve execução de build, testes, worker, migração ou servidor para escrevê-la.
+
+### Envelope de três métricas
+
+Nos minicards de domínio, somente o trio explícito põe disco inteiro acima de CPU/RAM. Pares conservam metades/ordem. Dentro de Disponibilidade, a caixa segue Padrão (120px) ou Ampliado (140px) do bloco, inclusive no trio; não anular uma preferência explícita por causa do conteúdo. Prévia isolada e grupos do Signal com trio mantêm 140px. Reutilizar `CardMetricOptions`, `cardMetricOrder` e as classes `availability-readings`; não criar outro seletor concorrente ou player. Regras de dados e persistência em [Minicards](availability-cards.md).

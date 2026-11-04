@@ -1,4 +1,6 @@
 "use client";
+import { CardMetricOptions } from "./card-metric-options";
+import { cardMetricsSchema } from "@/lib/config/agent-monitoring";
 import { TargetNotificationSettings } from "@/components/notifications/settings";
 
 import { useEffect, useState, type ComponentProps } from "react";
@@ -22,8 +24,8 @@ import { useAuthStore, useCanEdit } from "@/store/auth.store";
 import { Check, Field, ReadError, errorText, useAdminRead, useMutation } from "./shared";
 
 const parseList = (data: unknown) => z.object({ data: z.array(standaloneVpsCardSchema) }).parse(data).data;
-type Draft = { name: string; provider: string; ip: string; domain: string; managerUrl: string; baseUrl: string; apiKey: string; timeoutSeconds: number; enabled: boolean; dashboardEnabled: boolean; critical: boolean };
-const emptyDraft: Draft = { name: "", provider: "", ip: "", domain: "", managerUrl: "", baseUrl: "", apiKey: "", timeoutSeconds: 5, enabled: true, dashboardEnabled: false, critical: false };
+type Draft = { cardMetrics: string; name: string; provider: string; ip: string; domain: string; managerUrl: string; baseUrl: string; apiKey: string; timeoutSeconds: number; enabled: boolean; dashboardEnabled: boolean; critical: boolean };
+const emptyDraft: Draft = { cardMetrics: "", name: "", provider: "", ip: "", domain: "", managerUrl: "", baseUrl: "", apiKey: "", timeoutSeconds: 5, enabled: true, dashboardEnabled: false, critical: false };
 function ApiKeyField({ show, onToggle, ...props }: ComponentProps<"input"> & { show: boolean; onToggle: () => void }) {
   return <div className="admin-secret">
     <input type={show ? "text" : "password"} autoComplete="new-password" maxLength={4096} {...props} />
@@ -31,7 +33,7 @@ function ApiKeyField({ show, onToggle, ...props }: ComponentProps<"input"> & { s
   </div>;
 }
 function fromCard(item: StandaloneVpsCard): Draft {
-  return { ...emptyDraft, name: item.name, provider: item.provider ?? "", ip: item.ip, domain: item.domain ?? "", managerUrl: item.managerUrl ?? "", baseUrl: item.baseUrl ?? "", apiKey: item.apiKey ?? "", timeoutSeconds: Math.round(item.timeoutMs / 1000), enabled: item.enabled, dashboardEnabled: item.dashboardEnabled, critical: item.critical ?? false };
+  return { ...emptyDraft, cardMetrics: item.cardMetrics?.join(",") ?? "", name: item.name, provider: item.provider ?? "", ip: item.ip, domain: item.domain ?? "", managerUrl: item.managerUrl ?? "", baseUrl: item.baseUrl ?? "", apiKey: item.apiKey ?? "", timeoutSeconds: Math.round(item.timeoutMs / 1000), enabled: item.enabled, dashboardEnabled: item.dashboardEnabled, critical: item.critical ?? false };
 }
 export function VpsForm({ existing, onSaved, onCancel, onReload }: { existing?: StandaloneVpsCard; onSaved: () => void; onCancel: () => void; onReload: () => void }) {
   const form = useForm<Draft>({ defaultValues: existing ? fromCard(existing) : emptyDraft }), mutation = useMutation();
@@ -49,7 +51,7 @@ export function VpsForm({ existing, onSaved, onCancel, onReload }: { existing?: 
   const submit = form.handleSubmit(async draft => {
     setError(""); setConflict(false);
     const apiKey = draft.apiKey.trim();
-    const parsed = standaloneVpsWriteSchema.safeParse({ name: draft.name, provider: draft.provider, ip: draft.ip, domain: draft.domain, managerUrl: draft.managerUrl, baseUrl: draft.baseUrl, enabled: draft.enabled, dashboardEnabled: draft.dashboardEnabled, critical: draft.critical, timeoutMs: Math.round(draft.timeoutSeconds * 1000), ...(apiKey ? { apiKey } : {}) });
+    const parsed = standaloneVpsWriteSchema.safeParse({ cardMetrics: draft.cardMetrics ? cardMetricsSchema.parse(draft.cardMetrics.split(",")) : null, name: draft.name, provider: draft.provider, ip: draft.ip, domain: draft.domain, managerUrl: draft.managerUrl, baseUrl: draft.baseUrl, enabled: draft.enabled, dashboardEnabled: draft.dashboardEnabled, critical: draft.critical, timeoutMs: Math.round(draft.timeoutSeconds * 1000), ...(apiKey ? { apiKey } : {}) });
     if (!parsed.success) { setError("Revise os campos. O IP precisa ser IPv4 ou IPv6, o tempo limite fica entre 1 e 30 segundos, e a URL do monitor não leva usuário, senha, query ou fragmento."); return; }
     if (parsed.data.baseUrl && !apiKey && !existing?.monitorConfigured) { setError("Informe a URL base e a chave juntas, ou deixe as duas vazias."); return; }
     const body = { ...parsed.data, ...(existing ? { expectedRevision: existing.revision, ...(!parsed.data.baseUrl ? { apiKey: "" } : apiKey ? { apiKey } : {}) } : {}) };
@@ -61,6 +63,7 @@ export function VpsForm({ existing, onSaved, onCancel, onReload }: { existing?: 
   return <form onSubmit={submit} className="admin-form"><p className="admin-muted">O intervalo entre consultas fica no ambiente, com padrão de 60 s. A chave guardada não é exibida.</p>
     <fieldset disabled={mutation.busy}><div className="admin-fields">
       <Field label="Nome"><input maxLength={120} {...form.register("name")} /></Field>
+      <Field label="Métricas do minicard" hint="Três métricas usam o tamanho Ampliado. Sem monitor ou leitura atual, as métricas mostram —. A faixa continua disponível como padrão."><select {...form.register("cardMetrics")}><option value="">Faixa de disponibilidade (atual)</option><CardMetricOptions /></select></Field>
       <Field label="Provedor" hint="Opcional. Texto livre, como Hostinger, Oracle ou AWS."><input maxLength={120} {...form.register("provider")} /></Field>
       <Field label="Endereço IP"><input {...form.register("ip")} placeholder="10.1.1.8" /></Field>
       <Field label="Domínio"><input maxLength={255} {...form.register("domain")} /></Field>

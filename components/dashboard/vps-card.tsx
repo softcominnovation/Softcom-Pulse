@@ -1,5 +1,9 @@
 "use client";
 import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
+import { useContext } from "react";
+import { CardReadings } from "./card-readings";
+import { EvidenceTimeContext } from "./metrics";
+import { vpsCardValues } from "@/lib/vps/labels";
 
 import { usePathname } from "next/navigation";
 import { PlaceLink } from "@/components/layout/place-link";
@@ -23,6 +27,7 @@ function SnapshotMeter({ series, label, value }: { series: "cpu" | "memory" | "d
   return <div className={`series-${series}`}><span>{label}</span><strong>{percentLabel(value)}</strong><svg className={`metric-meter series-${series}`} viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect width="100" height="4" rx="2" className="meter-track" />{value !== null && <rect width={width} height="4" rx="2" className="meter-value" />}</svg></div>;
 }
 export function VpsAvailabilityCard({ item }: { item: StandaloneVpsHighlight }) {
+  const now = useContext(EvidenceTimeContext);
   const publicSurface = isPublicPath(usePathname());
   const availability = vpsAvailability(item.enabled);
   const monitor = vpsMonitorLabel(item.monitorState);
@@ -34,9 +39,9 @@ export function VpsAvailabilityCard({ item }: { item: StandaloneVpsHighlight }) 
   const content = <>
     <AvailabilityCardHeader name={item.name} label={headline} tone={item.enabled ? monitor?.tone ?? "good" : "unknown"} />
     <span className="availability-description">{description}</span>
-    <span className="probe-card-uptime"><ProbeStrip reasons={strip} colorFor={vpsReasonColor} /><span className="availability-footer"><span>VPS · {network}</span><strong>{uptime}</strong></span></span>
+    {item.cardMetrics ? <><CardReadings pair={item.cardMetrics} values={vpsCardValues(item, now)} diskTitle="Ocupação do disco retornada pelo monitor da VPS." /><span className="availability-footer"><span>VPS · {network}</span><strong>{uptime}</strong></span></> : <span className="probe-card-uptime"><ProbeStrip reasons={strip} colorFor={vpsReasonColor} /><span className="availability-footer"><span>VPS · {network}</span><strong>{uptime}</strong></span></span>}
   </>;
-  return <VpsDetails item={item} publicSurface={publicSurface} trigger={<button type="button" className="availability-card probe-card vps-card-highlight" aria-label={`Detalhes de ${item.name}: ${headline}, disponibilidade ${uptime}`}>{content}</button>} />;
+  return <VpsDetails item={item} publicSurface={publicSurface} trigger={<button type="button" className="availability-card probe-card vps-card-highlight" data-metric-count={item.cardMetrics?.length} aria-label={`Detalhes de ${item.name}: ${headline}, disponibilidade ${uptime}`}>{content}</button>} />;
 }
 function VpsDetails({ item, trigger, publicSurface }: { item: StandaloneVpsHighlight; trigger: ReactElement; publicSurface: boolean }) {
   const availability = vpsAvailability(item.enabled);

@@ -5,6 +5,27 @@ import { overview } from "../fixtures/dashboard";
 import { resourceCardData } from "../fixtures/resource-card-data";
 import { resolveAvailabilityCardMetrics } from "../../lib/monitoring/card-metrics";
 
+for (const width of [390, 1366]) test(`resource trio persists through its single selector and reopens unchanged at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 });
+  const state = await adminFixture(page), { resource, hosts } = resourceCardData("selected", ["cpu", "disk"]);
+  state.service.infrastructure.hosts.splice(0, state.service.infrastructure.hosts.length, ...hosts); state.resources.push(resource.config);
+  await signIn(page); await page.goto("/admin/recursos");
+  const row = page.locator(".admin-saved-list > li").filter({ hasText: "Agenda" }); await row.getByRole("button", { name: "Editar", exact: true }).click();
+  const editor = page.getByRole("region", { name: "Configuração do recurso", exact: true });
+  await editor.getByLabel("Métricas do minicard", { exact: true }).selectOption("cpu,memory,disk");
+  await expect(editor.locator(".availability-reading")).toHaveCount(3);
+  await expect(editor.locator(".availability-reading").first()).toHaveText("Disco20%");
+  expect((await editor.locator(".availability-card").boundingBox())!.height).toBe(140);
+  expect((await editor.locator(".availability-card").boundingBox())!.width).toBeLessThanOrEqual(260);
+  await editor.locator(".admin-resource-preview").screenshot({ path: `.cache/screenshots/trio-preview-${width}.png` });
+  await editor.getByRole("button", { name: "Salvar recurso", exact: true }).click(); await expect(editor).toHaveCount(0);
+  expect(state.writes.at(-1)!.body.presentation).toMatchObject({ cardMetrics: ["cpu", "memory", "disk"], showCpu: true, showMemory: true, showDisk: true });
+  expect(state.resources.find(item => item.id === resource.id)!.agentMonitoring).toEqual(resource.config.agentMonitoring);
+  await row.getByRole("button", { name: "Editar", exact: true }).click();
+  await expect(editor.getByLabel("Métricas do minicard", { exact: true })).toHaveValue("cpu,memory,disk");
+  await expect(editor.locator(".availability-reading").nth(2)).toHaveText("RAM40%");
+});
+
 for (const width of [390, 1366]) for (const mode of ["root", "selected", "missing", "legacy"] as const) test(`resource preview and dashboard retain the selected pair and disk source for ${mode} at ${width}px`, async ({ page }) => {
   await page.setViewportSize({ width, height: 900 });
   const state = await adminFixture(page), { resource, hosts } = resourceCardData(mode === "legacy" ? "root" : mode, ["cpu", "memory"]);

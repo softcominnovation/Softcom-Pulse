@@ -68,13 +68,13 @@ function PresentationForm({ saved, resources, hosts, reload, availabilityCatalog
     if (!parsed.success) { setReadingError(parsed.error.issues.some(issue => issue.path.includes("autoStart")) ? "A alternância automática exige duas telas habilitadas com blocos." : "Escolha um tamanho válido, zoom inteiro entre 50 e 150% e tempo inteiro entre 1 e 120 minutos."); return; }
     try {
       const result = await mutation.run(async signal => parseDocument((await api.put("/settings/presentation", { expectedRevision: revision, settings: parsed.data }, { signal })).data));
-      if (result) { setConfirmed(result); toast.success("Modo TV, alternância e leitura do telão salvos. A composição das telas continua no rascunho."); }
+      if (result) { setConfirmed(result); window.dispatchEvent(new Event("pulse:preferences-changed")); toast.success("Modo TV, alternância e leitura do telão salvos. A composição das telas continua no rascunho."); }
     } catch (failure) { setReadingError(errorText(failure)); }
   };
   const submit = form.handleSubmit(async input => {
     const parsed = presentationSettingsSchema.safeParse(input); setError("");
     if (!parsed.success) { setError("Revise os limites e as opções indicados abaixo antes de salvar."); return; }
-    try { const result = await mutation.run(async signal => parseDocument((await api.put("/settings/presentation", { expectedRevision: confirmed.revision, settings: parsed.data }, { signal })).data)); if (result) { toast.success("Apresentação do dashboard salva."); reload(); } }
+    try { const result = await mutation.run(async signal => parseDocument((await api.put("/settings/presentation", { expectedRevision: confirmed.revision, settings: parsed.data }, { signal })).data)); if (result) { window.dispatchEvent(new Event("pulse:preferences-changed")); toast.success("Apresentação do dashboard salva."); reload(); } }
     catch (failure) { setError(errorText(failure)); }
   });
   return <section className="admin-presentation"><form onSubmit={submit} aria-label="Configurações da apresentação">

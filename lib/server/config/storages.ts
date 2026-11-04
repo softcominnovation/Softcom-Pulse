@@ -27,9 +27,9 @@ export function saveStorageConfig(key: string, body: unknown) {
   return database(() => getPrisma().$transaction(async tx => {
     const current = await tx.storageConfig.findUnique({ where: { storageKey: key } });
     if ((current?.revision ?? 0) !== input.expectedRevision) throw new BffError(409, "revision_conflict");
-    const { expectedRevision, diskWarningPercent, ...rest } = input;
+    const { expectedRevision, diskWarningPercent, cardMetrics, ...rest } = input;
     void expectedRevision;
-    const preferences = storagePreferencesSchema.parse({ ...rest, diskWarningPercent: diskWarningPercent === undefined ? current?.diskWarningPercent ?? null : diskWarningPercent });
+    const preferences = storagePreferencesSchema.parse({ ...rest, cardMetrics: cardMetrics ?? current?.cardMetrics, diskWarningPercent: diskWarningPercent === undefined ? current?.diskWarningPercent ?? null : diskWarningPercent });
     const selectionChanged = JSON.stringify(current?.filesystemKeys ?? null) !== JSON.stringify(input.filesystemKeys) || (current?.networkInterfaceKey ?? null) !== input.networkInterfaceKey;
     const capacityChanged = JSON.stringify([...(current?.filesystemKeys as string[] ?? [])].sort()) !== JSON.stringify([...(input.filesystemKeys ?? [])].sort()) || current?.independentVolumesConfirmed !== input.independentVolumesConfirmed;
     const verifyCapacity = preferences.diskWarningPercent !== null && (current?.diskWarningPercent == null || capacityChanged);

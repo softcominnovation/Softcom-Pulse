@@ -69,6 +69,14 @@ for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 }
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Alertas e exibição", exact: true }).click();
   await expect(dialog.getByLabel("Métricas do minicard", { exact: true })).toHaveValue("cpu,disk");
+  await dialog.getByLabel("Métricas do minicard", { exact: true }).selectOption("cpu,memory,disk");
+  await expect(dialog.locator(".availability-reading")).toHaveCount(3);
+  await expect(dialog.locator(".availability-reading").first()).toContainText("Disco");
+  expect((await dialog.locator(".availability-card").boundingBox())!.height).toBe(140);
+  await dialog.getByRole("button", { name: "Salvar alertas e exibição", exact: true }).click();
+  await expect.poll(() => writes.at(-1)?.cardMetrics).toEqual(["cpu", "memory", "disk"]);
+  await page.keyboard.press("Escape"); await page.getByRole("button", { name: "Alertas e exibição", exact: true }).click();
+  await expect(dialog.getByLabel("Métricas do minicard", { exact: true })).toHaveValue("cpu,memory,disk");
   await dialog.getByLabel("Métricas do minicard", { exact: true }).selectOption("disk,memory");
   if (viewport.width === 390) {
     const before = writes.length;

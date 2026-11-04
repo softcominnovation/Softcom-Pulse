@@ -1,6 +1,6 @@
 # Minicards de Disponibilidade de Serviços
 
-Storage usa `kind:storage` e UUID da preferência, disponível após configurar a máquina em Serviços. Default inclui os destacados após as famílias anteriores, com ordem interna e criticidade; custom aceita configuração sem destaque. Preserva 120px no perfil Atual e acompanha a caixa comum no Ampliado, com CPU e disco ocupado (%), usando a capacidade selecionada e a cor âmbar de disco. No rodapé, RX e TX vêm da interface já escolhida em Serviços, separados e com suas unidades; uptime/leitura ficam na dica e no detalhe. Ausência é “—”, zero é zero e dado antigo mantém identificação. Não acrescenta terceira barra ou faixa de uptime. Abre o painel compartilhado sob demanda, com link por storageKey para Serviços e equivalente público. Disponibilidade usa o mesmo helper do painel. Referência órfã conserva estado neutro; sem preferência recuperável, aplica a política de omissão do custom. Detalhes em [Storage](storage.md).
+Storage usa `kind:storage` e UUID da preferência, disponível após configurar a máquina em Serviços. Default inclui os destacados após as famílias anteriores, com ordem interna e criticidade; custom aceita configuração sem destaque. Preserva 120px no perfil Padrão e acompanha a caixa comum no Ampliado, com CPU e disco ocupado (%) por padrão. O seletor de métricas permite os outros pares e CPU/RAM/disco, sempre usando a capacidade selecionada e a cor âmbar de disco. No rodapé, RX e TX vêm da interface já escolhida em Serviços, separados e com suas unidades; uptime/leitura ficam na dica e no detalhe. Ausência é “—”, zero é zero e dado antigo mantém identificação. O trio explícito coloca disco inteiro acima de CPU/RAM; não acrescenta faixa de uptime. Abre o painel compartilhado sob demanda, com link por storageKey para Serviços e equivalente público. Disponibilidade usa o mesmo helper do painel. Referência órfã conserva estado neutro; sem preferência recuperável, aplica a política de omissão do custom. Detalhes em [Storage](storage.md).
 
 Construção visual pelo [Design system Kobra](design-system.md). Os tokens Pulse abaixo acompanham o tema; cores fixas remanescentes das faixas são paletas de telemetria, não a paleta global.
 
@@ -8,23 +8,27 @@ A grade **Disponibilidade de Serviços** é um único grid. No modo **default** 
 
 ## Perfis de tamanho por bloco
 
-Em Configurações → tela → **Serviços destacados**, **Tamanho dos minicards** oferece **Atual** (`compact`, padrão) e **Ampliado** (`expanded`, experimental). A preferência pertence ao bloco, em `highlighted_resources.options.cardSize`, e usa o JSON/revisão existentes. Sem o campo, o leitor aplica Atual em memória. **Ver prévia** não grava; **Salvar apresentação** compartilha a escolha. Voltar para Atual restaura a caixa compacta sem alterar seleção, fileiras ou métricas.
+Em Configurações → tela → **Serviços destacados**, **Tamanho dos minicards** oferece **Padrão** (`compact`, default, antes chamado Atual) e **Ampliado** (`expanded`). A preferência pertence ao bloco, em `highlighted_resources.options.cardSize`, e usa o JSON/revisão existentes. Sem o campo, o leitor aplica Padrão em memória. **Ver prévia** não grava; **Salvar apresentação** compartilha a escolha. O perfil escolhido vale também para cards com três métricas: Padrão tem 120px e Ampliado 140px, sem promoção automática. Métricas e fileiras permanecem preservadas.
 
 No Ampliado, todas as famílias da grade usam a mesma caixa de **140px**, nome de **15px**, estado/descrição/rodapé/leituras de **11px** (line-height de 14px) e medidores de **4px**. Faixas continuam com 40 posições e passam a 20px de altura. Valores longos usam reticências/detalhe; estado, nome e ação conservam seu significado. Painéis grandes, detalhes e minicards fora desse contexto continuam com o envelope atual.
 
 A largura confortável inicial é **260px**. A faixa inteira calcula colunas pela largura útil e distribui a sobra entre elas, inclusive colunas vazias, para um serviço isolado não preencher o painel inteiro. Em split e no par Disponibilidade/Problemas com Storage, há no máximo **três colunas**, reduzidas para duas/uma conforme o contêiner, inclusive sua scrollbar. Não são alteradas as larguras salvas dos blocos.
 
+A prévia isolada do editor de recurso conserva até **230px** para um par e **260px** para o trio, com altura de 120/140px respectivamente. A expansão horizontal pertence à grade/grupo de cards, não ao formulário inteiro. Não usar um seletor combinado que aplique `max-width: none` também ao card isolado com três métricas.
+
+**Isolamento por bloco:** a renderização React obtém as opções do bloco na tela ativa de `dashboardPresentation`, identificado por UUID e tipo; o overview fornece a evidência correspondente. Opções ausentes no payload de evidências não podem substituir a configuração salva por defaults. KPIs, perfil e fileiras de uma tela não são preferências globais nem são herdados da primeira tela. O renderer clássico usa a mesma precedência. Troca, cache, recarga e reordenação devem conservar esse vínculo; o limite atual continua sendo três telas.
+
 As medidas ampliadas de caixa, fontes, barras, gaps e paddings acompanham `--dashboard-scale` uma única vez na apresentação privada. No `/monitor`, o fator permanece 1 e o zoom público atua pela camada existente. `availability-sizing.ts` concentra altura, largura confortável, gap e contas de orçamento. O clássico recebe o perfil no HTML inicial, mantém fontes maiores nas atualizações e recalcula colunas em ES5 usando a largura efetiva.
 
 **Proporção e zoom:** `dashboardZoomPercent`, campo **Zoom inicial da Visão geral (%)**, controla somente a raiz `/`; `publicMonitorZoomPercent`, campo **Zoom inicial do /monitor (%)**, controla somente `/monitor`. Ambos aceitam 50–150, padrão 100, e atuam uma vez sobre os aumentos locais dos cards e textos dos KPIs. Com 70%, o card Ampliado de 140px aparece com 98px, e seu nome de 15px com 10,5px. A compensação de largura/altura lógica mantém o preenchimento do viewport. Na raiz, a escala privada de TV/fullscreen continua dentro do zoom próprio; normal mantém esse fator em 1. Detalhes e administração não herdam esses zooms.
 
-**Fileiras visíveis**, no mesmo editor, oferece **Automático**, **1**, **2** ou **3 fileiras completas**. A escolha manual tem prioridade sobre os KPIs e a largura, nos perfis Atual e Ampliado. Pode mostrar três com KPIs, três na faixa inteira ou uma no split. A preferência é por bloco/tela e compartilhada com raiz, monitor e prévia; **Salvar apresentação** publica, enquanto Salvar leitura do telão conserva o rascunho dos blocos.
+**Fileiras visíveis**, no mesmo editor, oferece **Automático**, **1**, **2** ou **3 fileiras completas**. A escolha manual tem prioridade sobre os KPIs e a largura, nos perfis Padrão e Ampliado. Pode mostrar três com KPIs, três na faixa inteira ou uma no split. A preferência é por bloco/tela e compartilhada com raiz, monitor e prévia; **Salvar apresentação** publica, enquanto Salvar leitura do telão conserva o rascunho dos blocos.
 
-O JSON reutiliza `visibleRows` como contagem e usa `rowMode: manual | auto` para distinguir a seleção nova do comportamento legado. Em Automático explícito, são duas fileiras no dividido com KPIs, três sem KPIs e duas na faixa inteira. Documentos sem `rowMode` preservam suas regras anteriores: Ampliado automático e Atual com limites/compactação legados. Não há escrita durante leitura/medição. Trocar perfil ou grade preserva uma seleção manual. Com menos cards, não reserva fileiras vazias.
+O JSON reutiliza `visibleRows` como contagem e usa `rowMode: manual | auto` para distinguir a seleção nova do comportamento legado. Em Automático explícito, são duas fileiras no dividido com KPIs, três sem KPIs e duas na faixa inteira. Documentos sem `rowMode` preservam suas regras anteriores: Ampliado automático e Padrão com limites/compactação legados. Não há escrita durante leitura/medição. Trocar perfil ou grade preserva uma seleção manual. Com menos cards, não reserva fileiras vazias.
 
-A conta ampliada usa card de 140px, gap de 8px e padding real. Seleções explícitas no Atual usam 120px com gap/padding de 8px, sem a reserva legada de duas linhas no split ou a compactação de 130px. Fileiras com Storage e o clássico medem a altura natural das grades Ampliadas ou com modo explícito. Quando a janela completa e os mínimos inferiores não cabem, a composição inteira rola dentro do shell, preservando os dados e a legenda; não corta cards nem reduz a quantidade manual para simular encaixe. A prévia indica quando a composição precisa rolar. Não há nova seleção de métricas neste complemento.
+A conta ampliada usa card de 140px, gap de 8px e padding real. Seleções explícitas no Padrão usam 120px com gap/padding de 8px, sem a reserva legada de duas linhas no split ou a compactação de 130px. Fileiras com Storage e o clássico medem a altura natural das grades Ampliadas ou com modo explícito. Quando a janela completa e os mínimos inferiores não cabem, a composição inteira rola dentro do shell, preservando os dados e a legenda; não corta cards nem reduz a quantidade manual para simular encaixe. A prévia indica quando a composição precisa rolar. O trio adapta seu espaçamento ao perfil do bloco; não muda `cardSize`, colunas ou fileiras.
 
-## A grade do perfil Atual
+## A grade do perfil Padrão
 
 Classe `availability-grid`.
 
@@ -37,7 +41,7 @@ O card novo não altera essas medidas. Não cria uma segunda grade ao lado.
 
 Exceção existente: em `overviewGrid: split`, `.overview-split-grid .availability-grid` usa quatro colunas elásticas e os cards ocupam a largura da coluna (`max-width: none`). A altura dos cards continua 120px. Essa regra de quatro colunas não possui override móvel próprio em `availability.css`; não presumir que empilhar os painéis também reduz suas colunas internas. Reutilizar a grade atual, sem impor largura fixa por componente que quebre esse modo.
 
-## A caixa do perfil Atual, comum às famílias
+## A caixa do perfil Padrão, comum às famílias
 
 Classe `availability-card`. Todo card da grade usa esta classe.
 
@@ -54,7 +58,7 @@ Classe `availability-card`. Todo card da grade usa esta classe.
 
 De cima para baixo, todo card tem cabeçalho, descrição e miolo com rodapé:
 
-1. **Nome e estado.** `AvailabilityCardHeader` coloca `availability-name` à esquerda e o badge `availability-state status-pill` à direita. Nome de 13px no Atual e 15px no Ampliado, com reticências e título completo. O badge conserva o estado e usa os mesmos fundos semânticos dos painéis: verde, âmbar, vermelho ou neutro. Nome e badge não se sobrepõem.
+1. **Nome e estado.** `AvailabilityCardHeader` coloca `availability-name` à esquerda e o badge `availability-state status-pill` à direita. Nome de 13px no Padrão e 15px no Ampliado, com reticências e título completo. O badge conserva o estado e usa os mesmos fundos semânticos dos painéis: verde, âmbar, vermelho ou neutro. Nome e badge não se sobrepõem.
 2. **Descrição.** Classe `availability-description`, 10px, cor muted, uma linha com reticências.
 3. **Miolo preso embaixo.** `margin-top: auto`. É a única zona que muda entre os tipos. Termina no rodapé.
 
@@ -68,7 +72,7 @@ O card de container do cluster Signal (`signal_service`) usa o mesmo envelope. O
 
 Componente `ServiceAvailabilityCard`. Só a classe `availability-card`.
 
-O miolo usa até duas leituras, classe `availability-readings`, em duas colunas. O seletor único **Métricas do minicard** em Recursos oferece CPU/RAM, CPU/Disco ou Disco/RAM, gravando o par existente `presentation.cardMetrics`. Não há checkboxes duplicados de CPU/memória/disco para hosts. Recursos e Alertas e exibição da VM salvam essa mesma escolha e sincronizam `showCpu`/`showMemory`/`showDisk` para compatibilidade, sem pares contraditórios. Cada leitura tem rótulo, valor tabular de 10px e barra de 3px: CPU verde, RAM azul, disco âmbar. Cadastros sem par explícito continuam respeitando suas flags, limitadas a duas leituras; Disco marcado tem prioridade sobre RAM quando CPU também está marcada. Sem leituras, a zona mostra **Ver detalhes**. Abrir um par legado no editor só o adota no rascunho, sem gravar automaticamente.
+O miolo usa duas ou três leituras, classe `availability-readings`. O seletor único **Métricas do minicard** em Recursos oferece CPU/RAM, CPU/Disco, Disco/RAM ou **CPU, RAM e Disco**, gravando `presentation.cardMetrics`. Pares conservam sua ordem e metades; somente no trio o disco ocupa a linha superior inteira e CPU/RAM ficam abaixo. Não há checkboxes duplicados de CPU/memória/disco para hosts. Recursos e Alertas e exibição da VM salvam essa mesma escolha e sincronizam `showCpu`/`showMemory`/`showDisk` para compatibilidade, sem seleções contraditórias. Cada leitura tem rótulo, valor tabular de 10px e barra de 3px: CPU verde, RAM azul, disco âmbar. Cadastros sem par explícito continuam respeitando suas flags, limitadas a duas leituras; Disco marcado tem prioridade sobre RAM quando CPU também está marcada. Sem leituras, a zona mostra **Ver detalhes**. Abrir um par legado no editor só o adota no rascunho, sem gravar automaticamente.
 
 CPU/RAM do card de recurso Zabbix seguem `presentation.metricsSource` do recurso (Recursos → editar host): padrão **hypervisor** (mesma fonte da listagem de VMs do Asgard); opcional **agent**. A lista de VMs do Asgard não muda.
 
@@ -97,6 +101,8 @@ O rodapé continua sendo uma linha com borda superior. À esquerda, a identidade
 
 A aplicação usa as cores da sonda. A VPS passa `colorFor`, porque os motivos numéricos dela não são os da sonda. Um serviço novo que reutilize a faixa informa o próprio mapa de cor. Não reuse o mapa da sonda se o número não significar a mesma coisa.
 
+A VPS mantém a faixa por padrão (`cardMetrics: null`). Em seu editor, **Métricas do minicard** oferece os três pares e o trio, usando somente `cpuPercent`, `memoryPercent` e `diskPercent` do monitor. Escolha explícita mantém o selo/rodapé e troca o miolo; sem monitor, pausa, falha ou leitura vencida, os campos ficam **—**. A janela de leitura é de até seis minutos (três ciclos do maior intervalo suportado), sem mudar estado/alertas do monitor. Voltar para **Faixa de disponibilidade (atual)** salva null; omitir o campo em um PATCH conserva a seleção anterior.
+
 O clique da aplicação abre o modal de histórico. O clique da VPS abre o modal curto: estado, IP, três medidores (CPU geral, RAM e disco) e o link para o detalhe. Os núcleos ficam no detalhe, não no card nem nesse modal.
 
 ## Cores de estado
@@ -112,7 +118,7 @@ A barra de RAM usa `--pulse-blue` → `--info`. A faixa não troca para vermelho
 
 ## Especificação para o próximo card
 
-Os valores numéricos abaixo descrevem o perfil Atual. Dentro de um bloco Ampliado, reutilizar as mesmas classes de conteúdo e deixar o contexto aplicar o envelope ampliado; não fixar 120px por família nem repassar o perfil para dentro dos detalhes/modais.
+Os valores numéricos abaixo descrevem o perfil Padrão. Dentro de um bloco Ampliado, reutilizar as mesmas classes de conteúdo e deixar o contexto aplicar o envelope ampliado; não fixar 120px por família nem repassar o perfil para dentro dos detalhes/modais.
 
 O serviço que for exibido nesta grade implementa um componente no mesmo grid, nesta ordem de blocos. Não inventa largura, altura, raio ou uma terceira fileira de rodapé.
 
@@ -132,3 +138,13 @@ Fora deste contrato: não colocar o card em `uptime_list` só para reaproveitar 
 ## Alertas de uso e pares dos minicards
 
 O [guia de alertas das VMs com Agent](vm-agent-alerts.md) documenta limites percentuais, armazenamento agregado selecionado, configuração compartilhada entre ASGARD e Signal, revisão das escritas e seleção CPU/RAM, CPU/Disco ou Disco/RAM. O Collector existente avalia os limites; disponibilidade, processos, layouts salvos e o áudio mantêm seus contratos.
+
+## Três métricas e persistência
+
+A quarta combinação canônica é `["cpu","memory","disk"]`. O helper `cardMetricOrder` produz Disco → CPU → RAM para exibição sem reordenar o valor salvo. Combinações desconhecidas, duplicadas ou em outra ordem são rejeitadas. Flags antigas não promovem automaticamente para trio.
+
+Dentro de Disponibilidade, toda a grade respeita a mesma caixa escolhida pelo bloco: **Padrão 120px** ou **Ampliado 140px**, inclusive quando há trio. O disco ocupa a linha superior inteira nos dois perfis. Grupos reutilizados no Signal e prévias isoladas de trio conservam o envelope de 140px; pares isolados continuam em 120px. Zooms e Fileiras visíveis manuais permanecem independentes.
+
+Recursos/Agent/Signal reutilizam seus campos existentes. Storage grava `storage_config.card_metrics`, default CPU/Disco, sem alterar RX/TX/capacidade/limite. VPS grava `standalone_vps.card_metrics` nullable, default SQL null (faixa). A migration aditiva `20261103190000_minicard_three_metrics` amplia os checks existentes e acrescenta esses dois campos. Escritas antigas sem o novo campo preservam a escolha; ambos os modais do Storage preservam o escopo do outro. Alterar só apresentação não modifica regras/identidade de notificações.
+
+O renderer clássico gera o trio no primeiro HTML e nos snapshots; usa flex-wrap compatível com WebView antiga, sem depender de Grid moderno. O contrato de fontes, barra, ausência e rodapé é o mesmo do React.

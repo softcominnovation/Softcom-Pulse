@@ -28,6 +28,21 @@ test("manual selection pauses and formats stop without changing the persisted do
   action.step(1); action.tick(20000); assert.equal(store.getState().screenId, "screen-1"); assert.equal(store.getState().readingPaused, true);
   action.format("overview"); assert.equal(store.getState().rotating, false); assert.equal(store.getState().layoutOverride, "overview"); assert.deepEqual(store.getState().document, saved);
 });
+test("manual selection and arrows apply the latest pending revision without resuming rotation", () => {
+  const store = createPlayerStore(), action = store.getState();
+  action.configure(document(3, 1, true), 0); action.select("screen-1");
+  const next = document(3, 2, true);
+  next.screens[1].blocks[0].options = { fontScalePercent: 150 };
+  action.configure(next, 1000); assert.equal(store.getState().document.revision, 1);
+  action.select("screen-2");
+  assert.equal(store.getState().document.revision, 2); assert.equal(store.getState().pending, null);
+  assert.equal(store.getState().readingPaused, true); assert.equal(store.getState().deadline, null);
+  const reordered = document(3, 3, true); reordered.screens.reverse();
+  action.configure(reordered, 2000); action.step(1);
+  assert.equal(store.getState().screenId, "screen-1"); assert.equal(store.getState().document.revision, 3);
+  assert.equal(store.getState().readingPaused, true); assert.equal(store.getState().rotating, true);
+});
+
 test("new revisions wait for slide boundary or resume; old revisions cannot replace pending ones", () => {
   const store = createPlayerStore(), action = store.getState(); action.configure(document(3, 1, true), 0);
   const next = document(3, 2); next.rotation.intervalSeconds = 10; next.screens.reverse(); action.configure(next, 1000);

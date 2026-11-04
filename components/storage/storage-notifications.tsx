@@ -48,7 +48,7 @@ function StorageNotificationDialog({ item, open, setOpen, trigger, onSaved }: { 
     if (!config || saved.loading || mutation.busy) return;
     const parsed = storageWriteSchema.safeParse({
       displayName: config.displayName, description: config.description, dashboardEnabled: config.dashboardEnabled, critical: config.critical,
-      displayOrder: config.displayOrder, networkInterfaceKey: config.networkInterfaceKey, filesystemKeys,
+      displayOrder: config.displayOrder, networkInterfaceKey: config.networkInterfaceKey, filesystemKeys, cardMetrics: config.cardMetrics,
       independentVolumesConfirmed: config.independentVolumesConfirmed, diskWarningPercent: warning === null ? null : Number(warning), expectedRevision: config.revision,
     });
     if (!parsed.success) { setError(parsed.error.issues[0]?.message ?? "Confira o limite e os volumes monitorados."); return; }

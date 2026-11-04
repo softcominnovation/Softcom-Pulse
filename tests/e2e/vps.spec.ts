@@ -5,6 +5,7 @@ import { id, overview, presentation } from "../fixtures/dashboard";
 
 type Stack = { id: string; vpsId: string; name: string; link: string | null; notes: string | null; createdAt: string; updatedAt: string };
 type Row = {
+  cardMetrics?: ("cpu" | "memory" | "disk")[] | null;
   id: string; name: string; provider: string | null; ip: string; domain: string | null; managerUrl: string | null; baseUrl: string | null;
   monitorConfigured: boolean; enabled: boolean; dashboardEnabled: boolean; timeoutMs: number; revision: number; monitorState: string;
   reason: number | null; latencyMs: number | null; cpuPercent: number | null; memoryPercent: number | null; diskPercent: number | null;
@@ -35,7 +36,7 @@ async function installVps(page: Page) {
     record(route);
     const body = request.postDataJSON() as Record<string, unknown>;
     const row: Row = {
-      id: id(sequence++), name: String(body.name), provider: (body.provider as string | null) ?? null, ip: String(body.ip), domain: (body.domain as string | null) ?? null,
+      cardMetrics: body.cardMetrics as Row["cardMetrics"] ?? null, id: id(sequence++), name: String(body.name), provider: (body.provider as string | null) ?? null, ip: String(body.ip), domain: (body.domain as string | null) ?? null,
       managerUrl: (body.managerUrl as string | null) ?? null, baseUrl: (body.baseUrl as string | null) ?? null, monitorConfigured: Boolean(body.baseUrl && body.apiKey),
       enabled: body.enabled !== false, dashboardEnabled: body.dashboardEnabled === true, timeoutMs: Number(body.timeoutMs ?? 5000), revision: 1, monitorState: "not_configured",
       reason: null, latencyMs: null, cpuPercent: null, memoryPercent: null, diskPercent: null, checkedAt: null, strip: [], createdAt: at, updatedAt: at, stacks: [], apiKey: typeof body.apiKey === "string" && body.apiKey ? body.apiKey : null, monitorPaused: false,
@@ -79,6 +80,27 @@ async function installVps(page: Page) {
   });
   return { rows, writes };
 }
+
+for (const width of [390, 1366]) test(`VPS metric preference can select the trio and explicitly restore the availability strip at ${width}px`, async ({ page }) => {
+  await page.setViewportSize({ width, height: 900 }); await adminFixture(page);
+  const { rows, writes } = await installVps(page);
+  await signIn(page); await page.goto("/admin/vps");
+  await page.getByRole("button", { name: "Nova VPS", exact: true }).click();
+  await page.getByLabel("Nome", { exact: true }).fill("VPS Trio"); await page.getByLabel("Endereço IP", { exact: true }).fill("10.88.0.3");
+  await expect(page.getByLabel("Métricas do minicard", { exact: true })).toHaveValue("");
+  await page.getByLabel("Métricas do minicard", { exact: true }).selectOption("cpu,memory,disk");
+  await page.getByRole("button", { name: "Salvar VPS", exact: true }).click();
+  await expect(page.getByRole("link", { name: "VPS Trio", exact: true })).toBeVisible();
+  expect(writes.at(-1)!.body!.cardMetrics).toEqual(["cpu", "memory", "disk"]);
+  // The route fixture must echo the same new field as the real repository.
+  Object.assign(rows[0], { cardMetrics: ["cpu", "memory", "disk"] });
+  await page.reload(); await page.getByRole("link", { name: "VPS Trio", exact: true }).click();
+  await page.getByRole("button", { name: "Editar", exact: true }).click();
+  await expect(page.getByLabel("Métricas do minicard", { exact: true })).toHaveValue("cpu,memory,disk");
+  await page.getByLabel("Métricas do minicard", { exact: true }).selectOption("");
+  await page.getByRole("button", { name: "Salvar VPS", exact: true }).click();
+  expect(writes.at(-1)!.body!.cardMetrics).toBeNull();
+});
 
 test("vps list keeps catalog fields and treats a missing monitor as gray", async ({ page }) => {
   await adminFixture(page);

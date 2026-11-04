@@ -73,7 +73,7 @@ export function hostMetricsPreference(presentation: { metricsSource?: CardMetric
   return presentation?.metricsSource ?? "hypervisor";
 }
 
-/** An explicit pair owns the minicard; legacy flags never produce a third reading. */
+/** Explicit metrics own the minicard; legacy flags never produce a third reading. */
 export function availabilityCardSlots(presentation: { showCpu?: boolean; showMemory?: boolean; showDisk?: boolean; cardMetrics?: readonly CardMetric[] }, resourceType: "host" | "docker_container" = "host"): CardMetric[] {
   if (presentation.cardMetrics) return [...presentation.cardMetrics];
   if (resourceType === "host") return legacyCardMetrics(presentation);

@@ -242,3 +242,6 @@
     grid-template-columns: 1fr;
   }
 }
+
+.signal-linked-grid.availability-group[data-card-size="expanded"] { grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 260px)); }
+.signal-linked-grid.availability-group[data-card-size="expanded"] .signal-linked-card-wrap { max-width: 260px; }

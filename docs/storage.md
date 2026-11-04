@@ -1,5 +1,13 @@
 # Monitoramento de VMs de Storage
 
+## Métricas do minicard
+
+Em **Editar configuração → Métricas do minicard**, escolha CPU/RAM, CPU/Disco (padrão), Disco/RAM ou CPU/RAM/Disco. No trio, disco ocupa a linha superior inteira e CPU/RAM ficam abaixo. Na Disponibilidade, o envelope respeita Padrão (120px) ou Ampliado (140px) do bloco, compartilhado com os outros cards da grade. Os painéis grandes conservam seu conteúdo.
+
+Disco usa os volumes já selecionados, RAM usa o percentual do Agent e o rodapé mantém RX/TX da interface configurada. Ausência/expiração conserva a célula selecionada com **—**; zero aparece como zero. Alterar as métricas não altera o alerta de disco; salvar Notificações conserva as métricas. Restaurar padrões de apresentação volta a CPU/Disco, preservando os limites/volumes do alerta ativo.
+
+Preferência em `storage_config.card_metrics`, adicionada por `20261103190000_minicard_three_metrics` com default CPU/Disco. Requisições legadas que omitem o campo conservam o valor anterior. Sem nova rota, worker ou consulta Zabbix.
+
 ## Alerta de ocupação do disco
 
 Em **Serviços → Storages → Notificações deste serviço → Alerta de disco**, marque **Alertar ocupação do disco**, informe **Limite de disco (%)** (1–100) e clique em **Salvar alerta de disco**. A sugestão inicial é 70; só salvar ativa a regra. O limite significa percentual **ocupado**, usando a mesma capacidade ponderada dos cards. Salve primeiro o cadastro do Storage, caso ainda não exista.

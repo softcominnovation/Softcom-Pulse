@@ -264,12 +264,14 @@ for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 108
         if (mode === "fullscreen") await enterNativeFullscreen(page);
         await expect(page.locator(".dashboard-shell")).toHaveAttribute("data-display-scale", String(mode === "normal" ? 100 : scale));
         await expect(page.locator("[data-storage-layout]")).toBeVisible();
-        const geometry = await page.locator(".storage-composition").evaluate(root => {
+        // Scale attributes update before ResizeObserver finishes fitting the
+        // rows. Check the resulting geometry, not that intermediate frame.
+        await expect.poll(() => page.locator(".storage-composition").evaluate((root, viewportHeight) => {
           const boxes = [...root.querySelectorAll(".storage-composition-cell")].map(node => node.getBoundingClientRect());
-          return { overlap: boxes.some((a, i) => boxes.some((b, j) => i < j && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2)), viewportOverflow: document.documentElement.scrollWidth > innerWidth + 1, footerBottom: document.querySelector(".dashboard-footer")!.getBoundingClientRect().bottom, bodyHeight: root.querySelector(".storage-body")!.clientHeight };
-        });
-        expect(geometry.overlap).toBe(false); expect(geometry.viewportOverflow).toBe(false); expect(geometry.bodyHeight).toBeGreaterThan(30);
-        expect(geometry.footerBottom).toBeLessThanOrEqual(viewport.height + 2);
+          const footerBottom = document.querySelector(".dashboard-footer")!.getBoundingClientRect().bottom;
+          const bodyHeight = root.querySelector(".storage-body")!.clientHeight;
+          return { overlap: boxes.some((a, i) => boxes.some((b, j) => i < j && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2)), viewportOverflow: document.documentElement.scrollWidth > innerWidth + 1, footerBottom, bodyHeight, footerVisible: footerBottom <= viewportHeight + 2, bodyUsable: bodyHeight > 30 };
+        }, viewport.height), { message: `Storage ${layout} ${viewport.width}px at ${scale}% in ${mode}` }).toMatchObject({ overlap: false, viewportOverflow: false, footerVisible: true, bodyUsable: true });
         if (layout === "split") {
           const pair = page.locator(".storage-composition-pair .dashboard-panel");
           expect((await pair.nth(0).boundingBox())!.height).toBeCloseTo((await pair.nth(1).boundingBox())!.height, 0);

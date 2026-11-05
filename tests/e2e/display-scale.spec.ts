@@ -121,9 +121,17 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1366, height: 768 
       await expect(page.getByRole("link", { name: "vm-operacao-15", exact: true })).toBeInViewport();
       await page.locator(".dashboard-footer").scrollIntoViewIfNeeded();
       await expect(page.locator(".dashboard-footer")).toBeInViewport();
-      const footer = await page.locator(".dashboard-footer").boundingBox();
-      const lastPanel = await page.locator(".block-problems").boundingBox();
-      expect(footer!.y).toBeGreaterThanOrEqual(lastPanel!.y + lastPanel!.height - 1);
+      // Large scales may require the documented composition scroll. A clipped
+      // panel's full box can extend below the footer without painting over it.
+      const footerClearance = await page.evaluate(() => {
+        const footer = document.querySelector('.dashboard-footer')!, grid = document.querySelector('.dashboard-blocks')!;
+        const bounds = footer.getBoundingClientRect();
+        return { gap: bounds.top - grid.getBoundingClientRect().bottom, unobstructed: footer.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2)) };
+      });
+      expect(footerClearance.gap, `Footer outside composition at ${value}%`).toBeGreaterThanOrEqual(-1);
+      expect(footerClearance.unobstructed, `Footer remains accessible at ${value}%`).toBe(true);
+      await page.locator('.dashboard-blocks').evaluate(node => { node.scrollTop = node.scrollHeight; });
+      await expect.poll(() => page.evaluate(() => document.querySelector('.dashboard-footer')!.getBoundingClientRect().top - document.querySelector('.block-problems')!.getBoundingClientRect().bottom), { message: `Last panel bottom reachable above footer at ${value}%` }).toBeGreaterThanOrEqual(-1);
       await table.evaluate(node => { node.scrollTop = 0; node.scrollLeft = 0; });
       await page.evaluate(() => window.scrollTo(0, 0));
       if (value === 110 || value === 125) await page.screenshot({ path: `.cache/scale-${viewport.width}-${value}.png`, fullPage: true });

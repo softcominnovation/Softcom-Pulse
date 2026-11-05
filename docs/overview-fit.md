@@ -94,6 +94,12 @@ Um bloco, card ou painel feito para a visão geral da rota `/` segue esta lista.
 
 A prévia em configurações avisa quando a composição precisa de rolagem na altura da janela. Esse aviso é o sinal de que o bloco passou do espaço da visão geral.
 
+### Validação de altura e rodapé
+
+Em escalas altas, o `getBoundingClientRect()` de um painel pode ultrapassar a composição porque inclui a parte recortada pelo `overflow: auto`. Isso não representa, por si só, sobreposição visível ao rodapé. O E2E de escalas verifica que a legenda fica fora da caixa da composição e desobstruída, depois rola a composição até o fim e confirma que o final do último painel fica acessível acima dela. Mantém também o acesso à última VM e a cobertura de 390, 1366, 1920 e 3440px nas escalas 100, 110, 120 e 125%. Não reduzir os mínimos dos painéis apenas para fazer suas caixas completas caberem sem rolagem.
+
+Nas transições entre normal, TV e fullscreen, o atributo da escala pode mudar antes da medição pelo `ResizeObserver`. Os testes de Storage aguardam a geometria final, preservando conjuntamente corpo utilizável, rodapé no viewport e ausência de sobreposição/overflow horizontal. Não usar a primeira leitura síncrona após o clique como prova de um defeito persistente, nem relaxar os limites para aceitar um corpo vazio.
+
 ## Apresentação pública compatível
 
 ### Zoom independente da raiz

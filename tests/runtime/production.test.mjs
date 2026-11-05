@@ -261,7 +261,10 @@ test("notification favicon preserves React metadata through background and produ
             await expect(page.locator('link[rel="icon"]').first()).toHaveAttribute("href", hidden ? pulseAlertTabIcon : pulseTabIcon);
           }
           for (const icon of icons) assert.equal(await icon.evaluate(node => node.isConnected), true);
-          for (const destination of ["Serviços", "Visão geral", "Infraestrutura", "Visão geral"]) await page.getByRole("link", { name: destination, exact: true }).click();
+          for (const [destination, suffix] of [["Serviços", "/servicos"], ["Visão geral", ""], ["Infraestrutura", "/infraestrutura"], ["Visão geral", ""]]) {
+            const path = surface === "/" ? suffix || "/" : "/monitor" + suffix;
+            await Promise.all([page.waitForURL(url => url.pathname === path), page.getByRole("link", { name: destination, exact: true }).click()]);
+          }
           await expect(page.getByRole("heading", { name: "Toda a operação. Um só lugar.", exact: true })).toBeVisible();
           assert.deepEqual(errors, []);
         }

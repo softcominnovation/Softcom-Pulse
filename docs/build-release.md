@@ -57,7 +57,7 @@ Resultados locais desta revisão:
 - 25 testes runtime aprovados na rodada completa final, sem falhas ou skips, incluindo as duas regressões novas de rolagem. O pacote isolado executou os quatro workers, Prisma/Sharp, migrations concorrentes reais e servidor fora do checkout.
 - Os dois casos de atualização/posição passaram também em cinco rodadas consecutivas após a correção do controlador. Os cinco E2E de rolagem do `/monitor` moderno passaram, cobrindo ida/volta, pausa, troca de telas, atualização e início ligado/desligado.
 - A primeira rodada encontrou uma oscilação no teste existente de posição de scroll, que passou em repetição. Após a reincidência no CI da `0.6.8-dev`, o diagnóstico revelou perda real de posição na reativação de regiões após zoom, além da espera incompleta do teste. Correções descritas abaixo; nenhum retry foi adicionado para ocultar falhas.
-- Actionlint dos três workflows e contratos de publicação aprovados. Descoberta de 368 testes E2E conferida: dois shards de 184, sem duplicatas ou casos ausentes. Além dos cinco casos dirigidos de rolagem, a suíte E2E completa não foi reexecutada nesta revisão; permanece obrigatória nos jobs de CI.
+- Actionlint dos três workflows e contratos de publicação aprovados. Após as regressões de navegação lenta, a suíte tem 370 E2E, divididos em dois shards de 185. A execução completa e a revalidação dos arquivos corrigidos estão detalhadas ao final; a suíte integral permanece obrigatória nos jobs de CI.
 - Pacote Windows final: **355,6 MiB**, sem contar novamente os destinos de links simbólicos. É a medição do diretório de execução, não do tamanho da imagem Docker Linux.
 
 A execução real dos runners ARM64, Docker e publicação no GHCR depende do próximo pipeline autorizado; não é substituída pelos testes Windows. Docker não está instalado neste ambiente. Não há promessa de tamanho final ou redução de minutos sem essa medição. Nenhum commit, push ou deploy foi realizado.
@@ -73,3 +73,25 @@ O erro em `tests/runtime/monitor-compat.test.mjs` apareceu na comparação de po
 Por orientação do responsável, a versão pretendida continua `v0.6.8-dev`. O fluxo lê a tag do GitHub; exemplos de versões nos testes de publicação não definem a versão publicada. Nenhuma tag local/remota foi excluída, criada ou enviada pelo agente.
 
 Referências: [standalone do Next](https://nextjs.org/docs/app/api-reference/config/next-config-js/output), [cache de compilação](https://nextjs.org/docs/app/guides/ci-build-caching), [cache mounts Docker](https://docs.docker.com/reference/dockerfile/#run---mounttypecache), [builds distribuídos Docker](https://docs.docker.com/build/ci/github-actions/multi-platform/), [runners nativos](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+
+## Revisão dos dois shards de interface — 05/11/2026
+
+O caso de escala a 1366px foi reproduzido em três execuções consecutivas. A comparação usava a caixa inteira do último painel, incluindo a parte recortada pela rolagem da composição, contra a posição da legenda. O contrato existente permite essa rolagem quando os mínimos não cabem. A asserção passou a verificar a caixa visível da composição, a legenda desobstruída e o acesso ao final do painel após rolar. Não houve alteração de CSS, dimensões, zoom ou tolerância de 1px.
+
+A falha de navegação para Serviços foi reproduzida nas duas rotas com uma resposta RSC atrasada em seis segundos: o teste fazia o clique e usava a asserção de URL, limitada a cinco segundos, como espera de navegação. Agora aguarda a chegada à rota pelo próprio mecanismo de navegação, dentro do prazo original do teste, e só depois verifica o resultado. Dois cenários permanentes cobrem essa demora em `/` e `/monitor`, preservando a verificação de favicons, ausência de erros React e opções da segunda tela. O teste de produção também aguarda cada destino antes do próximo clique; antes podia cancelar uma navegação com a seguinte.
+
+Não foram adicionados retries, exclusões de casos ou aumentos globais de timeout. O aviso de Reduced Motion continua informativo.
+
+A execução completa de 370 E2E encontrou mais uma corrida em `storage.spec.ts`: ao alternar modos no formato wall a 3440px, o atributo da escala já estava atualizado, mas a leitura síncrona do corpo encontrou 0px antes do ajuste pelo `ResizeObserver`. O caso agora aguarda conjuntamente a geometria resultante: corpo maior que 30px, rodapé dentro do viewport, ausência de sobreposição e ausência de overflow horizontal. Os limites e o prazo padrão permanecem iguais. A mudança é no teste; não altera o dimensionamento dos painéis.
+
+Na validação local, não executar a suíte de produção junto dos dois workers E2E na mesma máquina: a tentativa concorrente excedeu o prazo total dos casos de escala a 1920/3440px durante recargas e cancelou o teste de áudio/toasts em 120s. O caso de áudio passou isoladamente em 33,7s, sem alteração de código ou prazo. A rodada de interface concorrente foi interrompida e seu ambiente temporário foi limpo antes da repetição completa isolada. Isso não exige serializar os jobs da CI, que já usam runners distintos.
+
+Validação final desta revisão:
+
+- `npm run check` aprovado: lint (somente o aviso preexistente de `IconBrandWhatsapp`), tipos, 299 testes unitários e build. Lint dos quatro arquivos de testes alterados e tipos repetidos após o ajuste final do Storage, ambos aprovados.
+- 32 testes de componentes e 77 de integração aprovados.
+- 370 E2E executados integralmente: 369 aprovados e a corrida adicional de Storage identificada. Após corrigi-la, os três arquivos completos afetados passaram juntos: **47/47**. Incluem os dois casos originais, suas variantes de navegação lenta, todas as escalas e as nove composições de Storage. O caso wall/3440px passou ainda em **cinco repetições consecutivas**. Os 323 casos fora desses arquivos passaram na rodada completa; não foi feita outra execução integral após essa última mudança restrita ao teste.
+- Rodada final isolada de runtime: **25/25**, sem falhas, cancelamentos ou skips (272s). Inclui áudio/toasts, scroll, iframe, navegação, pacote fora do checkout, quatro workers e migrations. O cancelamento por sobrecarga da tentativa paralela não foi contado como aprovação.
+- Listagem de CI atualizada: **185 + 185 = 370** casos. Nenhum retry automático ou caso ignorado foi acrescentado.
+
+Essa evidência é local em Windows. O próximo CI continua responsável pela execução Linux, runners AMD64/ARM64 e montagem das imagens; nenhum commit, tag, push ou deploy foi realizado.

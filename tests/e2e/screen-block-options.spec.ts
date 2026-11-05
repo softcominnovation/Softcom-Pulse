@@ -152,8 +152,15 @@ for (const route of ["/", "/monitor?compat=0"]) test(`manual screen selection ap
   await expect(page.getByRole("button", { name: "Continuar alternância", exact: true })).toBeVisible();
 });
 
-for (const route of ["/", "/monitor?compat=0"]) test(`unread notifications survive background and client navigation without breaking screen options: ${route}`, async ({ page }) => {
+for (const route of ["/", "/monitor?compat=0"]) for (const navigationDelayMs of [0, 6000]) test(`unread notifications survive background and client navigation without breaking screen options: ${route}${navigationDelayMs ? ' (slow navigation)' : ''}`, async ({ page }) => {
   const state = await fixture(page), notifications = await notificationFixture(page);
+  let navigationRequested = false;
+  if (navigationDelayMs) await page.route(url => url.pathname === (route === '/' ? '/servicos' : '/monitor/servicos'), async request => {
+    if (request.request().headers()['rsc'] !== '1' || request.request().headers()['next-router-prefetch'] === '1') return request.continue();
+    navigationRequested = true;
+    await new Promise(resolve => setTimeout(resolve, navigationDelayMs));
+    return request.continue();
+  });
   addNotification(notifications);
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.stack ?? error.message));
@@ -171,9 +178,15 @@ for (const route of ["/", "/monitor?compat=0"]) test(`unread notifications survi
     await expect(page.locator('link[rel="icon"]').first()).toHaveAttribute("href", hidden ? pulseAlertTabIcon : pulseTabIcon);
   }
   const retainedIcons = await Promise.all(originalIcons.map(icon => icon.evaluate(node => node.isConnected)));
-  await page.getByRole("link", { name: "Serviços", exact: true }).click();
+  const servicesPath = route === '/' ? '/servicos' : '/monitor/servicos';
+  const servicesLink = page.getByRole("link", { name: "Serviços", exact: true });
+  await expect(servicesLink).toHaveAttribute('href', servicesPath);
+  // Next client navigation may await a cold route compilation. Wait for the
+  // navigation itself before checking its result, as in the VPS detail test.
+  await Promise.all([page.waitForURL(url => url.pathname === servicesPath), servicesLink.click()]);
   await expect(page).toHaveURL(route === "/" ? /\/servicos$/ : /\/monitor\/servicos$/);
-  await page.getByRole("link", { name: "Visão geral", exact: true }).click();
+  if (navigationDelayMs) expect(navigationRequested).toBe(true);
+  await Promise.all([page.waitForURL(url => url.pathname === (route === '/' ? '/' : '/monitor')), page.getByRole("link", { name: "Visão geral", exact: true }).click()]);
   await page.locator(".availability-panel").waitFor();
   expect(errors).toEqual([]);
   expect(retainedIcons.every(Boolean)).toBe(true);

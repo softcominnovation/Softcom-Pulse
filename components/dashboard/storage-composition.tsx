@@ -21,13 +21,13 @@ export function StorageComposition({ blocks, split, wall, render, onOverflow }: 
       const summaryHeight = summary ? summary.offsetHeight + (parseFloat(getComputedStyle(element).rowGap) || 0) : 0;
       const needed = sizing.rows.reduce((total, row, index) => {
         const target = rows[index];
-        const panels = target ? [...target.querySelectorAll<HTMLElement>('.availability-panel[data-card-size="expanded"], .availability-panel[data-row-mode]')] : [];
+        const panels = target ? [...target.querySelectorAll<HTMLElement>('.availability-panel')] : [];
         if (panels.length) {
-          const minimum = Math.max(210 * scale, ...panels.map(panel => {
+          const minimum = Math.max(row.contentSized ? 0 : 210 * scale, ...panels.map(panel => {
             const style = getComputedStyle(panel);
             return [...panel.children].reduce((height, child) => {
               const spacing = getComputedStyle(child);
-              return height + (child as HTMLElement).offsetHeight + (parseFloat(spacing.marginTop) || 0) + (parseFloat(spacing.marginBottom) || 0);
+              return height + Math.max((child as HTMLElement).offsetHeight, parseFloat(spacing.height) || 0) + (parseFloat(spacing.marginTop) || 0) + (parseFloat(spacing.marginBottom) || 0);
             }, 0) + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
           }));
           const value = String(minimum / scale);
@@ -46,7 +46,7 @@ export function StorageComposition({ blocks, split, wall, render, onOverflow }: 
       const targets = new Set<Element>([element, ...(summary ? [summary] : [])]);
       rows.forEach((row, index) => {
         if (sizing.rows[index]?.contentSized) targets.add(row);
-        row.querySelectorAll('.availability-panel[data-card-size="expanded"] > *, .availability-panel[data-row-mode] > *').forEach(child => targets.add(child));
+        row.querySelectorAll('.availability-panel > *').forEach(child => targets.add(child));
       });
       observed.forEach(target => { if (!targets.has(target)) { observer.unobserve(target); observed.delete(target); } });
       targets.forEach(target => { if (!observed.has(target)) { observer.observe(target); observed.add(target); } });

@@ -194,6 +194,102 @@ function getWithHost(address, host, headers = {}) {
 }
 const oldUa = "Mozilla/5.0 (Linux; Android 11; TV) AppleWebKit/537.36 Version/4.0 Chrome/83.0.4103.120 Safari/537.36";
 
+async function assertCardScrollOnly(grid, context = {}) {
+  const enclosure = await grid.evaluate(node => {
+    const panel = node.closest('.dashboard-panel'), foot = panel.querySelector(':scope > .panel-foot');
+    const outside = [];
+    for (let parent = node.parentElement; parent && parent !== panel.parentElement; parent = parent.parentElement) outside.push({ overflow: getComputedStyle(parent).overflowY, scroll: parent.scrollHeight - parent.clientHeight });
+    return { gridBottom: node.getBoundingClientRect().bottom, footTop: foot.getBoundingClientRect().top, footBottom: foot.getBoundingClientRect().bottom, panelBottom: panel.getBoundingClientRect().bottom, outside };
+  });
+  assert.ok(enclosure.outside.every(area => !['auto','scroll'].includes(area.overflow) || area.scroll <= 1), JSON.stringify({ ...context, enclosure }));
+  assert.ok(enclosure.gridBottom <= enclosure.footTop + 1, JSON.stringify({ ...context, enclosure }));
+  assert.ok(enclosure.footBottom <= enclosure.panelBottom + 1, JSON.stringify({ ...context, enclosure }));
+}
+
+test("classic composition keeps only enabled rows and repeated panels accessible before and after bootstrap", { timeout: 90000 }, async () => {
+  await shipped(async base => {
+    const fixtures = JSON.parse(execFileSync(process.execPath, ["--conditions=react-server", "--input-type=module", "-e", `
+      import { monitorFixture } from './tests/fixtures/monitor-compat.mjs';
+      import { effectiveOptions } from './lib/config/presentation.ts';
+      import { renderCompatiblePage, renderCompatibleContent, compatibleMonitorState } from './lib/server/monitor-compat/render.ts';
+      const fixtures = {};
+      for (const kind of ['top-only', 'bottom-only', 'repeated']) {
+        const model = monitorFixture({ includeStorage: false, split: true, cardSize: 'expanded' });
+        model.document.publicMonitorZoomPercent = 70;
+        model.document.publicMonitorAutoScrollOnLoad = false;
+        if (kind !== 'bottom-only') {
+          const id = '00000000-0000-4000-8000-000000008200';
+          model.screen.blocks.push({ id, type: 'problems', enabled: true, width: 'wide', options: effectiveOptions({ type: 'problems' }) });
+          model.overview.data.blocks.push({ blockId: id, type: 'problems', data: [], availability: 'ready', stale: false, lastUpdated: null });
+        }
+        for (const block of model.screen.blocks) {
+          if (block.type === 'summary') block.enabled = false;
+          if (kind === 'top-only' && ['asgard_summary','signal_flow'].includes(block.type)) block.enabled = false;
+          if (kind === 'bottom-only' && ['highlighted_resources','problems'].includes(block.type)) block.enabled = false;
+        }
+        if (kind === 'repeated') {
+          const original = model.screen.blocks.find(block => block.type === 'highlighted_resources');
+          const block = structuredClone(original); block.id = '00000000-0000-4000-8000-000000008910';
+          block.options.rowMode = 'manual'; block.options.visibleRows = 1;
+          model.screen.blocks.push(block);
+          const data = structuredClone(model.overview.data.blocks.find(item => item.blockId === original.id));
+          data.blockId = block.id; model.overview.data.blocks.push(data);
+        }
+        fixtures[kind] = { page: renderCompatiblePage(model, 'Row fit'), snapshot: { html: renderCompatibleContent(model), state: compatibleMonitorState(model) }, count: model.screen.blocks.filter(block => block.enabled).length };
+      }
+      process.stdout.write(JSON.stringify(fixtures));
+    `], { cwd: fileURLToPath(root), encoding: "utf8", windowsHide: true, maxBuffer: 8 * 1024 * 1024 }));
+    let current = fixtures["top-only"];
+    const parent = createServer(async (request, response) => {
+      response.setHeader("Access-Control-Allow-Origin", "*");
+      if (request.url === "/") {
+        response.setHeader("Content-Type", "text/html");
+        response.end('<style>body{margin:0}iframe{width:100vw;height:100vh;border:0}</style><iframe sandbox="allow-scripts" src="/monitor?compat=1"></iframe>');
+      } else if (request.url === "/monitor?compat=1") {
+        response.setHeader("Content-Type", "text/html"); response.end(current.page);
+      } else if (request.url.startsWith("/monitor/compat?fragment=1")) {
+        response.setHeader("Content-Type", "application/json"); response.end(JSON.stringify(current.snapshot));
+      } else {
+        const upstream = await fetch(base + request.url);
+        response.statusCode = upstream.status;
+        response.setHeader("Content-Type", upstream.headers.get("content-type") ?? "application/octet-stream");
+        response.end(Buffer.from(await upstream.arrayBuffer()));
+      }
+    });
+    const address = await listen(parent), browser = await chromium.launch();
+    try {
+      for (const javaScriptEnabled of [false, true]) {
+        const context = await browser.newContext({ javaScriptEnabled, viewport: { width: 1920, height: 1080 } });
+        try {
+          const page = await context.newPage(), errors = [];
+          page.on("pageerror", error => errors.push(error.message));
+          for (const kind of ["top-only", "bottom-only", "repeated"]) {
+            current = fixtures[kind];
+            await page.goto(address + (javaScriptEnabled ? "/" : "/monitor?compat=1"));
+            const surface = javaScriptEnabled ? page.frameLocator("iframe") : page;
+            const panels = surface.locator(".compat-cell > .dashboard-panel");
+            await expect(panels).toHaveCount(current.count);
+            if (kind === "repeated") {
+              const panels = surface.locator(".block-highlighted_resources");
+              await expect(panels).toHaveCount(2);
+              const bounds = await panels.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().toJSON()));
+              assert.ok(bounds[1].top >= bounds[0].bottom - 1);
+            } else {
+              assert.equal(await surface.locator(".compat-row").count(), 1);
+              const bounds = await surface.locator(".dashboard-blocks").evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, rowBottom: node.lastElementChild.getBoundingClientRect().bottom }));
+              assert.ok(Math.abs(bounds.bottom - bounds.rowBottom) < 3);
+            }
+            await panels.last().scrollIntoViewIfNeeded();
+            await expect(panels.last()).toBeInViewport();
+            await expect(surface.locator(".dashboard-footer")).toBeInViewport();
+            assert.deepEqual(errors, []);
+          }
+        } finally { await context.close(); }
+      }
+    } finally { await browser.close(); await new Promise(resolve => parent.close(resolve)); }
+  });
+});
+
 test("expanded classic cards keep their profile, responsive columns and complete contents in an opaque iframe", { timeout: 90000 }, async () => {
   await shipped(async base => {
     const fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', '--input-type=module', '-e', `
@@ -234,6 +330,8 @@ test("expanded classic cards keep their profile, responsive columns and complete
         else if (['storage','standalone_vps','signal_service'].includes(card.kind)) card.item.cardMetrics = ['cpu','memory','disk'];
       }
       const threeCompact = snapshot();
+      const extraCompactCards = cards.splice(12), threeCompactExact = snapshot();
+      cards.push(...extraCompactCards);
       manualBlock.options.cardSize = 'expanded';
       const three = snapshot(), threePage = renderCompatiblePage(model, 'Three metrics');
       for (const card of cards) {
@@ -243,7 +341,7 @@ test("expanded classic cards keep their profile, responsive columns and complete
         else if (card.kind === 'standalone_vps') card.item.diskPercent = null;
       }
       model.document.revision++;
-      process.stdout.write(JSON.stringify({ page, expanded, compact, expandedAgain, withoutKpis, withKpisAgain, full, manual, compactManual, threeCompact, three, threePage, threeMissing: snapshot() }));
+      process.stdout.write(JSON.stringify({ page, expanded, compact, expandedAgain, withoutKpis, withKpisAgain, full, manual, compactManual, threeCompact, threeCompactExact, three, threePage, threeMissing: snapshot() }));
     `], { cwd: fileURLToPath(root), encoding: 'utf8', windowsHide: true, maxBuffer: 8 * 1024 * 1024 }));
     let current = fixture.expanded;
     const parent = createServer(async (request, response) => {
@@ -270,9 +368,11 @@ test("expanded classic cards keep their profile, responsive columns and complete
         const sizes = await initial.locator('.availability-card').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
         assert.equal(sizes.length, 6); assert.ok(sizes.every(height => height === 140));
         await expect(initial.locator('.availability-grid')).toHaveAttribute('data-card-rows', '2');
+        await assertCardScrollOnly(initial.locator('.availability-grid'), { js: false, rows: 2 });
         await initial.route('**/monitor?compat=1', route => route.fulfill({ contentType: 'text/html', body: fixture.threePage }));
         await initial.reload(); await expect(initial.locator('.availability-grid')).toHaveAttribute('data-card-size', 'expanded');
         await expect(initial.locator('.mini-metrics[data-metric-count="3"]').first().locator('.reading')).toHaveCount(3);
+        await assertCardScrollOnly(initial.locator('.availability-grid'), { js: false, rows: 3 });
 
       } finally { await noJs.close(); }
       const page = await context.newPage(); await page.goto(address);
@@ -288,11 +388,13 @@ test("expanded classic cards keep their profile, responsive columns and complete
         if (zoom === 100 && width === 1280) assert.equal(bounds.columns, 2);
         if (zoom === 100 && width === 900) assert.equal(bounds.columns, 1);
         const rows = await grid.evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, scroll: node.scrollHeight - node.clientHeight, cards: Array.from(node.querySelectorAll('.availability-card'), card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) }));
+        await assertCardScrollOnly(grid, { width, zoom });
         const headers = await grid.locator('.availability-card-heading').evaluateAll(nodes => nodes.map(node => {
           const name = node.querySelector('.availability-name').getBoundingClientRect(), badge = node.querySelector('.status-pill').getBoundingClientRect();
-          return { gap: badge.left - name.right, aligned: name.top < badge.bottom && name.bottom > badge.top, background: getComputedStyle(node.querySelector('.status-pill')).backgroundColor };
+          const dot = node.querySelector('.status-pill .status-dot').getBoundingClientRect();
+          return { gap: badge.left - name.right, aligned: name.top < badge.bottom && name.bottom > badge.top, dotOffset: Math.abs((dot.top + dot.bottom - badge.top - badge.bottom) / 2), background: getComputedStyle(node.querySelector('.status-pill')).backgroundColor };
         }));
-        for (const header of headers) { assert.ok(header.gap >= 5); assert.ok(header.aligned); assert.notEqual(header.background, 'rgba(0, 0, 0, 0)'); }
+        for (const header of headers) { assert.ok(header.gap >= 5); assert.ok(header.aligned); assert.ok(header.dotOffset < 0.5, JSON.stringify({ width, zoom, header })); assert.notEqual(header.background, 'rgba(0, 0, 0, 0)'); }
         for (const card of rows.cards.slice(0, bounds.columns * 2)) assert.ok(card.bottom <= rows.bottom + 1);
         if (rows.cards.length > bounds.columns * 2) { assert.ok(rows.scroll > 0); assert.ok(rows.cards[bounds.columns * 2].top >= rows.bottom); }
         else assert.ok(rows.scroll <= 1);
@@ -304,6 +406,13 @@ test("expanded classic cards keep their profile, responsive columns and complete
       current = fixture.compact; await frame.locator('#compat-refresh').click();
       await expect(grid).toHaveAttribute('data-card-size', 'compact');
       assert.equal(await grid.locator('.availability-card').first().evaluate(node => node.getBoundingClientRect().height), 120);
+      await assertCardScrollOnly(grid, { size: 'compact' });
+      assert.ok(await grid.evaluate(node => node.scrollHeight <= node.clientHeight + 1));
+      const compactDots = await grid.locator('.status-pill').evaluateAll(nodes => nodes.map(node => {
+        const badge = node.getBoundingClientRect(), dot = node.querySelector('.status-dot').getBoundingClientRect();
+        return Math.abs((dot.top + dot.bottom - badge.top - badge.bottom) / 2);
+      }));
+      assert.ok(compactDots.every(offset => offset < 0.5), JSON.stringify(compactDots));
       current = fixture.expandedAgain; await frame.locator('#compat-refresh').click();
       await expect(grid).toHaveAttribute('data-card-size', 'expanded');
       assert.equal(await grid.locator('.availability-name').first().evaluate(node => getComputedStyle(node).fontSize), '15px');
@@ -317,6 +426,7 @@ test("expanded classic cards keep their profile, responsive columns and complete
       await expect(grid).toHaveAttribute('data-card-rows', '3');
       const noKpis = await grid.evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, scroll: node.scrollHeight - node.clientHeight, cards: Array.from(node.querySelectorAll('.availability-card'), card => card.getBoundingClientRect().bottom) }));
       assert.ok(noKpis.cards.every(bottom => bottom <= noKpis.bottom + 1)); assert.ok(noKpis.scroll <= 1);
+      await assertCardScrollOnly(grid, { rows: 3, overflow: false });
       current = fixture.withKpisAgain; await frame.locator('#compat-refresh').click();
       await expect(grid).toHaveAttribute('data-card-rows', '2');
       current = fixture.full; await frame.locator('#compat-refresh').click();
@@ -330,11 +440,13 @@ test("expanded classic cards keep their profile, responsive columns and complete
       const manual = await grid.evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, columns: Number(node.getAttribute('data-card-columns')), cards: Array.from(node.querySelectorAll('.availability-card'), card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) }));
       for (const card of manual.cards.slice(0, manual.columns * 3)) assert.ok(card.bottom <= manual.bottom + 1);
       assert.ok(manual.cards[manual.columns * 3].top >= manual.bottom);
+      await assertCardScrollOnly(grid, { rows: 3, overflow: true });
       current = fixture.compactManual; await frame.locator('#compat-refresh').click();
       await expect(grid).toHaveAttribute('data-card-rows', '1');
       await expect(grid).toHaveAttribute('data-card-size', 'compact');
       const one = await grid.evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, height: node.getBoundingClientRect().height, cards: Array.from(node.querySelectorAll('.availability-card'), card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) }));
       assert.equal(one.height, 128);
+      await assertCardScrollOnly(grid, { rows: 1, size: 'compact' });
       const firstRow = one.cards.filter(card => Math.abs(card.top - one.cards[0].top) < 1);
       for (const card of firstRow) assert.ok(card.bottom <= one.bottom + 1);
       assert.ok(one.cards[firstRow.length].top >= one.bottom);
@@ -342,6 +454,7 @@ test("expanded classic cards keep their profile, responsive columns and complete
       current = snapshot; await frame.locator('#compat-refresh').click();
       await expect(grid).toHaveAttribute('data-card-size', size);
       await expect(grid).toHaveAttribute('data-card-rows', '3');
+      await assertCardScrollOnly(grid, { rows: 3, size });
       for (const title of ['VM configurada','Storage configurado','Serviço configurado','VPS Edge · São Paulo 01']) {
         const card = grid.getByRole('button', { name: 'Detalhes de ' + title, exact: true }).first();
         const readings = card.locator('.mini-metrics > .reading');
@@ -354,6 +467,11 @@ test("expanded classic cards keep their profile, responsive columns and complete
       }
       }
       await page.screenshot({ path: fileURLToPath(new URL('.cache/screenshots/classic-three-metrics.png', root)) });
+      current = fixture.threeCompactExact; await frame.locator('#compat-refresh').click();
+      await expect(grid.locator('.availability-card')).toHaveCount(12);
+      await expect(grid).toHaveAttribute('data-card-size', 'compact');
+      await assertCardScrollOnly(grid, { rows: 3, size: 'compact', overflow: false });
+      assert.ok(await grid.evaluate(node => node.scrollHeight <= node.clientHeight + 1));
       current = fixture.threeMissing; await frame.locator('#compat-refresh').click();
       await expect(grid.locator('.mini-metrics[data-metric-count="3"] .reading').first()).toContainText('Disco—');
 
@@ -581,7 +699,7 @@ test("current classic cards fill native layout, scroll complete bodies and keep 
         assert.ok(Math.abs(geometry.width - geometry.innerWidth) < 2 && Math.abs(geometry.height - geometry.innerHeight) < 2, JSON.stringify(geometry));
         assert.ok(geometry.scrollWidth <= width + 2 && geometry.scrollHeight <= height + 2, JSON.stringify(geometry));
         assert.equal(geometry.transform, "none");
-        const availability = await page.locator(".block-highlighted_resources > .dashboard-panel").evaluate(panel => ({ height: panel.getBoundingClientRect().height, body: panel.querySelector('.panel-content').clientHeight }));
+        const availability = await page.locator(".block-highlighted_resources > .dashboard-panel").evaluate(panel => ({ height: panel.getBoundingClientRect().height, body: panel.querySelector('.availability-grid').clientHeight }));
         assert.ok(availability.height >= 180 && availability.body >= 110, JSON.stringify(availability));
       }
       await page.setViewportSize({ width: 1280, height: 720 });

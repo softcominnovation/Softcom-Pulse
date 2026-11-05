@@ -224,14 +224,15 @@
     });
     each(content.querySelectorAll('.compat-row[data-measured-row]'), function (row) {
       var minimum = 210;
-      each(row.querySelectorAll('.availability-grid[data-card-size="expanded"], .availability-grid[data-row-mode]'), function (grid) {
-        var body = grid.parentNode, panel = body.parentNode, size = window.getComputedStyle(body), border = window.getComputedStyle(panel);
-        var height = grid.offsetHeight + parseFloat(size.paddingTop || 0) + parseFloat(size.paddingBottom || 0) + parseFloat(border.borderTopWidth || 0) + parseFloat(border.borderBottomWidth || 0);
+      var rowStyle = window.getComputedStyle(row);
+      each(row.querySelectorAll('.availability-panel > .availability-grid'), function (grid) {
+        var panel = grid.parentNode, border = window.getComputedStyle(panel);
+        var height = parseFloat(rowStyle.paddingTop || 0) + parseFloat(rowStyle.paddingBottom || 0) + parseFloat(border.borderTopWidth || 0) + parseFloat(border.borderBottomWidth || 0);
         each(panel.children, function (child) {
           var spacing = window.getComputedStyle(child);
-          if (child !== body) height += child.offsetHeight + parseFloat(spacing.marginTop || 0) + parseFloat(spacing.marginBottom || 0);
+          height += Math.max(child.offsetHeight, parseFloat(spacing.height) || 0) + parseFloat(spacing.marginTop || 0) + parseFloat(spacing.marginBottom || 0);
         });
-        minimum = Math.max(minimum, height);
+        minimum = Math.max(minimum, Math.ceil(height));
       });
       if ((' ' + row.className + ' ').indexOf(' content-sized ') === -1) row.style.minHeight = minimum + 'px';
     });

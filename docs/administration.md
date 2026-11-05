@@ -1,5 +1,7 @@
 # Administração da visualização
 
+Em cada tela, **Serviços destacados → Fileiras visíveis** escolhe Automático ou 1/2/3, independentemente dos KPIs quando manual. Salve em **Salvar apresentação**. Perfis Padrão/Ampliado e fontes dos KPIs continuam locais ao bloco. Ocultar uma fileira inteira de painéis faz a outra aproveitar a altura disponível; tipos repetidos mantêm suas posições e opções por UUID, inclusive na prévia. A prévia avisa quando a composição precisa rolar. Não há nova configuração para o encaixe.
+
 ## Notificações de serviços
 
 Configurações inclui política geral de notificações, independente da apresentação do dashboard. Recursos, aplicações, VPS, Signal e Storage têm uma seção de exceções após salvar seu cadastro. A ação **Salvar notificações deste serviço** grava somente a exceção e preserva os demais rascunhos. Conflitos de revisão mantêm a edição para revisão; recarregar pede confirmação de descarte. VPS possui criticidade inicialmente desativada. Uso, leitura global e limites em [Notificações](notifications.md).

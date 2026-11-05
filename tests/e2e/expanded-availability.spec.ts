@@ -27,11 +27,11 @@ async function fixture(page: Page, split = false, storage = false) {
       return card;
     });
   }
-  const aggregate = () => ({ ...model.overview, data: { ...model.overview.data, screenId: state.document.screens[0].id, presentationRevision: state.document.revision, blocks: state.document.screens[0].blocks.filter(block => block.enabled).map(block => ({ ...model.overview.data.blocks.find(item => item.blockId === block.id)!, options: block.options })) } });
+  const aggregate = () => ({ ...model.overview, data: { ...model.overview.data, screenId: state.document.screens[0].id, presentationRevision: state.document.revision, blocks: state.document.screens[0].blocks.filter(block => block.enabled).map(block => ({ ...model.overview.data.blocks.find(item => item.blockId === block.id) ?? model.overview.data.blocks.find(item => item.type === block.type)!, blockId: block.id, options: block.options })) } });
   await page.route("**/api/dashboard/overview*", route => route.fulfill({ json: aggregate() }));
   await page.route("**/api/public/dashboard/overview*", route => route.fulfill({ json: aggregate() }));
   await page.route("**/api/public/settings/presentation", route => route.fulfill({ json: { data: state.document } }));
-  return { state, highlights, panel, count };
+  return { state, highlights, panel, count, source: model.overview };
 }
 
 async function geometry(grid: Locator) {
@@ -43,11 +43,56 @@ async function geometry(grid: Locator) {
       cards: cards.map(card => ({ width: card.getBoundingClientRect().width, height: card.getBoundingClientRect().height, fits: card.scrollHeight <= card.clientHeight + 1 && card.scrollWidth <= card.clientWidth + 1, font: parseFloat(getComputedStyle(card.querySelector(".availability-name")!).fontSize), footer: card.querySelector(".availability-footer")!.getBoundingClientRect().bottom <= card.getBoundingClientRect().bottom })),
       headers: cards.map(card => {
         const name = card.querySelector(".availability-name")!.getBoundingClientRect(), badge = card.querySelector(".availability-state")!.getBoundingClientRect();
-        return { gap: badge.left - name.right, offset: Math.abs((name.top + name.bottom - badge.top - badge.bottom) / 2), background: getComputedStyle(card.querySelector(".availability-state")!).backgroundColor };
+        const dot = card.querySelector(".availability-state .status-dot")!.getBoundingClientRect();
+        return { gap: badge.left - name.right, offset: Math.abs((name.top + name.bottom - badge.top - badge.bottom) / 2), dotOffset: Math.abs((dot.top + dot.bottom - badge.top - badge.bottom) / 2), background: getComputedStyle(card.querySelector(".availability-state")!).backgroundColor };
       }),
     };
   });
 }
+
+async function assertCardScrollOnly(grid: Locator) {
+  await expect.poll(() => grid.evaluate(node => {
+    const panel = node.closest(".availability-panel")!, heading = panel.querySelector(":scope > .panel-heading")!, foot = panel.querySelector(":scope > .panel-foot")!;
+    for (let parent = node.parentElement; parent && parent !== panel.parentElement; parent = parent.parentElement) {
+      if (["auto", "scroll"].includes(getComputedStyle(parent).overflowY) && parent.scrollHeight > parent.clientHeight + 1) return false;
+    }
+    const box = node.getBoundingClientRect();
+    return box.top >= heading.getBoundingClientRect().bottom - 1 && box.bottom <= foot.getBoundingClientRect().top + 1 && foot.getBoundingClientRect().bottom <= panel.getBoundingClientRect().bottom + 1;
+  })).toBe(true);
+}
+
+for (const route of ["/", "/monitor?compat=0"]) for (const composition of ["top-only", "bottom-only", "repeated"] as const) test(`row composition fills available height without phantom or overlapping tracks: ${route}, ${composition}`, async ({ page }) => {
+  const { state, highlights } = await fixture(page, true);
+  const screen = state.document.screens[0];
+  state.document.dashboardZoomPercent = 70; state.document.publicMonitorZoomPercent = 70;
+  screen.blocks.forEach(block => {
+    if (block.type === "summary") block.enabled = false;
+    if (composition === "top-only" && ["asgard_summary", "signal_flow"].includes(block.type)) block.enabled = false;
+    if (composition === "bottom-only" && ["highlighted_resources", "problems"].includes(block.type)) block.enabled = false;
+  });
+  if (composition === "repeated") screen.blocks.push({ ...structuredClone(highlights), id: id(8910), options: { ...highlights.options, rowMode: "manual", visibleRows: 1 } });
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  if (route === "/") await signIn(page);
+  await page.goto(route);
+  const content = page.locator("[data-dashboard-content]");
+  await expect(page.locator(".dashboard-panel")).toHaveCount(screen.blocks.filter(block => block.enabled).length);
+  if (composition === "repeated") {
+    const panels = page.locator(".availability-panel");
+    await expect(panels).toHaveCount(2);
+    const bounds = await panels.evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().toJSON()));
+    expect(bounds[1].top).toBeGreaterThanOrEqual(bounds[0].bottom - 1);
+    await page.locator(`[data-block-id="${id(8910)}"]`).scrollIntoViewIfNeeded();
+    await expect(panels.last()).toBeInViewport();
+  } else {
+    await expect.poll(async () => {
+      const lower = (await page.locator(".dashboard-panel").last().boundingBox())!;
+      const container = (await content.boundingBox())!;
+      return Math.abs(lower.y + lower.height - container.y - container.height);
+    }).toBeLessThan(3);
+  }
+  await expect(page.locator(".dashboard-footer")).toBeInViewport();
+  await page.screenshot({ path: `.cache/screenshots/legibility-04-${composition}-${route === "/" ? "root" : "monitor"}.png` });
+});
 
 for (const size of ["compact", "expanded"] as const) for (const split of [false, true]) for (const storage of [false, true]) for (const route of ["/", "/monitor"]) for (const zoom of [70, 100]) test(`explicit trio respects ${size} in a mixed grid and manual rows: ${route} at ${zoom}%, split=${split}, Storage=${storage}`, async ({ page }, testInfo) => {
   const { state, highlights, panel, count } = await fixture(page, split, storage);
@@ -75,6 +120,8 @@ for (const size of ["compact", "expanded"] as const) for (const split of [false,
   await expect(grid.locator(".availability-card")).toHaveCount(13);
   const expected = (size === "expanded" ? 140 * (tv ? 1.25 : 1) : 120) * zoom / 100;
   const all = await geometry(grid);
+  await assertCardScrollOnly(grid);
+  for (const header of all.headers) expect(header.dotOffset).toBeLessThan(0.5);
   for (const card of all.cards) { expect(card.height).toBeCloseTo(expected, 0); expect(card.fits).toBe(true); expect(card.footer).toBe(true); }
   for (const card of await grid.locator('.availability-card[data-metric-count="3"]').all()) expect(await card.locator('.availability-description').evaluate((node, zoom) => node.getBoundingClientRect().height >= parseFloat(getComputedStyle(node).lineHeight) * zoom / 100 - 1, zoom)).toBe(true);
   const vps = grid.locator('.vps-card-highlight').first();
@@ -98,6 +145,7 @@ for (const split of [false, true]) for (const storage of [false, true]) for (con
   const grid = page.locator(".availability-grid");
   for (const total of split ? [1, 6, 9, 10] : [1, 7, 12, 13]) {
     count(total); await page.reload(); await expect(page.locator(".availability-card")).toHaveCount(total);
+    await assertCardScrollOnly(grid);
     const bounds = await grid.evaluate(node => {
       const box = node.getBoundingClientRect(), style = getComputedStyle(node);
       return { top: box.top, bottom: box.bottom - parseFloat(style.paddingBottom), height: box.height, columns: style.gridTemplateColumns.split(" ").length, scroll: node.scrollHeight - node.clientHeight, cards: [...node.querySelectorAll(".availability-card")].map(card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) };
@@ -228,6 +276,7 @@ for (const size of ["compact", "expanded"] as const) for (const split of [false,
     highlights.options!.visibleRows = rows; await page.reload();
     await expect(page.locator(".availability-panel")).toHaveAttribute("data-row-mode", "manual");
     await expect(page.locator(".availability-panel")).toHaveAttribute("data-service-rows", String(rows));
+    await assertCardScrollOnly(grid);
     const bounds = await grid.evaluate(node => ({ top: node.getBoundingClientRect().top, bottom: node.getBoundingClientRect().bottom, height: node.getBoundingClientRect().height, columns: getComputedStyle(node).gridTemplateColumns.split(" ").length, scroll: node.scrollHeight - node.clientHeight, cards: [...node.querySelectorAll(".availability-card")].map(card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) }));
     expect(bounds.height).toBeCloseTo(rows * (height + 8), 0);
     for (const card of bounds.cards.slice(0, bounds.columns * rows)) { expect(card.top).toBeGreaterThanOrEqual(bounds.top - 1); expect(card.bottom).toBeLessThanOrEqual(bounds.bottom - 7); }
@@ -348,4 +397,103 @@ test("private normal view keeps neutral global scale and does not inherit monito
   expect(await card.evaluate(node => node.getBoundingClientRect().height)).toBe(140);
   expect(await page.locator(".kpi-value").first().evaluate(node => getComputedStyle(node).fontSize)).toBe(font);
   expect(state.writes).toHaveLength(0);
+});
+
+for (const composition of ["top-only", "repeated"] as const) test(`preview uses the same enabled row composition: ${composition}`, async ({ page }) => {
+  const { state, highlights } = await fixture(page, true);
+  const screen = state.document.screens[0];
+  for (const block of screen.blocks) {
+    if (["summary", "asgard_summary", "signal_flow"].includes(block.type)) block.enabled = false;
+  }
+  if (composition === "repeated") screen.blocks.push({ ...structuredClone(highlights), id: id(8911), options: { ...highlights.options, rowMode: "manual", visibleRows: 1 } });
+  await page.setViewportSize({ width: 1920, height: 1080 }); await signIn(page); await page.goto("/admin/configuracoes");
+  await page.getByRole("region", { name: "Tela 1", exact: true }).getByRole("button", { name: "Ver prévia", exact: true }).click();
+  const preview = page.locator(".dashboard-preview");
+  await expect(preview.locator(".dashboard-panel")).toHaveCount(composition === "repeated" ? 3 : 2);
+  if (composition === "repeated") {
+    const bounds = await preview.locator(".availability-panel").evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().toJSON()));
+    expect(bounds[1].top).toBeGreaterThanOrEqual(bounds[0].bottom - 1);
+    await expect(preview.locator(".availability-panel").last()).toHaveAttribute("data-service-rows", "1");
+  } else {
+    const bounds = await preview.locator(".dashboard-blocks").evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, rowBottom: node.lastElementChild!.getBoundingClientRect().bottom }));
+    expect(Math.abs(bounds.bottom - bounds.rowBottom)).toBeLessThan(3);
+  }
+  expect(state.writes).toHaveLength(0);
+});
+
+for (const route of ["/", "/monitor?compat=0"]) test(`mobile split stacks only enabled panels and keeps the final content reachable: ${route}`, async ({ page }) => {
+  const { state } = await fixture(page, true);
+  state.document.dashboardZoomPercent = 100; state.document.publicMonitorZoomPercent = 100;
+  for (const block of state.document.screens[0].blocks) if (["summary", "highlighted_resources", "problems"].includes(block.type)) block.enabled = false;
+  await page.setViewportSize({ width: 390, height: 844 });
+  if (route === "/") await signIn(page);
+  await page.goto(route);
+  await expect(page.locator(".dashboard-panel")).toHaveCount(2);
+  const grid = page.locator(".overview-split-grid");
+  expect(await grid.evaluate(node => getComputedStyle(node).gridTemplateAreas)).toBe("none");
+  const bounds = await grid.locator(":scope > .dashboard-block").evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().toJSON()));
+  expect(bounds[1].top).toBeGreaterThanOrEqual(bounds[0].bottom - 1);
+  for (const box of bounds) { expect(box.left).toBeGreaterThanOrEqual(0); expect(box.right).toBeLessThanOrEqual(391); }
+  await page.locator(".dashboard-panel").last().scrollIntoViewIfNeeded();
+  await expect(page.locator(".dashboard-panel").last()).toBeInViewport();
+  expect(state.writes).toHaveLength(0);
+});
+
+test("mobile Storage composition keeps all three configured rows above the panel footer at TV scale", async ({ page }) => {
+  const { state, highlights, count } = await fixture(page, true, true); count(25);
+  state.document.defaultTvMode = true; state.document.displayScalePercent = 125; state.document.dashboardZoomPercent = 100;
+  Object.assign(highlights.options!, { cardSize: "compact", rowMode: "manual", visibleRows: 3 });
+  await page.setViewportSize({ width: 390, height: 844 }); await signIn(page);
+  for (const size of ["compact", "expanded"] as const) {
+    highlights.options!.cardSize = size; await page.reload();
+    await expect(page.locator(".dashboard-shell")).toHaveAttribute("data-display-scale", "125");
+    await expect(page.locator(".availability-panel")).toHaveAttribute("data-card-size", size);
+    const grid = page.locator(".availability-grid");
+    await assertCardScrollOnly(grid);
+    const bounds = await grid.evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, cards: [...node.querySelectorAll(".availability-card")].slice(0, 3).map(card => card.getBoundingClientRect().bottom) }));
+    for (const bottom of bounds.cards) expect(bottom).toBeLessThanOrEqual(bounds.bottom + 1);
+  }
+});
+
+for (const route of ["/", "/monitor?compat=0"]) test(`compact cards scroll only after the configured complete rows at 125%: ${route}`, async ({ page }) => {
+  test.setTimeout(60000);
+  const { state, highlights, count } = await fixture(page, true, true);
+  state.document.dashboardZoomPercent = 125; state.document.publicMonitorZoomPercent = 125;
+  Object.assign(highlights.options!, { cardSize: "compact", rowMode: "manual", visibleRows: 2 });
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  if (route === "/") await signIn(page);
+  for (const rows of [2, 3]) {
+    highlights.options!.visibleRows = rows; count(40); await page.goto(route);
+    const grid = page.locator(".availability-grid");
+    await expect(grid.locator(".availability-card")).toHaveCount(40);
+    const columns = await grid.evaluate(node => getComputedStyle(node).gridTemplateColumns.split(" ").length);
+    count(columns * rows); await page.reload();
+    await expect(grid.locator(".availability-card")).toHaveCount(columns * rows);
+    await assertCardScrollOnly(grid);
+    expect(await grid.evaluate(node => node.scrollHeight - node.clientHeight)).toBeLessThanOrEqual(1);
+    count(columns * (rows + 1)); await page.reload();
+    await expect(grid.locator(".availability-card")).toHaveCount(columns * (rows + 1));
+    await assertCardScrollOnly(grid);
+    expect(await grid.evaluate(node => node.scrollHeight - node.clientHeight)).toBeGreaterThan(1);
+  }
+});
+
+for (const route of ["/", "/monitor?compat=0"]) test(`short split without Storage preserves the full card window at 150%: ${route}`, async ({ page }) => {
+  const { state, highlights, count, source } = await fixture(page, true); count(25);
+  const problem = source.data.problems[0];
+  expect(problem).toBeTruthy();
+  source.data.blocks.find(block => block.type === "problems")!.data = Array.from({ length: 80 }, (_, index) => ({ ...problem, id: `dense-${index}` }));
+  state.document.dashboardZoomPercent = 150; state.document.publicMonitorZoomPercent = 150;
+  state.document.screens[0].blocks.forEach(block => { if (["summary", "asgard_summary", "signal_flow"].includes(block.type)) block.enabled = false; });
+  Object.assign(highlights.options!, { cardSize: "compact", rowMode: "manual", visibleRows: 3 });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  if (route === "/") await signIn(page);
+  for (const size of ["compact", "expanded"] as const) {
+    highlights.options!.cardSize = size; await page.goto(route);
+    await expect(page.locator(".availability-panel")).toHaveAttribute("data-card-size", size);
+    await assertCardScrollOnly(page.locator(".availability-grid"));
+    const chrome = await page.locator(".availability-panel").evaluate(panel => panel.getBoundingClientRect().height - panel.querySelector(".availability-grid")!.getBoundingClientRect().height);
+    expect(chrome).toBeLessThan(160);
+    await expect(page.locator(".dashboard-footer")).toBeInViewport();
+  }
 });

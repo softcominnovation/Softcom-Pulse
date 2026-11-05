@@ -47,7 +47,7 @@
 .overview-split-grid .availability-card {
   max-width: none; width: 100%; justify-self: stretch;
 }
-.availability-panel { display: flex; flex-direction: column; min-height: 0; }
+.availability-panel { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .availability-card {
   display: flex; flex-direction: column; text-align: left; gap: 3px; box-sizing: border-box;
   width: 100%; max-width: 230px; justify-self: start; overflow: hidden;

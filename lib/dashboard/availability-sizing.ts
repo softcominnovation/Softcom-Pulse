@@ -20,5 +20,5 @@ export function availabilityGridHeight(size: AvailabilityCardSize, rows: number,
 
 export function availabilityPanelMinimum(size: AvailabilityCardSize, rows: number) {
   const dimensions = availabilityCardSizes[size];
-  return 90 + dimensions.height * rows + (size === "expanded" ? dimensions.gap * Math.max(0, rows - 1) : 0);
+  return 90 + availabilityGridHeight(size, rows) + dimensions.gap;
 }

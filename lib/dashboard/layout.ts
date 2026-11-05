@@ -13,11 +13,35 @@ export function isBalancedComposition(blocks: PresentationBlock[]) {
 }
 
 type WidthMode = { split: boolean; wall?: boolean };
+const splitTypes = new Set(["highlighted_resources", "problems", "asgard_summary", "signal_flow"]);
+const flexibleRow = "minmax(calc(210px * var(--dashboard-scale, 1)), 1fr)";
+const intrinsicRow = "minmax(min-content, 1fr)";
+
+export function usesRowComposition(blocks: PresentationBlock[], split: boolean) {
+  const enabled = blocks.filter(block => block.enabled);
+  return enabled.some(block => block.type === "storage_summary") || split && [...splitTypes].some(type => enabled.filter(block => block.type === type).length > 1);
+}
+
+export function overviewSplitRows(blocks: PresentationBlock[]) {
+  const find = (type: string) => blocks.find(block => block.enabled && block.type === type);
+  const availability = find("highlighted_resources"), problems = find("problems"), asgard = find("asgard_summary"), signal = find("signal_flow");
+  return [[availability, problems ?? (availability ? signal : undefined)], [asgard, problems || !availability ? signal : undefined]]
+    .map(row => row.filter((block): block is PresentationBlock => !!block)).filter(row => row.length);
+}
+
+export function overviewSplitTracks(blocks: PresentationBlock[]) {
+  const rows = overviewSplitRows(blocks), hasProblems = blocks.some(block => block.enabled && block.type === "problems");
+  const area = (block: PresentationBlock) => block.type === "highlighted_resources" ? "avail" : block.type === "asgard_summary" ? "asgard" : block.type === "problems" || !hasProblems ? "side" : "signal";
+  return {
+    areas: rows.map(row => `"${area(row[0])} ${area(row[1] ?? row[0])}"`).join(" ") || "none",
+    rows: rows.map(row => row.some(block => block.type === "highlighted_resources") ? rows.length > 1 ? "max-content" : intrinsicRow : flexibleRow).join(" ") || "none",
+  };
+}
 
 export function isAvailabilityDivided(block: PresentationBlock, blocks: PresentationBlock[], split: boolean, wall = false) {
   const enabled = blocks.filter(item => item.enabled);
   if (split) {
-    if (!enabled.some(item => item.type === "storage_summary")) return true;
+    if (!usesRowComposition(enabled, split)) return (overviewSplitRows(enabled).find(row => row.some(item => item.id === block.id))?.length ?? 0) > 1;
     if (enabled.filter(item => item.type === "highlighted_resources").length === 1 && enabled.filter(item => item.type === "problems").length === 1) return true;
   }
   return displayBlockWidth(block, enabled, { split: false, wall }) !== "full";
@@ -25,12 +49,12 @@ export function isAvailabilityDivided(block: PresentationBlock, blocks: Presenta
 
 export function dashboardGridRows(blocks: PresentationBlock[], split: boolean, wall = false): string {
   const enabled = blocks.filter(block => block.enabled);
-  const flexible = "minmax(200px, 1fr)";
+  const flexible = flexibleRow;
   if (split) {
     const gridTypes = new Set(["highlighted_resources", "problems", "asgard_summary", "signal_flow"]);
     return [
       ...enabled.filter(block => block.type === "summary").map(() => "max-content"),
-      ...(enabled.some(block => gridTypes.has(block.type)) ? [flexible] : []),
+      ...(enabled.some(block => gridTypes.has(block.type)) ? [intrinsicRow] : []),
       ...enabled.filter(block => block.type !== "summary" && !gridTypes.has(block.type)).map(() => flexible),
     ].join(" ");
   }

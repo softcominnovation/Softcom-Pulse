@@ -1,5 +1,16 @@
 # Minicards de Disponibilidade de Serviços
 
+O tamanho e a janela pertencem ao bloco de cada tela. Automático ou 1/2/3 fileiras mantém a precedência descrita abaixo; a contagem é um limite, sem reservar fileiras vazias quando há poucos cards. Ocultar outros painéis elimina suas fileiras da composição. Quando há dois blocos do mesmo tipo em Duas colunas, cada UUID tem sua própria posição e opções, sem sobreposição. Os painéis restantes ocupam a altura útil e a composição rola quando os mínimos e as fileiras completas não cabem. Consulte [encaixe](overview-fit.md).
+
+Disponibilidade tem uma única região rolável: `.availability-grid`. Cabeçalho e rodapé ficam fora dela; o painel não cria outra rolagem. No clássico, a grade é filha direta de `.availability-panel`, como no React, sem o wrapper rolável genérico `.panel-content`.
+
+| Perfil | Janela de 2 fileiras | Janela de 3 fileiras |
+|---|---|---|
+| Padrão | 256px | 384px |
+| Ampliado | 296px | 444px |
+
+São medidas lógicas da janela, com passo de 128/148px por fileira; preservam-se a folga legada de 2px quando aplicável e os fatores de escala/zoom já vigentes. Cabeçalho, rodapé, margens, bordas e padding da fileira entram separadamente no orçamento do painel. Com a quantidade exata de fileiras, os cards cabem sem overflow; a fileira excedente rola somente nessa grade. A falta de altura para toda a composição é tratada pelo shell, mantendo a janela de cards completa e os demais painéis acessíveis.
+
 Storage usa `kind:storage` e UUID da preferência, disponível após configurar a máquina em Serviços. Default inclui os destacados após as famílias anteriores, com ordem interna e criticidade; custom aceita configuração sem destaque. Preserva 120px no perfil Padrão e acompanha a caixa comum no Ampliado, com CPU e disco ocupado (%) por padrão. O seletor de métricas permite os outros pares e CPU/RAM/disco, sempre usando a capacidade selecionada e a cor âmbar de disco. No rodapé, RX e TX vêm da interface já escolhida em Serviços, separados e com suas unidades; uptime/leitura ficam na dica e no detalhe. Ausência é “—”, zero é zero e dado antigo mantém identificação. O trio explícito coloca disco inteiro acima de CPU/RAM; não acrescenta faixa de uptime. Abre o painel compartilhado sob demanda, com link por storageKey para Serviços e equivalente público. Disponibilidade usa o mesmo helper do painel. Referência órfã conserva estado neutro; sem preferência recuperável, aplica a política de omissão do custom. Detalhes em [Storage](storage.md).
 
 Construção visual pelo [Design system Kobra](design-system.md). Os tokens Pulse abaixo acompanham o tema; cores fixas remanescentes das faixas são paletas de telemetria, não a paleta global.

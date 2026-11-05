@@ -23,18 +23,18 @@ test("availability size is opt-in per block and reading saves cannot publish the
   }
 });
 
-test("expanded sizing reserves complete larger rows while compact minima remain unchanged", () => {
+test("both panel budgets include every card row, gap and bottom spacing", () => {
   assert.equal(availabilityGridHeight("compact", 2), 258);
   assert.equal(availabilityGridHeight("expanded", 2), 296);
-  assert.equal(availabilityPanelMinimum("compact", 2), 330);
-  assert.equal(availabilityPanelMinimum("expanded", 2), 378);
+  assert.equal(availabilityPanelMinimum("compact", 2), 356);
+  assert.equal(availabilityPanelMinimum("expanded", 2), 394);
   const blocks = initialPresentation(randomUUID).screens[0].blocks;
   blocks[1].options.cardSize = "expanded";
-  assert.equal(storageLayout(blocks, true).rows[0].minimum, 378);
+  assert.equal(storageLayout(blocks, true).rows[0].minimum, 394);
   blocks.find(block => block.type === "summary").enabled = false;
-  assert.equal(storageLayout(blocks, true).rows[0].minimum, 526);
+  assert.equal(storageLayout(blocks, true).rows[0].minimum, 542);
   blocks[1].options.cardSize = "compact";
-  assert.equal(storageLayout(blocks, true).rows[0].minimum, 210);
+  assert.equal(storageLayout(blocks, true).rows[0].minimum, 228);
 });
 
 test("classic initial HTML carries the expanded profile and its row budget without changing metric choices", () => {
@@ -83,9 +83,9 @@ test("explicit manual rows override KPIs and placement in both profiles while le
   assert.deepEqual(legacy, { cardSize: "expanded", visibleRows: 1 });
   const blocks = initialPresentation(randomUUID).screens[0].blocks;
   blocks[1].options = { ...blocks[1].options, cardSize: "expanded", rowMode: "manual", visibleRows: 3 };
-  assert.equal(storageLayout(blocks, true).rows[0].minimum, 526);
+  assert.equal(storageLayout(blocks, true).rows[0].minimum, 542);
   blocks[1].options.cardSize = "compact";
-  assert.equal(storageLayout(blocks, true).rows[0].minimum, 450);
+  assert.equal(storageLayout(blocks, true).rows[0].minimum, 484);
 });
 
 test("classic HTML respects explicit rows before JavaScript, including one compact row in split", () => {

@@ -8,7 +8,7 @@ import { isAxiosError } from "axios";
 import { presentationDocumentSchema, type PresentationDocument } from "@/lib/config/presentation";
 import type { Overview, ReadResult } from "@/lib/monitoring/contracts";
 import { createPlayerStore, playableScreens } from "@/lib/dashboard/player";
-import { dashboardGridRows, displayBlockWidth, isAvailabilityDivided } from "@/lib/dashboard/layout";
+import { dashboardGridRows, displayBlockWidth, isAvailabilityDivided, overviewSplitTracks, usesRowComposition } from "@/lib/dashboard/layout";
 import { timestamp } from "@/lib/dashboard/format";
 import { api } from "@/lib/client/api";
 import { useUiStore } from "@/store/ui.store";
@@ -116,7 +116,8 @@ export function Dashboard({ initialTvMode, onPresentation, extraControls }: { in
         const enabled = screen.blocks.filter(block => block.enabled);
         const split = layout === "overview" && screen.overviewGrid === "split";
         const wall = layout === "wall";
-        const hasStorage = enabled.some(block => block.type === "storage_summary");
+        const rowComposition = usesRowComposition(enabled, split);
+        const tracks = overviewSplitTracks(enabled);
         const renderBlock = (block: typeof enabled[number]) => {
           const payload = result?.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
           const width = displayBlockWidth(block, enabled, { split, wall });
@@ -126,18 +127,18 @@ export function Dashboard({ initialTvMode, onPresentation, extraControls }: { in
             {payload ? <DashboardBlock block={{ ...payload, options: block.options }} hasKpis={enabled.some(item => item.type === "summary")} availabilityDivided={isAvailabilityDivided(block, enabled, split, wall)} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
           </div>;
         };
-        return <div data-dashboard-content data-fit-rows={!hasStorage || undefined} style={!hasStorage ? { "--dashboard-grid-rows": dashboardGridRows(enabled, split, wall) } as CSSProperties : undefined} className={`dashboard-blocks${split ? " overview-split" : ""}${hasStorage ? " has-storage" : ""}`} aria-busy={overview.loading}>
+        return <div data-dashboard-content data-fit-rows={!rowComposition || undefined} style={!rowComposition ? { "--dashboard-grid-rows": dashboardGridRows(enabled, split, wall) } as CSSProperties : undefined} className={`dashboard-blocks${split ? " overview-split" : ""}${rowComposition ? " has-storage" : ""}`} aria-busy={overview.loading}>
           {!result && !overview.failed && <DashboardSkeleton label="Carregando os indicadores da tela…" />}
-          {result && hasStorage && <StorageComposition blocks={enabled} split={split} wall={wall} render={renderBlock} />}
-          {result && !hasStorage && !split && enabled.map(renderBlock)}
-          {result && !hasStorage && split && (() => {
+          {result && rowComposition && <StorageComposition blocks={enabled} split={split} wall={wall} render={renderBlock} />}
+          {result && !rowComposition && !split && enabled.map(renderBlock)}
+          {result && !rowComposition && split && (() => {
             const gridTypes = new Set(["highlighted_resources", "problems", "asgard_summary", "signal_flow"]);
             const byType = (type: string) => enabled.filter(block => block.type === type);
             const hasProblems = byType("problems").length > 0;
             const hasGrid = enabled.some(block => gridTypes.has(block.type));
             return <>
               {byType("summary").map(renderBlock)}
-              {hasGrid && <div className={`overview-split-grid${hasProblems ? "" : " no-problems"}`}>
+              {hasGrid && <div className={`overview-split-grid${hasProblems ? "" : " no-problems"}`} style={{ "--overview-split-areas": tracks.areas, "--overview-split-rows": tracks.rows } as CSSProperties}>
                 {byType("highlighted_resources").map(renderBlock)}
                 {byType("problems").map(renderBlock)}
                 {byType("asgard_summary").map(renderBlock)}

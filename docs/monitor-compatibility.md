@@ -1,5 +1,11 @@
 # Monitor público em iframe e navegadores de TV
 
+O encaixe de fileiras respeita os blocos habilitados e suas identidades também no primeiro HTML. Na composição Duas colunas com tipos únicos, as fileiras vazias são omitidas e uma fileira restante recebe a altura útil. Tipos repetidos usam o plano por UUID compartilhado com as composições de Storage; não se sobrepõem por compartilhar uma área nomeada. O controlador continua medindo a janela de cards e preservando rolagem/zoom, sem depender de CSS Grid no renderer clássico. Veja [encaixe](overview-fit.md).
+
+As tags de estado do clássico usam `inline-flex` com `align-items: center`; a bolinha mantém tamanho fixo com `flex: none`. Esse alinhamento vale também nos minicards Padrão/Ampliado, preservando fontes, padding e altura dos cards em diferentes zooms. Não posicionar a bolinha por deslocamento fixo em pixels.
+
+Em Disponibilidade, `.availability-grid` é filha direta de `.availability-panel`; cabeçalho e rodapé completam o painel sem um corpo rolável adicional. `applyDensity` mede todos os perfis, incluindo margens, bordas e padding da fileira, e arredonda o mínimo para cima. Fileiras compostas somente por Disponibilidade mantêm sua altura natural, sem a antiga limitação proporcional de 45%. A rolagem automática e a restauração após snapshots usam a própria grade.
+
 A entrada `/monitor` conserva a aplicação React para navegadores modernos e oferece uma apresentação HTML compatível para TVs/WebViews sem os recursos exigidos pelos bundles atuais. A adaptação pertence somente a essa superfície pública. Rotas privadas, administração, notificações, alertas de Agent/Storage e workers continuam usando os contratos atuais.
 
 ## Seleção da apresentação

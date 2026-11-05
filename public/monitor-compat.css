@@ -62,8 +62,9 @@ h1 { font-size: 20px; margin: 0; }
 .panel-foot { display: flex; justify-content: space-between; border-top: 1px solid #303030; color: #aaa; font-size: 9px; padding: 8px 15px; margin-top: 2px; }
 .panel-empty { min-height: 75px; padding: 16px 0; color: #aaa; }
 .muted, .reading > span:first-child { color: #aaa; }
-.status-pill { display: inline-block; white-space: nowrap; font-size: 10px; line-height: 16px; border-radius: 4px; padding: 1px 5px; }
+.status-pill { display: inline-flex; align-items: center; white-space: nowrap; font-size: 10px; line-height: 16px; border-radius: 4px; padding: 1px 5px; }
 .status-dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor; margin-right: 5px; vertical-align: middle; }
+.status-pill .status-dot { flex: none; }
 .tone-good { color: #35b86b; }
 .tone-warn { color: #e3a700; }
 .tone-bad { color: #ed5158; }
@@ -84,6 +85,7 @@ h1 { font-size: 20px; margin: 0; }
 .metric-meter.disk i { background: #e3a700; }
 .metric-old { opacity: .6; }
 .availability-grid { margin: 0 -4px; font-size: 0; overflow: auto; }
+.availability-panel > .availability-grid { flex: none; margin: 0 11px 8px; }
 .card-wrap { display: inline-block; vertical-align: top; width: 238px; max-width: 100%; padding: 4px; font-size: 12px; }
 .split-row .card-wrap { width: 25%; }
 .availability-card { display: block; text-align: left; width: 100%; height: 120px; min-width: 0; border-radius: 9px; border: 1px solid #363636; background: #1e1e1e; padding: 9px 10px; overflow: hidden; }
@@ -212,7 +214,7 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
   .compat-cell { display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0; padding: 0 5px; }
   .compat-cell > .dashboard-panel { flex: 1 1 0; min-height: 0; }
   .compat-row.content-sized { flex: 0 1 auto; min-height: 216px; max-height: 45%; }
-  .compat-row.content-sized[data-expanded-row] { flex: 0 0 auto; min-height: 0; max-height: none; }
+  .compat-row.content-sized[data-measured-row] { flex: 0 0 auto; min-height: 0; max-height: none; }
   .content-sized .compat-cell > .dashboard-panel { flex: 0 1 auto; height: auto; }
   .panel-content > .table-scroll, .panel-content > .host-card-grid { max-height: none !important; overflow: visible; }
   .presentation-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; }

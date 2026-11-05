@@ -3,7 +3,7 @@ import { resolveAvailabilityPanel, type AvailabilityPanelCard } from "../../dash
 import { cardMetricOrder, type CardMetric } from "../../config/agent-monitoring.ts";
 import { vpsCardValues, vpsCardReadingMaxAgeMs } from "../../vps/labels.ts";
 import { selectProblems, selectVms, sortInventory } from "../../dashboard/block-options.ts";
-import { isAvailabilityDivided, storageLayout } from "../../dashboard/layout.ts";
+import { isAvailabilityDivided, overviewSplitRows, storageLayout, usesRowComposition } from "../../dashboard/layout.ts";
 import { availabilityCardSizes, availabilityGridHeight, availabilityPanelMinimum, availabilityRowLimit } from "../../dashboard/availability-sizing.ts";
 import { metricValue, number, timestamp, isOld } from "../../dashboard/format.ts";
 import { currentMetric, serviceAvailability } from "../../dashboard/service-availability.ts";
@@ -35,7 +35,8 @@ function earliestExpiry(...values: (string | null | undefined)[]) {
 function expiry(value: string | null | undefined) { return value && Number.isFinite(Date.parse(value)) ? ` data-valid-until="${h(value)}"` : ""; }
 function badge(label: string, state = "unknown", validUntil?: string | null) { return `<span class="status-pill tone-${tone(state)}" data-live-status${expiry(validUntil)}><i class="status-dot"></i>${h(label)}</span>`; }
 function heading(title: string, state = "", icon: MonitorIcon = "server") { return `<div class="panel-heading"><span class="panel-icon" aria-hidden="true">${monitorIcon(icon)}</span><h2>${h(title)}</h2>${state ? `<span class="service-separator" aria-hidden="true">•</span>${state}` : ""}</div>`; }
-function panel(title: string, body: string, foot = "", state = "", icon: MonitorIcon = "server") { return `<section class="dashboard-panel">${heading(title, state, icon)}<div class="panel-content" tabindex="0" role="region" aria-label="Conteúdo de ${h(title)}">${body}</div>${foot ? `<footer class="panel-foot">${foot}</footer>` : ""}</section>`; }
+function panelFrame(title: string, body: string, foot = "", state = "", icon: MonitorIcon = "server", className = "") { return `<section class="dashboard-panel${className ? ` ${className}` : ""}">${heading(title, state, icon)}${body}${foot ? `<footer class="panel-foot">${foot}</footer>` : ""}</section>`; }
+function panel(title: string, body: string, foot = "", state = "", icon: MonitorIcon = "server") { return panelFrame(title, `<div class="panel-content" tabindex="0" role="region" aria-label="Conteúdo de ${h(title)}">${body}</div>`, foot, state, icon); }
 function controlContent(icon: MonitorIcon, label: string) { return `${monitorIcon(icon)}<span data-control-label>${h(label)}</span>`; }
 function empty(text: string) { return `<p class="panel-empty">${h(text)}</p>`; }
 function reading(label: string, metric: Metric | undefined, stale: boolean, now: number, series = "cpu", currentOnly = false, context = "") {
@@ -180,7 +181,7 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
       const configuredRows = split && options.cardSize === "compact" && options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows;
       const visibleRows = availabilityRowLimit(options.cardSize, configuredRows, divided, model.screen.blocks.some(block => block.enabled && block.type === "summary"), options.rowMode);
       const dimensions = availabilityCardSizes[options.cardSize];
-      return panel("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" data-card-size="${options.cardSize}" data-card-divided="${divided}"${options.rowMode ? ` data-row-mode="${options.rowMode}"` : ""} data-card-rows="${visibleRows}" data-card-width="${dimensions.minWidth}" data-card-gap="${dimensions.gap}" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${availabilityGridHeight(options.cardSize, visibleRows, options.cardSize === "expanded" || options.rowMode !== undefined)}px">${cards.map(card => miniCard(card, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM / disco conforme configuração · latência nas aplicações · faixa Signal/VPS", "", "box");
+      return panelFrame("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" data-card-size="${options.cardSize}" data-card-divided="${divided}"${options.rowMode ? ` data-row-mode="${options.rowMode}"` : ""} data-card-rows="${visibleRows}" data-card-width="${dimensions.minWidth}" data-card-gap="${dimensions.gap}" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${availabilityGridHeight(options.cardSize, visibleRows, options.cardSize === "expanded" || options.rowMode !== undefined)}px">${cards.map(card => miniCard(card, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM / disco conforme configuração · latência nas aplicações · faixa Signal/VPS", "", "box", "availability-panel");
     }
     case "asgard_summary": return asgardPanel(block.data as AsgardSummary, configuration, stale, now);
     case "storage_summary": return storagePanel((block.data as { target: StorageView | null }).target, stale, now, effectiveOptions({ ...configuration, type: "storage_summary" }).visibleRows);
@@ -222,19 +223,20 @@ export function renderCompatibleContent(model: CompatibleMonitor) {
   const enabled = model.screen.blocks.filter(block => block.enabled);
   const hasKpis = enabled.some(block => block.type === "summary");
   const gridTypes = ["highlighted_resources", "problems", "asgard_summary", "signal_flow"];
-  const legacySplit = model.layout === "overview" && model.screen.overviewGrid === "split" && !enabled.some(block => block.type === "storage_summary");
-  if (legacySplit && gridTypes.every(type => enabled.filter(block => block.type === type).length <= 1)) {
-    const find = (type: string) => enabled.find(block => block.type === type);
-    const availability = find("highlighted_resources"), problems = find("problems"), asgard = find("asgard_summary"), signal = find("signal_flow");
+  const legacySplit = model.layout === "overview" && model.screen.overviewGrid === "split" && !usesRowComposition(enabled, true);
+  if (legacySplit) {
     const rows: typeof composition.rows = [];
     function addRow(blocks: { block: PresentationBlock; span: number }[], minimum: number, paired: boolean) {
       if (blocks.length) rows.push({ blocks, minimum, paired, contentSized: blocks.every(item => item.block.type === "highlighted_resources") });
     }
     // The original non-Storage split has a 1.25 : 1 ratio. Preserve it without CSS Grid.
-    const left = 12 * 5 / 9, right = 12 * 4 / 9, side = problems ?? signal;
-    const options = availability && effectiveOptions({ ...availability, type: "highlighted_resources" });
-    addRow([...(availability ? [{ block: availability, span: left }] : []), ...(side ? [{ block: side, span: right }] : [])], options ? availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows, true, hasKpis, options.rowMode)) : 210, true);
-    addRow([...(asgard ? [{ block: asgard, span: problems ? left : 12 }] : []), ...(problems && signal ? [{ block: signal, span: right }] : [])], 210, false);
+    const left = 12 * 5 / 9, right = 12 * 4 / 9;
+    for (const row of overviewSplitRows(enabled)) {
+      const availability = row.find(block => block.type === "highlighted_resources");
+      const options = availability && effectiveOptions({ ...availability, type: "highlighted_resources" });
+      const divided = row.length > 1;
+      addRow(row.map((block, index) => ({ block, span: divided ? index === 0 ? left : right : 12 })), options ? availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows, divided, hasKpis, options.rowMode)) : 210, divided && !!availability);
+    }
     for (const block of enabled.filter(block => block.type !== "summary" && !gridTypes.includes(block.type))) addRow([{ block, span: 12 }], 210, false);
     composition.rows = rows;
   }
@@ -248,7 +250,7 @@ export function renderCompatibleContent(model: CompatibleMonitor) {
   const summaries = composition.summaries.map(block => `<div class="compat-summary">${renderBlock(model, block)}</div>`).join("");
   const rows = composition.rows.map(row => {
     const expanded = row.blocks.some(({ block }) => block.type === "highlighted_resources" && effectiveOptions({ ...block, type: "highlighted_resources" }).cardSize === "expanded");
-    const measured = expanded || row.blocks.some(({ block }) => block.type === "highlighted_resources" && effectiveOptions({ ...block, type: "highlighted_resources" }).rowMode !== undefined);
+    const measured = row.blocks.some(({ block }) => block.type === "highlighted_resources");
     const panels = row.blocks.map(({ block, span }) => `<div class="compat-cell block-${block.type}" style="width:${span / 12 * 100}%" data-block-id="${h(block.id)}">${renderBlock(model, block)}</div>`).join("");
     return `<div class="compat-row${row.contentSized ? " content-sized" : ""}${row.paired ? " split-row" : ""}"${expanded ? ' data-expanded-row="true"' : ""}${measured ? ' data-measured-row="true"' : ""} data-min-height="${row.minimum}"${row.contentSized ? "" : ` style="min-height:${row.minimum}px"`}>${panels}</div>`;
   }).join("");

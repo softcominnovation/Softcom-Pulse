@@ -1,0 +1,31 @@
+.dashboard .dashboard-blocks.has-custom-slots { display:flex; flex-direction:column; min-height:0; flex:1; overflow:hidden; }
+.slot-composition,.slot-composition-rows { display:flex; flex-direction:column; min-width:0; min-height:0; flex:1; gap:calc(12px * var(--dashboard-scale,1)); }
+.slot-composition-summaries { flex:none; display:grid; gap:calc(12px * var(--dashboard-scale,1)); }
+.slot-composition-row { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:calc(12px * var(--dashboard-scale,1)); min-height:calc(var(--slot-row-minimum) * 1px * var(--dashboard-scale,1)); }
+.slot-composition-group { display:flex; flex-direction:column; gap:calc(12px * var(--dashboard-scale,1)); min-width:0; min-height:0; }
+.slot-composition-group:only-child { grid-column:1/-1; }
+.slot-panel { display:flex; flex-direction:column; flex:1 1 0; min-height:0; min-width:0; }
+.slot-panel > .dashboard-block { display:flex; flex-direction:column; flex:1; min-height:0; width:100%; }
+.slot-composition .slot-panel .dashboard-panel { height:100%; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
+.slot-composition .slot-panel .availability-panel { height:auto; flex:none; }
+.slot-composition .availability-grid { flex:none; }
+.slot-composition .panel-heading,.slot-composition .panel-foot { flex-shrink:0; }
+.slot-composition .problem-list,.slot-composition .asgard-content,.slot-composition .asgard-machines,.slot-composition .signal-flow-body { min-height:0; flex:1; overflow:auto; }
+.slot-composition .storage-body { min-height:0; flex:1; overflow:auto; }
+.slot-composition-scroll { overflow:auto; }
+.slot-composition-scroll .slot-composition-rows { flex:none; }
+.dashboard-preview .dashboard-blocks.has-custom-slots { height:calc(100dvh - 250px); min-height:300px; }
+@media (min-width:1201px) and (min-height:480px) {
+  .slot-composition-row { flex:1 1 0; }
+  .slot-composition-scroll .slot-composition-row { flex:0 0 auto; height:calc(var(--slot-row-minimum) * 1px * var(--dashboard-scale,1)); }
+  .slot-composition .slot-composition-row-measured:not(:only-child) { flex:0 0 auto; height:calc(var(--slot-row-minimum) * 1px * var(--dashboard-scale,1)); }
+}
+@media (max-width:1200px),(max-height:479px) {
+  .dashboard .dashboard-blocks.has-custom-slots { overflow:visible; }
+  .dashboard-preview .dashboard-blocks.has-custom-slots { height:auto; }
+  .slot-composition-row { min-height:0; }
+  .slot-panel { flex:none; }
+  .slot-composition .slot-panel .dashboard-panel { height:auto; max-height:560px; }
+  .slot-composition .slot-panel .availability-panel { max-height:none; }
+}
+@media (max-width:850px) { .slot-composition-row { grid-template-columns:minmax(0,1fr); } }

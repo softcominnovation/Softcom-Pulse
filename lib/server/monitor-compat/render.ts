@@ -12,6 +12,7 @@ import type { AsgardSummary, ConfiguredResource, Host, Metric, OverviewBlock, Pr
 import { formatLatency, formatUptime, probeStatus, sortProbeCards } from "../../probe/status.ts";
 import { signalStateLabel, signalStateTone, signalStateColor, signalWorkersLabel } from "../../signal/labels.ts";
 import { storageStatus } from "../../storage/presentation.ts";
+import { overviewSlotLayout } from "../../dashboard/overview-slot-layout.ts";
 import type { StorageView } from "../../storage/contracts.ts";
 import { publicVpsNetworkLabel, vpsMonitorLabel, vpsReasonColor, vpsStrip, vpsUptimeLabel } from "../../vps/labels.ts";
 import type { CompatibleMonitor } from "./read.ts";
@@ -177,7 +178,7 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
       const resolved = resolveAvailabilityPanel(block.data, options, { probes: model.overview?.data.externalServices ?? [], vps: model.overview?.data.standaloneVps ?? [], signalCards: model.overview?.data.signalCards ?? [] });
       const cards = resolved.cards;
       const split = model.layout === "overview" && model.screen.overviewGrid === "split";
-      const divided = isAvailabilityDivided(configuration, model.screen.blocks, split, model.layout === "wall");
+      const divided = isAvailabilityDivided(configuration, model.screen.blocks, split, model.layout === "wall", model.layout === "overview" && model.screen.overviewGrid === "split_custom" ? model.screen.overviewSlots : undefined);
       const configuredRows = split && options.cardSize === "compact" && options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows;
       const visibleRows = availabilityRowLimit(options.cardSize, configuredRows, divided, model.screen.blocks.some(block => block.enabled && block.type === "summary"), options.rowMode);
       const dimensions = availabilityCardSizes[options.cardSize];
@@ -216,6 +217,15 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
   return panel("Bloco indisponível", empty("Este bloco não está disponível nesta superfície."));
 }
 
+function renderSlotRows(model: CompatibleMonitor) {
+  const plan = overviewSlotLayout(model.screen.blocks, model.screen.overviewSlots!);
+  return plan.rows.map(row => {
+    const paired = row.groups.length > 1;
+    const groups = row.groups.map((group, index) => `<div class="compat-cell compat-slot-group" data-overview-slot="${group.key}" data-panel-count="${group.blocks.length}" style="width:${paired ? index === 0 ? 100 * 5 / 9 : 100 * 4 / 9 : 100}%">${group.blocks.map(block => `<div class="compat-slot-panel block-${block.type}" data-block-id="${h(block.id)}">${renderBlock(model, block)}</div>`).join("")}</div>`).join("");
+    return `<div class="compat-row compat-slot-row${paired ? " split-row" : ""}${row.hasAvailability && plan.rows.length > 1 ? " compat-slot-row-measured" : ""}" data-custom-slot-row style="min-height:${row.minimum}px;${row.hasAvailability && plan.rows.length > 1 ? `height:${row.minimum}px;` : ""}">${groups}</div>`;
+  }).join("");
+}
+
 export function renderCompatibleContent(model: CompatibleMonitor) {
   // Normalize options locally without changing the selected profile or saved document.
   model = { ...model, screen: { ...model.screen, blocks: model.screen.blocks.map(block => block.type === "highlighted_resources" ? { ...block, options: compatibleAvailabilityOptions(block) } : block) } };
@@ -248,7 +258,7 @@ export function renderCompatibleContent(model: CompatibleMonitor) {
     }
   }
   const summaries = composition.summaries.map(block => `<div class="compat-summary">${renderBlock(model, block)}</div>`).join("");
-  const rows = composition.rows.map(row => {
+  const rows = model.layout === "overview" && model.screen.overviewGrid === "split_custom" && model.screen.overviewSlots ? renderSlotRows(model) : composition.rows.map(row => {
     const expanded = row.blocks.some(({ block }) => block.type === "highlighted_resources" && effectiveOptions({ ...block, type: "highlighted_resources" }).cardSize === "expanded");
     const measured = row.blocks.some(({ block }) => block.type === "highlighted_resources");
     const panels = row.blocks.map(({ block, span }) => `<div class="compat-cell block-${block.type}" style="width:${span / 12 * 100}%" data-block-id="${h(block.id)}">${renderBlock(model, block)}</div>`).join("");

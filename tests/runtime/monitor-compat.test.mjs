@@ -194,6 +194,75 @@ function getWithHost(address, host, headers = {}) {
 }
 const oldUa = "Mozilla/5.0 (Linux; Android 11; TV) AppleWebKit/537.36 Version/4.0 Chrome/83.0.4103.120 Safari/537.36";
 
+test("custom slots share the plan in initial HTML, opaque frames and refreshed layouts without losing body scroll", { timeout: 90000 }, async () => {
+  const fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', '--input-type=module', '-e', `
+    import { randomUUID } from 'node:crypto';
+    import { monitorFixture } from './tests/fixtures/monitor-compat.mjs';
+    import { effectiveOptions } from './lib/config/presentation.ts';
+    import { renderCompatibleContent, renderCompatiblePage, compatibleMonitorState } from './lib/server/monitor-compat/render.ts';
+    const model = monitorFixture({ cardSize:'expanded', summaryEnabled:false }), screen = model.screen;
+    model.document.publicMonitorAutoScrollOnLoad = false;
+    model.document.showStatusBanner = false;
+    const cards = model.overview.data.blocks.find(block=>block.type==='highlighted_resources').data.cards;
+    while(cards.length<8){const card=structuredClone(cards[0]);card.item.id=randomUUID();card.item.config.id=card.item.id;cards.push(card);}
+    const problem = {id:randomUUID(),type:'problems',enabled:true,width:'wide',options:effectiveOptions({type:'problems'})};
+    screen.blocks.push(problem); model.overview.data.blocks.push({blockId:problem.id,type:problem.type,availability:'ready',stale:false,lastUpdated:model.overview.lastUpdated,data:model.overview.data.problems});
+    const find = type => screen.blocks.find(block=>block.type===type);
+    screen.overviewGrid='split_custom';
+    screen.overviewSlots={topLeft:[find('highlighted_resources').id],topRight:[find('signal_flow').id,find('storage_summary').id],bottomLeft:[find('asgard_summary').id],bottomRight:[problem.id]};
+    find('highlighted_resources').options.rowMode='manual';find('highlighted_resources').options.visibleRows=3;
+    const snapshot=()=>({html:renderCompatibleContent(model),state:compatibleMonitorState(model)});
+    const page=renderCompatiblePage(model,'Slots fixture'), normal=snapshot();
+    screen.overviewSlots.topRight.reverse();model.document.revision++;const reversed=snapshot();
+    find('signal_flow').enabled=false;model.document.revision++;const hidden=snapshot();
+    process.stdout.write(JSON.stringify({page,normal,reversed,hidden,ids:screen.overviewSlots}));
+  `], { cwd:fileURLToPath(root),encoding:'utf8',windowsHide:true,maxBuffer:8*1024*1024 }));
+  await shipped(async base => {
+    let current = fixture.normal;
+    const parent = createServer(async (request,response) => {
+      response.setHeader('Access-Control-Allow-Origin','*');
+      if (request.url === '/') { response.setHeader('Content-Type','text/html'); response.end('<style>body{margin:0}iframe{width:100%;height:100vh;border:0;display:block}</style><iframe sandbox="allow-scripts" src="/monitor?compat=1"></iframe>'); }
+      else if (request.url === '/monitor?compat=1') { response.setHeader('Content-Type','text/html');response.end(fixture.page); }
+      else if (request.url.startsWith('/monitor/compat?fragment=1')) { response.setHeader('Content-Type','application/json');response.end(JSON.stringify(current)); }
+      else { const upstream=await fetch(base+request.url);response.statusCode=upstream.status;response.setHeader('Content-Type',upstream.headers.get('content-type')??'application/octet-stream');response.end(Buffer.from(await upstream.arrayBuffer())); }
+    });
+    const address=await listen(parent),browser=await chromium.launch();
+    try {
+      const noJs=await browser.newContext({javaScriptEnabled:false,viewport:{width:1280,height:720}});
+      try { const initial=await noJs.newPage();await initial.goto(address);const frame=initial.frameLocator('iframe');await expect(frame.locator('[data-overview-slot=topRight] > .compat-slot-panel')).toHaveCount(2);await expect(frame.locator('[data-overview-slot=bottomRight]')).toContainText('Problemas ativos'); } finally {await noJs.close();}
+      const context=await browser.newContext({viewport:{width:1280,height:720}});
+      try {
+        const page=await context.newPage(), errors=[];page.on('pageerror',error=>errors.push(error.message));await page.goto(address);
+        const frame=page.frameLocator('iframe');await frame.locator('#compat-content[data-monitor-controller="ready"]').waitFor();
+        for (const zoom of [70,100,125]) {
+          await frame.locator('html').evaluate((node,zoom)=>{node.style.zoom=zoom+'%';},zoom);
+          await expect.poll(()=>frame.locator('[data-overview-slot=topRight]').evaluate(group=>{
+            const panels=Array.from(group.querySelectorAll('.compat-slot-panel'),node=>node.getBoundingClientRect());
+            return panels.length===2&&Math.abs(panels[0].height-panels[1].height)<1&&panels[1].top>=panels[0].bottom+1;
+          })).toBe(true);
+          const bodies=await frame.locator('[data-overview-slot=topRight] .panel-content').evaluateAll(nodes=>nodes.map(node=>({height:node.clientHeight,overflow:getComputedStyle(node).overflowY})));
+          assert.ok(bodies.every(body=>body.height>40&&body.overflow==='auto'),JSON.stringify(bodies));
+          await assertCardScrollOnly(frame.locator('.availability-grid'),{zoom,custom:true});
+          if(zoom===70)await page.screenshot({path:fileURLToPath(new URL('.cache/screenshots/custom-slots-classic-initial.png',root))});
+        }
+        const region=frame.locator('[data-overview-slot=topRight] .compat-slot-panel').last().locator('.panel-content');
+        await region.focus();await region.press('End');await expect.poll(()=>region.evaluate(node=>node.scrollTop>0||node.scrollHeight<=node.clientHeight+1)).toBe(true);
+        current=fixture.reversed;await frame.locator('#compat-refresh').click();
+        await expect(frame.locator('[data-overview-slot=topRight] > .compat-slot-panel').first()).toContainText('Storage configurado');
+        current=fixture.hidden;await frame.locator('#compat-refresh').click();await expect(frame.locator('[data-overview-slot=topRight] > .compat-slot-panel')).toHaveCount(1);
+        await frame.locator('html').evaluate(node=>{node.style.zoom='70%';});
+        const remainingBody=frame.locator('[data-overview-slot=topRight] .panel-content');
+        await remainingBody.evaluate(node=>{node.scrollTop=0;});
+        await frame.getByRole('button',{name:'Retomar rolagem automática',exact:true}).click();
+        await expect.poll(()=>remainingBody.evaluate(node=>node.scrollTop),{timeout:12000}).toBeGreaterThan(0);
+        await frame.getByRole('button',{name:'Pausar rolagem automática',exact:true}).click();
+        await page.screenshot({path:fileURLToPath(new URL('.cache/screenshots/custom-slots-classic.png',root))});
+        assert.deepEqual(errors,[]);
+      } finally {await context.close();}
+    } finally {await browser.close();parent.closeAllConnections();await new Promise(resolve=>parent.close(resolve));}
+  });
+});
+
 async function assertCardScrollOnly(grid, context = {}) {
   const enclosure = await grid.evaluate(node => {
     const panel = node.closest('.dashboard-panel'), foot = panel.querySelector(':scope > .panel-foot');

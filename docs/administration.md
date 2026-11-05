@@ -1,6 +1,6 @@
 # Administração da visualização
 
-Em cada tela, **Serviços destacados → Fileiras visíveis** escolhe Automático ou 1/2/3, independentemente dos KPIs quando manual. Salve em **Salvar apresentação**. Perfis Padrão/Ampliado e fontes dos KPIs continuam locais ao bloco. Ocultar uma fileira inteira de painéis faz a outra aproveitar a altura disponível; tipos repetidos mantêm suas posições e opções por UUID, inclusive na prévia. A prévia avisa quando a composição precisa rolar. Não há nova configuração para o encaixe.
+Em cada tela, **Serviços destacados → Fileiras visíveis** escolhe Automático ou 1/2/3, independentemente dos KPIs quando manual. Salve em **Salvar apresentação**. Perfis Padrão/Ampliado e fontes dos KPIs continuam locais ao bloco. Ocultar uma fileira inteira de painéis faz a outra aproveitar a altura disponível; tipos repetidos mantêm suas posições e opções por UUID, inclusive na prévia. A prévia avisa quando a composição precisa rolar. O encaixe automático das grades existentes não exige configuração adicional; a composição alternativa por espaços é descrita abaixo.
 
 ## Notificações de serviços
 
@@ -44,13 +44,27 @@ O editor envia o documento completo em schemaVersion 2 para `/api/settings/prese
 
 Os controles por botões funcionam com teclado e toque. Intervalo: 5–300 segundos; alternância automática requer pelo menos duas telas aptas. O default compartilhado de Modo TV inicial é usado na raiz autenticada; `/monitor` sempre inicia com TV ligado, sem gravar uma alteração nessa preferência. A saída manual permanece disponível. Modo TV inicial não aciona fullscreen automaticamente. Tela atual, pausa e cronômetro do player são locais e não são editados aqui.
 
-O catálogo central valida opções específicas por tipo: indicadores (catálogo de cinco chaves, até quatro ativos, com ordem), ordenação/direção, filtros de estados/severidades/criticidade/hosts, fileiras de Disponibilidade (Automático/1–3), linhas visíveis e `visibleRows` do bloco `signal_flow`. No bloco **Serviços destacados**, `selection` é `default` (destaques globais) ou `custom` (até 8 cards `kind:uuid`, ordenáveis; catálogo = cadastros **enabled** das quatro famílias, não só `dashboardEnabled`). Documentos antigos sem `selection` equivalem a `default`. Cada tela overview tem `overviewGrid` (`default` ou `split`). Campos de outro bloco são rejeitados. CPU/RAM ordenam percentuais numéricos; zero e valores acima de 100 são preservados. Valores ausentes, sem percentual, stale e expirados ficam por último em ambas as direções. Filtros mostram contagens parciais; não alteram os KPIs globais.
+O catálogo central valida opções específicas por tipo: indicadores (catálogo de cinco chaves, até quatro ativos, com ordem), ordenação/direção, filtros de estados/severidades/criticidade/hosts, fileiras de Disponibilidade (Automático/1–3), linhas visíveis e `visibleRows` do bloco `signal_flow`. No bloco **Serviços destacados**, `selection` é `default` (destaques globais) ou `custom` (até 8 cards `kind:uuid`, ordenáveis; catálogo = cadastros **enabled** das quatro famílias, não só `dashboardEnabled`). Documentos antigos sem `selection` equivalem a `default`. Cada tela overview tem `overviewGrid` (`default`, `split` ou `split_custom`). Campos de outro bloco são rejeitados. CPU/RAM ordenam percentuais numéricos; zero e valores acima de 100 são preservados. Valores ausentes, sem percentual, stale e expirados ficam por último em ambas as direções. Filtros mostram contagens parciais; não alteram os KPIs globais.
 
 Linhas visíveis controlam a altura da janela, sem remover dados. Todas as entradas permanecem acessíveis por rolagem interna. A composição inicial preserva destaques em faixa inteira e ASGARD/problemas lado a lado. Alterar opções pode exigir rolagem da página; o editor não diminui artificialmente a escala.
 
 A prévia usa os renderers reais e leituras agregadas existentes de overview, hosts, containers e serviços. É identificada como não salva, acompanha a largura atual do navegador e avisa quando sua altura excede o espaço disponível. Não há simulação de cenários, requests por linha nem polling de históricos. Fechar/navegar cancela as leituras. Dados indisponíveis mantêm estado honesto.
 
 Falhas preservam o rascunho; 409 informa edição concorrente. “Recarregar para revisar” pede confirmação antes de descartar o rascunho. Cancelar alterações restaura a versão carregada sem gravar. Remover tela/bloco e restaurar composição inicial também pedem confirmação; só Salvar altera a apresentação compartilhada. Sucesso é anunciado depois da resposta do servidor.
+
+## Painéis empilhados por espaço
+
+Em **Apresentação → Tela → Grade da visão geral**, a opção **Duas colunas · espaços configuráveis** permite escolher o conteúdo dos quatro espaços. Em cada espaço, selecione **Painel único** ou **Dois painéis empilhados** e os respectivos painéis. **Inverter painéis** troca a ordem; **Esvaziar espaço** remove apenas a atribuição. Os Indicadores continuam acima da grade.
+
+Exemplo: superior esquerdo com Disponibilidade; superior direito com Signal/Storage; inferior esquerdo com ASGARD; inferior direito com Problemas. Adicione os blocos necessários no editor atual antes de posicioná-los; não há criação automática de serviços ou máquinas.
+
+Signal, Storage, ASGARD e Problemas podem formar pilhas. Disponibilidade ocupa um espaço sozinha para manter suas fileiras completas. Os demais tipos continuam nos modelos existentes. Cada painel conta no limite de seis blocos, e a configuração é independente por tela. O nome do recurso e o número do bloco distinguem opções repetidas.
+
+Escolher um painel já posicionado move sua atribuição; não cria uma cópia. Um bloco ativo sem posição aparece em **Painéis sem posição** e impede salvar até a composição ficar válida. Desabilitar um painel preserva sua posição e permite ao outro ocupar o espaço; remover/mover para outra tela limpa a atribuição de origem. A largura individual fica inativa neste modelo, mas seu valor é preservado para as outras grades.
+
+Use **Ver prévia** para conferir as alturas e **Salvar apresentação** para compartilhar. **Salvar leitura do telão** não publica posições em rascunho. Voltar para Padrão ou Duas colunas conserva as opções dos blocos; o arranjo personalizado fica reservado para uma próxima seleção. Quando a pilha precisa de mais altura que o vizinho ou que a janela, a prévia avisa; ajuste blocos/fileiras/zoom ou use o fallback de rolagem da composição.
+
+O contrato usa `overviewGrid: split_custom` e `overviewSlots` opcional no JSON existente, por UUID de bloco. Não há migration SQL, novo worker ou rota adicional. Raiz, prévia e monitor React/clássico usam o mesmo plano de posições. Builds anteriores não entendem esse modo novo.
 
 ## Tamanho dos elementos no telão
 

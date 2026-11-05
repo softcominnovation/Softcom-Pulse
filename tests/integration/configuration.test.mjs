@@ -11,6 +11,7 @@ import { getDatabase } from "../../lib/server/database.ts";
 import { getPrisma } from "../../lib/server/prisma.ts";
 import { sealEnvelope } from "../../lib/server/auth/envelope.ts";
 import { initialPresentation as initialV2, effectiveOptions } from "../../lib/config/presentation.ts";
+import { publicGet } from "../../lib/server/monitoring/public-handlers.ts";
 function initialPresentation(newId) { const document = initialV2(newId); document.schemaVersion = 1; document.screens.forEach(screen => screen.blocks.forEach(block => { delete block.options; })); return document; }
 import { publishSnapshots, markSyncFailure, readSnapshotBatch, readResult, snapshotKeys as keys } from "../../lib/server/cache/snapshots.ts";
 import * as handlers from "../../lib/server/monitoring/handlers.ts";
@@ -299,6 +300,39 @@ test("presentation initialization is idempotent across clients and revision comp
   assert.equal(saved.data.revision, revision + 1); assert.equal(saved.data.rotation.intervalSeconds, 30);
   await getPrisma().$disconnect(); delete globalThis.pulsePrisma;
   assert.deepEqual(await getPresentation(), saved);
+});
+
+test("custom slot compositions persist independently per screen and reject stale or broken assignments", async () => {
+  const previous = (await getPresentation()).data;
+  const previousHosts = process.env.PULSE_PUBLIC_HOSTS, previousDemo = process.env.PULSE_DEMO_MODE;
+  try {
+    const { revision: ignored, ...settings } = initialV2(randomUUID); void ignored;
+    settings.screens.push(initialV2(randomUUID).screens[0]);
+    settings.screens.forEach((screen, index) => {
+      screen.overviewGrid = "split_custom";
+      const signal = { id: randomUUID(), type: "signal_flow", enabled: true, width: "wide", options: effectiveOptions({ type: "signal_flow" }) };
+      screen.blocks.push(signal);
+      const find = type => screen.blocks.find(block => block.type === type).id;
+      screen.overviewSlots = { topLeft: [find("highlighted_resources")], topRight: index ? [find("problems")] : [signal.id, find("problems")], bottomLeft: [find("asgard_summary")], bottomRight: index ? [signal.id] : [] };
+    });
+    const saved = await savePresentation({ expectedRevision: previous.revision, settings });
+    assert.deepEqual((await getPresentation()).data.screens.map(screen => screen.overviewSlots), settings.screens.map(screen => screen.overviewSlots));
+    const read = await result(await handlers.presentationGet(request()));
+    assert.equal(read.status, 200); assert.deepEqual(read.body.data.screens[1].overviewSlots, settings.screens[1].overviewSlots);
+    process.env.PULSE_PUBLIC_HOSTS = "public.example.test"; process.env.PULSE_DEMO_MODE = "0";
+    const publicRead = await publicGet(new Request("http://public.example.test/api/public/settings/presentation", { headers: { Host: "public.example.test" } }), ["settings", "presentation"]);
+    assert.equal(publicRead.status, 200);
+    assert.deepEqual((await publicRead.json()).data.screens.map(screen => screen.overviewSlots), settings.screens.map(screen => screen.overviewSlots));
+    await assert.rejects(savePresentation({ expectedRevision: previous.revision, settings }), error => error.code === "revision_conflict");
+    const invalid = structuredClone(settings); invalid.screens[0].overviewSlots.bottomRight = [settings.screens[1].blocks[1].id];
+    await assert.rejects(savePresentation({ expectedRevision: saved.data.revision, settings: invalid }), error => error.name === "ZodError");
+    assert.equal((await getPresentation()).data.revision, saved.data.revision);
+  } finally {
+    if (previousHosts === undefined) delete process.env.PULSE_PUBLIC_HOSTS; else process.env.PULSE_PUBLIC_HOSTS = previousHosts;
+    if (previousDemo === undefined) delete process.env.PULSE_DEMO_MODE; else process.env.PULSE_DEMO_MODE = previousDemo;
+    const { revision: ignored, ...settings } = previous; void ignored;
+    await savePresentation({ expectedRevision: (await getPresentation()).data.revision, settings });
+  }
 });
 test("CRUD HTTP contracts preserve untouched fields, reject unknown writes and keep UUID ordering", async () => {
   await publish({ [keys.hosts]: [host()], [keys.containers("asgard")]: [container()] });

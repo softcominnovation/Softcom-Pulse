@@ -22,6 +22,7 @@ import { usePoll } from "./use-poll";
 import { useIdlePresentation } from "./use-idle-presentation";
 import { EvidenceTimeContext } from "./metrics";
 import { StorageComposition } from "./storage-composition";
+import { SlotComposition } from "./slot-composition";
 
 const configurationDelay = () => 60000;
 const overviewDelay = (result: ReadResult<Overview>) => result.refreshAfterMs;
@@ -116,7 +117,8 @@ export function Dashboard({ initialTvMode, onPresentation, extraControls }: { in
         const enabled = screen.blocks.filter(block => block.enabled);
         const split = layout === "overview" && screen.overviewGrid === "split";
         const wall = layout === "wall";
-        const rowComposition = usesRowComposition(enabled, split);
+        const custom = layout === "overview" && screen.overviewGrid === "split_custom" && screen.overviewSlots;
+        const rowComposition = !custom && usesRowComposition(enabled, split);
         const tracks = overviewSplitTracks(enabled);
         const renderBlock = (block: typeof enabled[number]) => {
           const payload = result?.data.blocks.find(item => item.blockId === block.id && item.type === block.type);
@@ -124,13 +126,14 @@ export function Dashboard({ initialTvMode, onPresentation, extraControls }: { in
           // Keep layout and content options on the same active-screen configuration.
           // The overview supplies evidence; omitted/older payload options must not reset a block.
           return <div className={`dashboard-block width-${width} block-${block.type}`} data-block-id={block.id} key={block.id}>
-            {payload ? <DashboardBlock block={{ ...payload, options: block.options }} hasKpis={enabled.some(item => item.type === "summary")} availabilityDivided={isAvailabilityDivided(block, enabled, split, wall)} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
+            {payload ? <DashboardBlock block={{ ...payload, options: block.options }} hasKpis={enabled.some(item => item.type === "summary")} availabilityDivided={isAvailabilityDivided(block, enabled, split, wall, custom || undefined)} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
           </div>;
         };
-        return <div data-dashboard-content data-fit-rows={!rowComposition || undefined} style={!rowComposition ? { "--dashboard-grid-rows": dashboardGridRows(enabled, split, wall) } as CSSProperties : undefined} className={`dashboard-blocks${split ? " overview-split" : ""}${rowComposition ? " has-storage" : ""}`} aria-busy={overview.loading}>
+        return <div data-dashboard-content data-fit-rows={!rowComposition && !custom || undefined} style={!rowComposition && !custom ? { "--dashboard-grid-rows": dashboardGridRows(enabled, split, wall) } as CSSProperties : undefined} className={`dashboard-blocks${split ? " overview-split" : ""}${rowComposition ? " has-storage" : ""}${custom ? " has-custom-slots" : ""}`} aria-busy={overview.loading}>
           {!result && !overview.failed && <DashboardSkeleton label="Carregando os indicadores da tela…" />}
           {result && rowComposition && <StorageComposition blocks={enabled} split={split} wall={wall} render={renderBlock} />}
-          {result && !rowComposition && !split && enabled.map(renderBlock)}
+          {result && custom && <SlotComposition blocks={enabled} slots={custom} render={renderBlock} />}
+          {result && !custom && !rowComposition && !split && enabled.map(renderBlock)}
           {result && !rowComposition && split && (() => {
             const gridTypes = new Set(["highlighted_resources", "problems", "asgard_summary", "signal_flow"]);
             const byType = (type: string) => enabled.filter(block => block.type === type);

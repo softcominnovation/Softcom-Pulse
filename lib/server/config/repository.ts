@@ -11,6 +11,7 @@ import { validateSelection } from "../monitoring/inventory.ts";
 import { monitoringScopeSchema } from "../zabbix/scope.ts";
 import type { ResourceContext } from "../../config/resource-context.ts";
 import { collectCustomAvailabilityRefs } from "../../dashboard/availability-cards.ts";
+import { cleanOverviewSlots } from "../../config/overview-slots.ts";
 
 const PRESENTATION_KEY = "dashboardPresentation";
 type Transaction = Prisma.TransactionClient;
@@ -121,7 +122,7 @@ export async function deleteResource(id: string, expectedRevision?: number) {
       if (!blocks.length || (screen.enabled && !blocks.some(block => block.enabled))) {
         blocks.push({ id: randomUUID(), type: "summary", enabled: true, width: "full", ...(data.schemaVersion === 2 ? { options: effectiveOptions({ type: "summary" }) } : {}) });
       }
-      return { ...screen, blocks };
+      return cleanOverviewSlots({ ...screen, blocks });
     });
     if (changed) await tx.pulseSetting.update({ where: { key: PRESENTATION_KEY }, data: { value: { ...data, screens, revision: data.revision + 1 } } });
   });

@@ -87,6 +87,18 @@ h1 { font-size: 20px; margin: 0; }
 .availability-grid { margin: 0 -4px; font-size: 0; overflow: auto; }
 .availability-panel > .availability-grid { flex: none; margin: 0 11px 8px; }
 .availability-panel > .panel-foot { display: block; flex: none; min-height: 0; max-height: 28px; margin: 0; padding: 6px 15px; line-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.compat-slot-panel { min-width: 0; margin-bottom: 12px; }
+.compat-slot-panel:last-child { margin-bottom: 0; }
+.compat-slot-panel > .dashboard-panel { height: auto; }
+@supports (display: flex) {
+  @media (min-width: 761px) and (min-height: 480px) {
+    .compat-slot-row > .compat-slot-group { height: auto; }
+    .compat-slot-panel { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
+    .compat-slot-panel > .dashboard-panel { height: 100%; flex: 1 1 0; min-height: 0; }
+    .compat-slot-panel > .availability-panel { height: auto; flex: none; }
+    .compat-row.compat-slot-row-measured { flex: 0 0 auto; }
+  }
+}
 .card-wrap { display: inline-block; vertical-align: top; width: 238px; max-width: 100%; padding: 4px; font-size: 12px; }
 .split-row .card-wrap { width: 25%; }
 .availability-card { display: block; text-align: left; width: 100%; height: 120px; min-width: 0; border-radius: 9px; border: 1px solid #363636; background: #1e1e1e; padding: 9px 10px; overflow: hidden; }

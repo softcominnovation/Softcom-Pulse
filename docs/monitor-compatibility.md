@@ -87,6 +87,14 @@ Para o zoom aplicado pelo ADB a `document.documentElement.style.zoom` **dentro d
 
 Zoom aplicado à página pai pode reduzir o próprio iframe; o documento filho não consegue ocupar pixels externos a ele. O utilitário deve manter o pai em 100% e aplicar zoom apenas ao contexto do `/monitor`.
 
+### Espaços configuráveis
+
+O modo opcional `split_custom` usa o mesmo `overviewSlotLayout` do React: UUIDs, ordem dos membros, resumos superiores, espaços/fileiras vazios e referências desabilitadas são resolvidos antes de renderizar. O primeiro HTML já contém os dois painéis, inclusive sem JavaScript; snapshots repetem a mesma associação. Os outros modos não usam esse caminho.
+
+Cada `.compat-slot-group` contém um ou dois `.compat-slot-panel`, e cada painel mantém seu `data-block-id`, cabeçalho, rodapé e corpo com rolagem própria. O gap vertical usa margem convencional, sem depender de flex-gap, CSS Grid moderno ou variáveis CSS. `applyDensity` mede a janela de Disponibilidade e soma os mínimos dos grupos, atribuindo altura literal à fileira medida quando existem outras abaixo. As fileiras inferiores continuam flexíveis; o fallback externo permanece a rolagem da composição.
+
+IDs de bloco continuam identificando foco, scroll e eventos; empilhar não cria outro controlador de rolagem automática nem outra consulta/notificação. Zoom inicial ou aplicado dentro do iframe usa a compensação vigente, sem alterar o documento pai. Sob pouco espaço, os corpos permanecem roláveis. Testar também a projeção anônima, HTML sem JS, origem opaca, snapshots e o aparelho real quando disponível.
+
 ## Cache dos arquivos compatíveis
 
 CSS, controlador, bootstrap e adaptador de áudio recebem `?v=<sha256 do conteúdo>` nas URLs geradas pelo servidor. Uma mudança no arquivo muda sua URL, inclusive no desenvolvimento. Isso impede a combinação observada na TV entre HTML atual sem sensores e controlador antigo guardado por navegador/CDN. O HTML/JSON permanece sem cache conforme a fronteira pública existente; o identificador não muda autorização nem política de dados. Os arquivos de `public` devem acompanhar o build standalone, como já previsto no empacotamento.

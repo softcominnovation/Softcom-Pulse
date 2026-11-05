@@ -1,5 +1,6 @@
 import { defaultDashboardBlocks, effectiveOptions, type PresentationBlock } from "../config/presentation.ts";
 import { availabilityPanelMinimum, availabilityRowLimit } from "./availability-sizing.ts";
+import { overviewSlotKeys, type OverviewSlots } from "../config/overview-slots.ts";
 
 const overviewPairTypes = new Set(["asgard_summary", "problems", "signal_flow", "storage_summary"]);
 
@@ -38,8 +39,14 @@ export function overviewSplitTracks(blocks: PresentationBlock[]) {
   };
 }
 
-export function isAvailabilityDivided(block: PresentationBlock, blocks: PresentationBlock[], split: boolean, wall = false) {
+export function isAvailabilityDivided(block: PresentationBlock, blocks: PresentationBlock[], split: boolean, wall = false, slots?: OverviewSlots) {
   const enabled = blocks.filter(item => item.enabled);
+  if (slots) {
+    const active = new Set(enabled.map(item => item.id));
+    const key = overviewSlotKeys.find(key => slots[key].includes(block.id));
+    const opposite = key === "topLeft" ? "topRight" : key === "topRight" ? "topLeft" : key === "bottomLeft" ? "bottomRight" : "bottomLeft";
+    return !!key && slots[opposite].some(id => active.has(id));
+  }
   if (split) {
     if (!usesRowComposition(enabled, split)) return (overviewSplitRows(enabled).find(row => row.some(item => item.id === block.id))?.length ?? 0) > 1;
     if (enabled.filter(item => item.type === "highlighted_resources").length === 1 && enabled.filter(item => item.type === "problems").length === 1) return true;

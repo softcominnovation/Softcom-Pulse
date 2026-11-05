@@ -239,6 +239,28 @@
         if (row.parentNode.children.length > 1) row.style.height = minimum + 'px';
       }
     });
+    each(content.querySelectorAll('.compat-row[data-custom-slot-row]'), function (row) {
+      var minimum = 0, rowStyle = window.getComputedStyle(row);
+      each(row.children, function (group) {
+        var height = 0;
+        each(group.children, function (wrapper) {
+          var panel = wrapper.querySelector('.availability-panel'), panelHeight = 210;
+          if (panel) {
+            var border = window.getComputedStyle(panel);
+            panelHeight = parseFloat(border.borderTopWidth || 0) + parseFloat(border.borderBottomWidth || 0);
+            each(panel.children, function (child) {
+              var spacing = window.getComputedStyle(child);
+              panelHeight += Math.max(child.offsetHeight, parseFloat(spacing.height) || 0) + parseFloat(spacing.marginTop || 0) + parseFloat(spacing.marginBottom || 0);
+            });
+          }
+          height += panelHeight;
+        });
+        minimum = Math.max(minimum, height + Math.max(0, group.children.length - 1) * 12);
+      });
+      minimum = Math.ceil(minimum + parseFloat(rowStyle.paddingTop || 0) + parseFloat(rowStyle.paddingBottom || 0));
+      row.style.minHeight = minimum + 'px';
+      if ((' ' + row.className + ' ').indexOf(' compat-slot-row-measured ') !== -1) row.style.height = minimum + 'px';
+    });
   }
   function openModal(title, html, trigger, kind) {
     if (modal.hidden) {

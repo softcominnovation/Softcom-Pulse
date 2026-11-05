@@ -57,6 +57,16 @@ Quando existem outras fileiras abaixo, a fileira medida de Disponibilidade não 
 
 No ASGARD compacto, a partir de 480px de largura do contêiner, o cabeçalho reserva espaço para a disponibilidade e o link, enquanto o nome pode truncar na mesma linha. Evitar que fontes mais largas ou a escala de 125% quebrem a disponibilidade em uma segunda linha e consumam a área útil da tabela de VMs. Abaixo desse recorte o cabeçalho continua podendo reorganizar o conteúdo. Validar o encaixe com nomes longos e diferentes métricas de fonte, preservando a tabela rolável e a legenda visível.
 
+## Composição opcional com espaços configuráveis
+
+`overviewGrid: split_custom` usa `overviewSlotLayout` para resolver quatro espaços por UUID, cada um com um painel ou dois empilhados. Os modos `default`, `split` e `wall` conservam os caminhos anteriores. Indicadores ficam acima; a proporção das colunas continua 1,25:1. Só um espaço ocupado usa toda a largura; fileiras vazias não reservam altura.
+
+`SlotComposition` mede a Disponibilidade e compara seu orçamento ao mínimo dos grupos vizinhos: uma pilha soma dois mínimos de 210px mais o gap de 12px, todos sujeitos à escala local uma vez. A fileira com Disponibilidade e outras abaixo usa esse mínimo real, deixando o restante para os painéis inferiores. Dentro da pilha, desconta-se um gap e divide-se o restante igualmente. A Disponibilidade conserva altura natural e sua janela de fileiras; seu rodapé não vira preenchimento quando a pilha vizinha exige mais espaço.
+
+Com mínimos maiores que a área útil, a composição rola pelo fallback existente, preservando legenda, cabeçalhos, rodapés e corpos acessíveis. O grupo da pilha nunca cria um terceiro scroll. Em largura até 850px, os espaços/painéis seguem a ordem de leitura e alturas naturais, com os limites de corpo já existentes. A prévia informa também quando a pilha exige mais altura que a Disponibilidade, mesmo sem overflow de toda a composição.
+
+Os observadores usam medidas lógicas antes do zoom e acompanham mudanças de conteúdo, perfil/fontes e remoção de nós. A atribuição não modifica fonte de métricas, opções, alertas ou áudio. Veja o [editor](administration.md#painéis-empilhados-por-espaço) e o [modo compatível](monitor-compatibility.md#espaços-configuráveis).
+
 ## O que um componente novo obedece
 
 Um bloco, card ou painel feito para a visão geral da rota `/` segue esta lista. Vale para TV e tela cheia na mesma faixa de 1201×740 ou maior.

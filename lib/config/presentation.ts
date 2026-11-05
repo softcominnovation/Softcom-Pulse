@@ -2,6 +2,7 @@ import { z } from "zod";
 import { availabilityCardRefSchema } from "./availability-card-refs.ts";
 import { hostKeySchema, uuidSchema } from "./resources.ts";
 import { availabilityCardSizeOptions, availabilityRowModeOptions } from "../dashboard/availability-sizing.ts";
+import { overviewSlotsSchema, overviewSlotKeys, canPlaceOverviewBlock, canStackOverviewBlock } from "./overview-slots.ts";
 
 export const blockTypes = ["summary", "highlighted_resources", "problems", "asgard_summary", "resource_card", "host_inventory", "container_inventory", "uptime_list", "signal_flow", "storage_summary"] as const;
 export type BlockType = typeof blockTypes[number];
@@ -22,7 +23,7 @@ export const indicatorKeys = ["hosts", "containers_running", "containers_stopped
 export const defaultIndicators = ["hosts", "containers_running", "containers_stopped", "problems"] as const;
 export type IndicatorKey = typeof indicatorKeys[number];
 export const kpiFontScaleOptions = [100, 110, 125, 150] as const;
-export const overviewGridModes = ["default", "split"] as const;
+export const overviewGridModes = ["default", "split", "split_custom"] as const;
 export const blockOptionsSchemas = {
   summary: z.strictObject({ indicators: z.array(z.enum(indicatorKeys)).min(1).max(4).refine(unique).default([...defaultIndicators]), fontScalePercent: z.union([z.literal(100), z.literal(110), z.literal(125), z.literal(150)]).default(100) }),
   asgard_summary: z.strictObject({ sortBy: z.enum(["name", "state", "cpu", "memory"]).default("name"), sortDirection: direction, visibleRows: rows, states: z.array(z.enum(["running", "stopped", "paused", "unknown"])).min(1).max(4).refine(unique).default(["running", "stopped", "paused", "unknown"]) }),
@@ -70,6 +71,7 @@ const blockSchema = z.strictObject({
 const screenSchema = z.strictObject({
   id: uuidSchema, name: z.string().trim().min(1).max(80), enabled: z.boolean(), layout: z.enum(["overview", "wall"]),
   overviewGrid: z.enum(overviewGridModes).default("default"),
+  overviewSlots: overviewSlotsSchema.optional(),
   blocks: z.array(blockSchema).max(24),
 }).refine(screen => !screen.enabled || screen.blocks.some(block => block.enabled), { path: ["blocks"], message: "Enabled screen requires an enabled block" });
 const fields = {
@@ -86,6 +88,21 @@ const fields = {
 };
 export const presentationSettingsSchema = z.strictObject(fields).superRefine((settings, ctx) => {
   settings.screens.forEach((screen, i) => {
+    const custom = screen.layout === "overview" && screen.overviewGrid === "split_custom";
+    if (settings.schemaVersion === 1 && (screen.overviewSlots || screen.overviewGrid === "split_custom")) ctx.addIssue({ code: "custom", path: ["screens", i, "overviewGrid"], message: "Espaços configuráveis exigem versão 2." });
+    if (custom && !screen.overviewSlots) ctx.addIssue({ code: "custom", path: ["screens", i, "overviewSlots"], message: "Configure os espaços desta tela." });
+    const placed = new Set<string>();
+    if (screen.overviewSlots) for (const key of overviewSlotKeys) screen.overviewSlots[key].forEach((id, position) => {
+      const block = screen.blocks.find(block => block.id === id);
+      const path = ["screens", i, "overviewSlots", key, position];
+      if (!block) ctx.addIssue({ code: "custom", path, message: "Escolha um bloco desta tela." });
+      else if (!canPlaceOverviewBlock(block.type) || screen.overviewSlots![key].length > 1 && !canStackOverviewBlock(block.type)) ctx.addIssue({ code: "custom", path, message: "Este painel não pode ocupar esse espaço." });
+      if (placed.has(id)) ctx.addIssue({ code: "custom", path, message: "O painel já ocupa outro espaço." });
+      placed.add(id);
+    });
+    if (custom) screen.blocks.forEach((block, j) => {
+      if (block.enabled && block.type !== "summary" && (!canPlaceOverviewBlock(block.type) || !placed.has(block.id))) ctx.addIssue({ code: "custom", path: ["screens", i, "blocks", j], message: canPlaceOverviewBlock(block.type) ? "Escolha um espaço para este painel." : "Este tipo de bloco não é compatível com espaços configuráveis." });
+    });
     if (settings.schemaVersion === 2 && screen.blocks.filter(block => block.enabled).length > 6) ctx.addIssue({ code: "custom", path: ["screens", i, "blocks"], message: "Use até seis blocos habilitados por tela." });
     screen.blocks.forEach((block, j) => {
       const path = ["screens", i, "blocks", j, "options"];

@@ -59,13 +59,17 @@
           if (!element.clientHeight || element.scrollHeight - element.clientHeight <= 1) continue;
           var entry = cache[key];
           if (!entry) {
-            entry = { key: key, motion: createMotion(time), manualUntil: 0, commanded: false, expected: 0, element: null };
+            entry = { key: key, motion: createMotion(time), manualUntil: 0, commanded: false, expected: 0, element: null, lastElement: null };
             entry.motion.hold(element.scrollTop, time);
             cache[key] = entry; order.push(key);
           }
           if (captureDOM === true) entry.motion.capture(element.scrollTop);
           if (entry.element !== element) {
-            entry.element = element;
+            // Overflow can disappear during zoom/resize while this node stays alive.
+            // On reactivation its current manual position beats the stale cache;
+            // only a replaced node should restore the previous node's position.
+            if (entry.lastElement === element) entry.motion.hold(element.scrollTop, time);
+            entry.element = element; entry.lastElement = element;
             command(entry, Math.min(entry.motion.getPosition(), element.scrollHeight - element.clientHeight));
           }
           element.setAttribute('data-monitor-auto-scroll', 'true');

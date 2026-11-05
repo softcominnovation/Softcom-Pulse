@@ -804,18 +804,33 @@ test("current classic cards fill native layout, scroll complete bodies and keep 
         const before = await region.evaluate(element => ({ client: element.clientHeight, scroll: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
         assert.equal(before.overflow, "auto"); assert.ok(before.client > 0);
         if (before.scroll > before.client + 2) {
-          await region.focus(); await region.press("End");
-          await page.waitForFunction(selector => { const element = document.querySelector(selector); return element.scrollTop >= element.scrollHeight - element.clientHeight - 2; }, `.block-${type} > .dashboard-panel > .panel-content`, { timeout: 3000 });
+          await region.focus();
+          await region.evaluate(element => {
+            element.scrollTop = 0;
+            element.setAttribute('data-test-scroll-ended', 'false');
+            element.addEventListener('scrollend', function ended() {
+              if (element.scrollTop < element.scrollHeight - element.clientHeight - 1) return;
+              element.setAttribute('data-test-scroll-ended', 'true');
+              element.removeEventListener('scrollend', ended);
+            });
+          });
+          await region.press("End");
+          // Being within 2px of the bottom is not completion: the keyboard animation
+          // can still move by more than the 1px allowed by the refresh assertion.
+          await expect(region).toHaveAttribute('data-test-scroll-ended', 'true', { timeout: 3000 });
           assert.ok(await region.evaluate(element => element.scrollTop > 0 || element.scrollHeight <= element.clientHeight + 2), type);
         }
       }
-      const positions = await page.locator('.compat-cell > .dashboard-panel > .panel-content').evaluateAll(elements => elements.map(element => element.scrollTop));
+      const positions = await readPanelScroll(page);
+      const previousBody = await page.locator('.compat-cell > .dashboard-panel > .panel-content').first().elementHandle();
       const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/monitor/compat' && new URL(response.url()).searchParams.has('fragment'));
       await page.locator('#compat-refresh').click(); await refreshed;
+      await page.waitForFunction(element => !element.isConnected, previousBody);
+      await previousBody.dispose();
       await page.locator('#compat-content[data-connection="ready"]').waitFor();
       // Density can finish resizing a short panel after a zoom. Native scrolling clamps
       // its old position if all content now fits; the remaining overflow must retain it.
-      await expect.poll(() => page.locator('.compat-cell > .dashboard-panel > .panel-content').evaluateAll((elements, previous) => elements.length === previous.length && elements.every((element, index) => Math.abs(element.scrollTop - Math.min(previous[index], Math.max(0, element.scrollHeight - element.clientHeight))) <= 1), positions)).toBe(true);
+      await expectPanelScroll(page, positions);
       await page.locator("#compat-notifications").click();
       await page.getByText("Disco do Storage em 72,5% · limite 70%", { exact: true }).waitFor();
       await page.getByRole("button", { name: "Ver incidente", exact: true }).click();
@@ -846,6 +861,58 @@ test("current classic cards fill native layout, scroll complete bodies and keep 
       assert.deepEqual(errors, []);
       await page.screenshot({ path: fileURLToPath(new URL(".cache/screenshots/monitor-compat-current.png", root)), fullPage: true });
     } finally { await context.close(); await browser.close(); }
+  });
+});
+
+async function readPanelScroll(page) {
+  return page.locator('.compat-cell > .dashboard-panel > .panel-content').evaluateAll(elements => elements.map(element => ({
+    id: element.closest('[data-block-id]').getAttribute('data-block-id'),
+    label: element.getAttribute('aria-label'), top: element.scrollTop,
+    max: Math.max(0, element.scrollHeight - element.clientHeight),
+  })));
+}
+
+async function expectPanelScroll(page, previous) {
+  await expect.poll(async () => {
+    const current = await readPanelScroll(page), differences = [];
+    if (current.length !== previous.length) differences.push({ expectedCount: previous.length, actualCount: current.length });
+    for (const before of previous) {
+      const after = current.find(item => item.id === before.id);
+      const expected = after ? Math.min(before.top, after.max) : before.top;
+      if (!after || Math.abs(after.top - expected) > 1) differences.push({ panel: before.label, expected, actual: after?.top ?? 'missing', max: after?.max });
+    }
+    return differences;
+  }, { message: 'Snapshot must preserve each panel position (or clamp to its current overflow)' }).toEqual([]);
+}
+
+test('classic snapshot keeps the latest manual scroll while its response is pending', { timeout: 30000 }, async () => {
+  const fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', 'tests/fixtures/monitor-compat.mjs', '100', 'false'], { cwd: fileURLToPath(root), encoding: 'utf8' }));
+  await shipped(async base => {
+    const browser = await chromium.launch(), page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    let finishResponse;
+    try {
+      await page.route('**/monitor?compat=1', route => route.fulfill({ contentType: 'text/html', body: fixture.page }));
+      const pendingResponse = new Promise(resolve => { finishResponse = resolve; });
+      await page.route('**/monitor/compat?fragment=1*', async route => { await pendingResponse; await route.fulfill({ json: fixture.snapshot }); });
+      await page.goto(base + '/monitor?compat=1');
+      await page.locator('#compat-content[data-monitor-controller="ready"]').waitFor();
+      const bodies = page.locator('.compat-cell > .dashboard-panel > .panel-content');
+      await bodies.evaluateAll(elements => elements.forEach(element => { element.scrollTop = 11; }));
+      const beforeRequest = await readPanelScroll(page);
+      const requested = page.waitForRequest(request => request.url().includes('/monitor/compat?fragment=1'), { timeout: 5000 });
+      await page.locator('#compat-refresh').click(); await requested;
+      // Real manual motion can occur after request dispatch. Capture must use the
+      // current DOM at replacement, not the earlier request-time position.
+      await bodies.evaluateAll(elements => elements.forEach((element, index) => { element.scrollTop = 53 + index * 7; }));
+      const latest = await readPanelScroll(page);
+      assert.ok(latest.some((item, index) => item.top > beforeRequest[index].top));
+      const oldBody = await bodies.first().elementHandle();
+      finishResponse();
+      await page.waitForFunction(element => !element.isConnected, oldBody);
+      await page.locator('#compat-content[data-connection="ready"]').waitFor();
+      await expectPanelScroll(page, latest);
+      await oldBody.dispose();
+    } finally { finishResponse?.(); await browser.close(); }
   });
 });
 

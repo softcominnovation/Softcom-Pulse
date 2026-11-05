@@ -9,6 +9,7 @@ out/
 dist/
 coverage/
 .cache/
+.runtime/
 test-results/
 playwright-report/
 generated/

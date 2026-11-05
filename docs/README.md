@@ -27,5 +27,6 @@ Antes de criar ou alterar telas, ler o [Design system Kobra do Pulse](design-sys
 | [Workers](workers.md) | Processos, coleta, persistência e isolamento de falhas |
 | [Zabbix](zabbix.md) | Escopo, descoberta, normalização e histórico |
 | [Ambiente](environment.md) | Instalação, variáveis, verificação e publicação |
+| [Build e imagem](build-release.md) | Pacote mínimo completo, cache, arquiteturas nativas, testes paralelos e publicação protegida |
 
 A revisão documental de 27/10/2026 descreve a atualização Kobra e corrige instruções visuais anteriores. As evidências históricas de testes nos documentos de domínio não significam que foram executadas novamente nessa revisão.

@@ -1,0 +1,275 @@
+name: Validate and publish runtime
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/softcominnovation/softcom-pulse
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      minor: ${{ steps.release.outputs.minor }}
+      major: ${{ steps.release.outputs.major }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Validate tag and branch ancestry
+        id: release
+        env:
+          RELEASE_ENVIRONMENT: ${{ inputs.environment }}
+        run: node scripts/validate-release.mjs "$RELEASE_ENVIRONMENT"
+
+  runtime:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      DATABASE_URL: postgresql://pulse_ci:pulse_ci@127.0.0.1:5432/pulse
+      REDIS_URL: redis://127.0.0.1:6379
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: pulse_ci
+          POSTGRES_PASSWORD: pulse_ci
+          POSTGRES_DB: pulse
+        ports: [5432:5432]
+        options: --health-cmd "pg_isready -U pulse_ci -d pulse" --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports: [6379:6379]
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 3s --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/cache@v5
+        with:
+          path: .next/cache
+          key: next-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('package-lock.json', '.nvmrc') }}-${{ github.sha }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('package-lock.json', '.nvmrc') }}-
+      - run: npm ci
+      - name: Check and compile AMD64 once
+        if: matrix.arch == 'amd64'
+        run: npm run check
+      - name: Compile ARM64 natively once
+        if: matrix.arch == 'arm64'
+        run: npm run build
+      - name: Validate migrations and integration
+        if: matrix.arch == 'amd64'
+        run: npm run test:integration
+      - name: Install test browser
+        if: matrix.arch == 'amd64'
+        run: npx playwright install --with-deps chromium
+      - name: Validate production runtime
+        if: matrix.arch == 'amd64'
+        run: npm run test:runtime
+      - name: Validate isolated ARM64 package and migrations
+        if: matrix.arch == 'arm64'
+        run: node --env-file-if-exists=.env --test tests/runtime/package.test.mjs
+      - name: Verify and archive the exact runtime
+        run: |
+          node scripts/verify-runtime.mjs .next/standalone
+          tar -czf runtime.tar.gz -C .next/standalone .
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runtime-${{ matrix.arch }}
+          path: runtime.tar.gz
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
+
+  interface:
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [components, ui-1, ui-2]
+    env:
+      DATABASE_URL: postgresql://pulse_ci:pulse_ci@127.0.0.1:5432/pulse
+      REDIS_URL: redis://127.0.0.1:6379
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: pulse_ci
+          POSTGRES_PASSWORD: pulse_ci
+          POSTGRES_DB: pulse
+        ports: [5432:5432]
+        options: --health-cmd "pg_isready -U pulse_ci -d pulse" --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports: [6379:6379]
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 3s --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npx playwright install --with-deps chromium
+      - name: Validate interface in isolated shards
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          case "$SUITE" in
+            components) npm run test:components ;;
+            ui-1) npm run test:ui -- --shard=1/2 ;;
+            ui-2) npm run test:ui -- --shard=2/2 ;;
+            *) exit 1 ;;
+          esac
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: interface-failure-${{ matrix.suite }}
+          path: test-results/
+          retention-days: 5
+
+  images:
+    needs: [runtime, interface]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://pulse_ci:pulse_ci@127.0.0.1:5432/pulse_image
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: pulse_ci
+          POSTGRES_PASSWORD: pulse_ci
+          POSTGRES_DB: pulse_image
+        ports: [5432:5432]
+        options: --health-cmd "pg_isready -U pulse_ci -d pulse_image" --health-interval 10s --health-timeout 5s --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v7
+        with:
+          name: runtime-${{ matrix.arch }}
+          path: .cache/artifact
+      - name: Restore validated runtime
+        run: |
+          mkdir .runtime
+          tar -xzf .cache/artifact/runtime.tar.gz -C .runtime
+      - uses: docker/setup-buildx-action@v4
+      - name: Assemble image without recompiling
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          build-args: RUNTIME_SOURCE=prebuilt
+          load: true
+          tags: pulse-runtime:check
+          cache-from: type=gha,scope=${{ inputs.environment }}-${{ matrix.arch }}
+      - name: Validate image entrypoint, migrations and workers
+        run: |
+          docker run --rm --network host -e DATABASE_URL -v "$PWD/scripts/verify-runtime.mjs:/verify-runtime.mjs:ro" pulse-runtime:check node /verify-runtime.mjs /app --non-root
+          docker image inspect pulse-runtime:check --format 'Uncompressed image bytes: {{.Size}}' >> "$GITHUB_STEP_SUMMARY"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push tested image by digest only
+        uses: docker/build-push-action@v7
+        id: push
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          build-args: RUNTIME_SOURCE=prebuilt
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-to: type=gha,mode=min,scope=${{ inputs.environment }}-${{ matrix.arch }},ignore-error=true
+      - name: Record digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p .cache/digests
+          printf '%s' "$DIGEST" > ".cache/digests/$ARCH"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.arch }}
+          path: .cache/digests/
+          if-no-files-found: error
+          retention-days: 2
+
+  publish:
+    needs: [release, images]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: digest-*
+          path: .cache/digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish both validated platforms
+        env:
+          RELEASE_VERSION: ${{ needs.release.outputs.version }}
+          RELEASE_MINOR: ${{ needs.release.outputs.minor }}
+          RELEASE_MAJOR: ${{ needs.release.outputs.major }}
+          RELEASE_ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          node scripts/publish-manifest.mjs

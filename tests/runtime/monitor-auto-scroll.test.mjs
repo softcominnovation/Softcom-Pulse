@@ -5,6 +5,31 @@ import { fileURLToPath } from 'node:url';
 process.env.PLAYWRIGHT_BROWSERS_PATH ??= fileURLToPath(new URL('../../.cache/ms-playwright', import.meta.url));
 const { chromium } = await import('@playwright/test');
 
+test('resized existing regions keep manual scroll when overflow returns, paused or running', { timeout: 30000 }, async () => {
+  const browser = await chromium.launch(), page = await browser.newPage();
+  try {
+    await page.clock.install();
+    await page.setContent('<style>.region{height:100px;width:200px;overflow:auto}.rows{height:400px}</style><div id="monitor"><div data-block-id="one"><div class="region"><div class="rows">Rows</div></div></div></div>');
+    await page.addScriptTag({ path: fileURLToPath(new URL('../../public/monitor-auto-scroll.js', import.meta.url)) });
+    for (const paused of [true, false]) {
+      await page.evaluate(paused => {
+        const region = document.querySelector('.region');
+        region.style.height = '100px'; region.scrollTop = 17;
+        window.controller = window.PulseMonitorAutoScroll.attach(document.getElementById('monitor'), { paused });
+        // A zoom/resize can remove overflow and later restore it on the same node.
+        region.style.height = '500px'; window.controller.sync();
+        region.style.height = '100px'; region.scrollTop = 63;
+        // The manual event may not arrive before the controller's next scan.
+        window.controller.sync();
+      }, paused);
+      assert.equal(await page.locator('.region').evaluate(element => element.scrollTop), 63, `Same DOM must beat stale cached position; paused=${paused}`);
+      await page.clock.runFor(1100);
+      assert.equal(await page.locator('.region').evaluate(element => element.scrollTop), 63, `Periodic scan must preserve reading pause; paused=${paused}`);
+      await page.evaluate(() => window.controller.destroy());
+    }
+  } finally { await browser.close(); }
+});
+
 test('automatic scroll provenance survives delayed native delivery and manual input invalidates it', { timeout: 30000 }, async () => {
   const browser = await chromium.launch(), page = await browser.newPage();
   try {

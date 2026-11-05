@@ -74,23 +74,9 @@ for (const dev of [false, true]) {
     assert.deepEqual(Object.keys(c.on.push), ["tags"]);
     assert.deepEqual(c.on.push.tags, dev ? ["v*.*.*-dev"] : ["v*.*.*", "!*-*", "!*\\+*"]);
     assert.deepEqual(c.permissions, { contents: "read", packages: "write" });
-    assert.equal(c.jobs.publish["timeout-minutes"], 90, "Full validation and cold multi-platform builds share this job budget");
-    const steps = c.jobs.publish.steps;
-    assert.ok(steps.find(step => step.run?.includes("validate-release.mjs " + (dev ? "development" : "production"))));
-    const build = steps.find(step => step.uses?.startsWith("docker/build-push-action@"));
-    assert.equal(build.with.platforms, "linux/amd64,linux/arm64");
-    assert.equal(build.with.push, true);
-    assert.equal(build.with["build-args"], undefined);
-    const verification = steps.find(step => step.name === "Verify platforms and packaged runtime").run;
-    assert.ok(verification.includes('docker buildx imagetools inspect "$image" --raw > manifest.json'));
-    assert.ok(verification.includes('for arch in amd64 arm64; do'));
-    assert.ok(verification.includes('platform_digest=$(node scripts/platform-digest.mjs manifest.json "$arch")'));
-    assert.ok(verification.includes('--entrypoint node "$IMAGE@$platform_digest"'));
-    assert.ok(verification.includes('["--conditions=react-server","collector/index.mjs","--check"]'));
-    assert.ok(!verification.includes('--entrypoint node "$image"'));
-    const tags = steps.find(step => step.uses?.startsWith("docker/metadata-action@")).with.tags;
-    assert.equal(tags.includes("value=latest"), !dev);
-    assert.equal(tags.includes("value=dev\n"), dev);
+    assert.equal(c.jobs.publish.uses, "./.github/workflows/release.yml");
+    assert.equal(c.jobs.publish.with.environment, dev ? "development" : "production");
+    assert.equal(c.concurrency["cancel-in-progress"], false);
   });
 }
 test("entrypoint and build context preserve the runtime boundary", () => {
@@ -99,7 +85,41 @@ test("entrypoint and build context preserve the runtime boundary", () => {
   assert.match(entrypoint, /set -eu/);
   assert.ok(entrypoint.indexOf("node docker/migrate.mjs") < entrypoint.indexOf('exec "$@"'));
   assert.match(dockerfile, /USER node/);
-  assert.match(dockerfile, /--chmod=755/);
-  for (const part of ["runtime-dependencies", "/app/prisma", "/app/collector", "/app/node_modules"]) assert.ok(dockerfile.includes(part));
+  assert.match(dockerfile, /chmod 755 docker\/entrypoint.sh/);
+  assert.doesNotMatch(dockerfile, /AS runtime-dependencies|COPY --from=runtime-dependencies/);
+  assert.match(dockerfile, /COPY --from=runtime-source --chown=node:node \/app\/\.next\/standalone/);
+  assert.match(dockerfile, /ARG RUNTIME_SOURCE=builder/);
+  assert.match(dockerfile, /target=\/app\/\.next\/cache/);
+  assert.match(dockerfile, /ARG TARGETARCH/);
+  assert.ok(dockerfile.includes("id=pulse-next-${TARGETARCH},sharing=locked"));
   for (const part of [".env*", ".git", "node_modules", ".next", "docs"]) assert.ok(read(".dockerignore").split(/\r?\n/).includes(part));
+});
+
+test("parallel validation gates native images and version aliases without omitting any suite", () => {
+  const c = YAML.parse(read(".github/workflows/release.yml"));
+  assert.deepEqual(Object.keys(c.on), ["workflow_call"]);
+  assert.equal(c.jobs.runtime.needs, "release");
+  assert.equal(c.jobs.interface.needs, "release");
+  assert.deepEqual(c.jobs.images.needs, ["runtime", "interface"]);
+  assert.deepEqual(c.jobs.publish.needs, ["release", "images"]);
+  for (const job of [c.jobs.runtime, c.jobs.images]) {
+    assert.deepEqual(job.strategy.matrix.include, [{ arch: "amd64", runner: "ubuntu-24.04" }, { arch: "arm64", runner: "ubuntu-24.04-arm" }]);
+    assert.equal(job.strategy["fail-fast"], false);
+    assert.equal(job["runs-on"], "${{ matrix.runner }}");
+  }
+  const runtime = c.jobs.runtime.steps.map(step => step.run ?? "").join("\n");
+  for (const command of ["npm run check", "npm run test:integration", "npm run test:runtime", "tests/runtime/package.test.mjs", "verify-runtime.mjs"]) assert.ok(runtime.includes(command));
+  assert.ok(c.jobs.runtime.steps.some(step => step.with?.path === ".next/cache"));
+  const ui = c.jobs.interface.steps.map(step => step.run ?? "").join("\n");
+  for (const command of ["npm run db:generate", "test:components", "test:ui -- --shard=1/2", "test:ui -- --shard=2/2"]) assert.ok(ui.includes(command));
+  assert.deepEqual(c.jobs.interface.strategy.matrix.suite, ["components", "ui-1", "ui-2"]);
+  for (const job of [c.jobs.interface, c.jobs.runtime]) assert.ok(job.services.postgres && job.services.redis);
+  const steps = c.jobs.images.steps;
+  const smoke = steps.findIndex(step => step.run?.includes("--non-root"));
+  const push = steps.findIndex(step => step.with?.outputs?.includes("push-by-digest=true"));
+  assert.ok(smoke >= 0 && push > smoke);
+  assert.ok(!steps[smoke].run.includes("--entrypoint"), "Smoke must execute the migration entrypoint");
+  assert.equal(steps[push].with["build-args"], "RUNTIME_SOURCE=prebuilt");
+  assert.ok(!read(".github/workflows/release.yml").includes("setup-qemu"));
+  assert.ok(c.jobs.publish.steps.some(step => step.run?.includes("publish-manifest.mjs")));
 });

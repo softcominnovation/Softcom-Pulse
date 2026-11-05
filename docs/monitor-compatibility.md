@@ -6,6 +6,8 @@ As tags de estado do clássico usam `inline-flex` com `align-items: center`; a b
 
 Em Disponibilidade, `.availability-grid` é filha direta de `.availability-panel`; cabeçalho e rodapé completam o painel sem um corpo rolável adicional. `applyDensity` mede todos os perfis, incluindo margens, bordas e padding da fileira, e arredonda o mínimo para cima. Fileiras compostas somente por Disponibilidade mantêm sua altura natural, sem a antiga limitação proporcional de 45%. A rolagem automática e a restauração após snapshots usam a própria grade.
 
+O rodapé de Disponibilidade permanece em uma linha, com teto de 28px lógicos, escalado somente pelo zoom do monitor. Em composições com outras fileiras, a fileira medida usa essa altura real em vez de crescer com o espaço restante; os painéis inferiores continuam flexíveis. No layout flex, suas células usam `height:auto`, evitando herdar a altura externa da fileira e contar seu padding novamente. O HTML sem JS mantém os cards e o teto do rodapé; o refinamento por medição é feito no bootstrap e nas mudanças de viewport/snapshot.
+
 A entrada `/monitor` conserva a aplicação React para navegadores modernos e oferece uma apresentação HTML compatível para TVs/WebViews sem os recursos exigidos pelos bundles atuais. A adaptação pertence somente a essa superfície pública. Rotas privadas, administração, notificações, alertas de Agent/Storage e workers continuam usando os contratos atuais.
 
 ## Seleção da apresentação

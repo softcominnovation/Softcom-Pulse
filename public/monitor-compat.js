@@ -223,7 +223,7 @@
       grid.setAttribute('data-card-columns', String(columns));
     });
     each(content.querySelectorAll('.compat-row[data-measured-row]'), function (row) {
-      var minimum = 210;
+      var minimum = row.parentNode.children.length > 1 ? 0 : 210;
       var rowStyle = window.getComputedStyle(row);
       each(row.querySelectorAll('.availability-panel > .availability-grid'), function (grid) {
         var panel = grid.parentNode, border = window.getComputedStyle(panel);
@@ -234,7 +234,10 @@
         });
         minimum = Math.max(minimum, Math.ceil(height));
       });
-      if ((' ' + row.className + ' ').indexOf(' content-sized ') === -1) row.style.minHeight = minimum + 'px';
+      if ((' ' + row.className + ' ').indexOf(' content-sized ') === -1) {
+        row.style.minHeight = minimum + 'px';
+        if (row.parentNode.children.length > 1) row.style.height = minimum + 'px';
+      }
     });
   }
   function openModal(title, html, trigger, kind) {

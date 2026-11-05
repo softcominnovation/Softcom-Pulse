@@ -57,9 +57,41 @@ async function assertCardScrollOnly(grid: Locator) {
       if (["auto", "scroll"].includes(getComputedStyle(parent).overflowY) && parent.scrollHeight > parent.clientHeight + 1) return false;
     }
     const box = node.getBoundingClientRect();
-    return box.top >= heading.getBoundingClientRect().bottom - 1 && box.bottom <= foot.getBoundingClientRect().top + 1 && foot.getBoundingClientRect().bottom <= panel.getBoundingClientRect().bottom + 1;
+    const scale = Number(getComputedStyle(panel).getPropertyValue("--dashboard-scale")) || 1;
+    return (foot as HTMLElement).offsetHeight <= 28 * scale + 1 && box.top >= heading.getBoundingClientRect().bottom - 1 && box.bottom <= foot.getBoundingClientRect().top + 1 && foot.getBoundingClientRect().bottom <= panel.getBoundingClientRect().bottom + 1;
   })).toBe(true);
 }
+
+for (const route of ["/", "/monitor?compat=0"]) for (const storage of [false, true]) test(`availability footer stays compact without unused panel space: ${route}, Storage=${storage}`, async ({ page }) => {
+  test.setTimeout(90000);
+  const { state, highlights, count, source } = await fixture(page, true, storage); count(8);
+  const screen = state.document.screens[0];
+  screen.blocks.find(block => block.type === "summary")!.enabled = false;
+  const problem = source.data.problems[0];
+  source.data.blocks.find(block => block.type === "problems")!.data = Array.from({ length: 80 }, (_, index) => ({ ...problem, id: `footer-${index}` }));
+  Object.assign(highlights.options!, { rowMode: "manual", visibleRows: 3 });
+  await page.setViewportSize({ width: 1870, height: 865 });
+  if (route === "/") await signIn(page);
+  for (const total of [1, 8]) for (const size of ["compact", "expanded"] as const) for (const zoom of [70, 100, 125]) {
+    count(total);
+    highlights.options!.cardSize = size;
+    state.document.dashboardZoomPercent = zoom; state.document.publicMonitorZoomPercent = zoom;
+    await page.setViewportSize(zoom === 70 ? { width: 1280, height: 720 } : zoom === 100 ? { width: 1870, height: 865 } : { width: 1920, height: 1080 });
+    await page.goto(route);
+    const panel = page.locator(".availability-panel");
+    await expect(panel).toHaveAttribute("data-card-size", size);
+    await assertCardScrollOnly(panel.locator(".availability-grid"));
+    const metrics = await panel.evaluate(node => {
+      const foot = node.querySelector<HTMLElement>(":scope > .panel-foot")!, grid = node.querySelector(".availability-grid")!;
+      const style = getComputedStyle(foot), box = foot.getBoundingClientRect(), panel = node.getBoundingClientRect();
+      return { height: box.height, trailing: panel.bottom - box.bottom, before: box.top - grid.getBoundingClientRect().bottom, flex: style.flex, computedHeight: style.height, fits: foot.scrollHeight <= foot.clientHeight + 1, scale: Number(getComputedStyle(node).getPropertyValue("--dashboard-scale")) || 1 };
+    });
+    expect(metrics.height / (zoom / 100) / metrics.scale, JSON.stringify({ route, storage, size, zoom, metrics })).toBeLessThanOrEqual(28.1);
+    expect(metrics.trailing, JSON.stringify({ route, storage, size, zoom, metrics })).toBeLessThanOrEqual(2);
+    expect(metrics.fits, JSON.stringify({ route, storage, size, zoom, metrics })).toBe(true);
+  }
+  expect(state.writes).toHaveLength(0);
+});
 
 for (const route of ["/", "/monitor?compat=0"]) for (const composition of ["top-only", "bottom-only", "repeated"] as const) test(`row composition fills available height without phantom or overlapping tracks: ${route}, ${composition}`, async ({ page }) => {
   const { state, highlights } = await fixture(page, true);

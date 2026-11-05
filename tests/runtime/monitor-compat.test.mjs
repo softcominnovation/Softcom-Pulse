@@ -199,11 +199,14 @@ async function assertCardScrollOnly(grid, context = {}) {
     const panel = node.closest('.dashboard-panel'), foot = panel.querySelector(':scope > .panel-foot');
     const outside = [];
     for (let parent = node.parentElement; parent && parent !== panel.parentElement; parent = parent.parentElement) outside.push({ overflow: getComputedStyle(parent).overflowY, scroll: parent.scrollHeight - parent.clientHeight });
-    return { gridBottom: node.getBoundingClientRect().bottom, footTop: foot.getBoundingClientRect().top, footBottom: foot.getBoundingClientRect().bottom, panelBottom: panel.getBoundingClientRect().bottom, outside };
+    const row = panel.closest('.compat-row');
+    return { gridBottom: node.getBoundingClientRect().bottom, footTop: foot.getBoundingClientRect().top, footBottom: foot.getBoundingClientRect().bottom, footHeight: parseFloat(getComputedStyle(foot).height), panelBottom: panel.getBoundingClientRect().bottom, rounding: Math.max(2, 2 * panel.getBoundingClientRect().width / panel.offsetWidth), measured: !!row?.style.height && getComputedStyle(row).display === 'flex', rowStyle: row?.getAttribute('style'), children: Array.from(panel.children, child => ({ tag: child.tagName, css: getComputedStyle(child).height, height: child.offsetHeight, marginTop: getComputedStyle(child).marginTop, marginBottom: getComputedStyle(child).marginBottom })), outside };
   });
   assert.ok(enclosure.outside.every(area => !['auto','scroll'].includes(area.overflow) || area.scroll <= 1), JSON.stringify({ ...context, enclosure }));
   assert.ok(enclosure.gridBottom <= enclosure.footTop + 1, JSON.stringify({ ...context, enclosure }));
   assert.ok(enclosure.footBottom <= enclosure.panelBottom + 1, JSON.stringify({ ...context, enclosure }));
+  assert.ok(enclosure.footHeight <= 28.1, JSON.stringify({ ...context, enclosure }));
+  if (enclosure.measured) assert.ok(enclosure.panelBottom - enclosure.footBottom <= enclosure.rounding, JSON.stringify({ ...context, enclosure }));
 }
 
 test("classic composition keeps only enabled rows and repeated panels accessible before and after bootstrap", { timeout: 90000 }, async () => {
@@ -732,7 +735,7 @@ test("current classic cards fill native layout, scroll complete bodies and keep 
         const before = await region.evaluate(element => ({ client: element.clientHeight, scroll: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
         assert.equal(before.overflow, "auto"); assert.ok(before.client > 0);
         if (before.scroll > before.client + 2) {
-          await region.click(); await region.press("End");
+          await region.focus(); await region.press("End");
           await page.waitForFunction(selector => { const element = document.querySelector(selector); return element.scrollTop >= element.scrollHeight - element.clientHeight - 2; }, `.block-${type} > .dashboard-panel > .panel-content`, { timeout: 3000 });
           assert.ok(await region.evaluate(element => element.scrollTop > 0 || element.scrollHeight <= element.clientHeight + 2), type);
         }

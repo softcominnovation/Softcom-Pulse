@@ -142,7 +142,7 @@ O serviço que for exibido nesta grade implementa um componente no mesmo grid, n
 7. O clique abre detalhe ou modal. O card em si não vira a tela de detalhe. Métrica que não cabe nas quatro linhas vai para o modal ou para a rota de detalhe.
 8. O nome acessível inclui o nome do item e o estado. Se houver número de disponibilidade no rodapé, inclui esse número.
 9. O card entra no `availability-grid` do bloco `highlighted_resources`, depois dos tipos já renderizados, ou na posição que o produto definir sem criar outro grid.
-10. A nota de rodapé do painel pode ganhar uma frase curta do novo tipo. O título do painel continua **Disponibilidade de Serviços**.
+10. A nota de rodapé do painel pode ganhar uma frase curta do novo tipo. Permanece em uma linha com reticências, sem crescer no flex, com teto de 28px lógicos multiplicado pela escala local e pelo zoom da rota uma vez. O título do painel continua **Disponibilidade de Serviços**.
 
 Fora deste contrato: não colocar o card em `uptime_list` só para reaproveitar a lista, não desenhar o card como linha de tabela e não usar o tamanho dos painéis de ASGARD ou de infraestrutura.
 

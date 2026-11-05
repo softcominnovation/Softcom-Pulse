@@ -23,7 +23,7 @@ export function StorageComposition({ blocks, split, wall, render, onOverflow }: 
         const target = rows[index];
         const panels = target ? [...target.querySelectorAll<HTMLElement>('.availability-panel')] : [];
         if (panels.length) {
-          const minimum = Math.max(row.contentSized ? 0 : 210 * scale, ...panels.map(panel => {
+          const minimum = Math.max(row.contentSized || rows.length > 1 ? 0 : 210 * scale, ...panels.map(panel => {
             const style = getComputedStyle(panel);
             return [...panel.children].reduce((height, child) => {
               const spacing = getComputedStyle(child);
@@ -58,6 +58,6 @@ export function StorageComposition({ blocks, split, wall, render, onOverflow }: 
   }, [signature, onOverflow]);
   return <div ref={root} className={`storage-composition${overflow ? " storage-composition-scroll" : ""}`} data-storage-layout data-overflow={overflow}>
     {!!plan.summaries.length && <div className="storage-composition-summaries">{plan.summaries.map(render)}</div>}
-    <div className="storage-composition-rows" style={{ "--composition-rows": plan.rows.length } as CSSProperties}>{plan.rows.map((row, index) => <div key={row.blocks[0].block.id} className={`storage-composition-row${row.paired ? " storage-composition-pair" : ""}${row.contentSized ? " storage-composition-row-content" : ""}`} style={{ "--row-minimum": row.minimum, "--row-index": index } as CSSProperties}>{row.blocks.map(({ block, span }) => <div className="storage-composition-cell" key={block.id} style={{ "--block-span": span } as CSSProperties}>{render(block)}</div>)}</div>)}</div>
+    <div className="storage-composition-rows" style={{ "--composition-rows": plan.rows.length } as CSSProperties}>{plan.rows.map((row, index) => <div key={row.blocks[0].block.id} className={`storage-composition-row${row.paired ? " storage-composition-pair" : ""}${row.contentSized ? " storage-composition-row-content" : ""}${row.blocks.some(({ block }) => block.type === "highlighted_resources") ? " storage-composition-row-measured" : ""}`} style={{ "--row-minimum": row.minimum, "--row-index": index } as CSSProperties}>{row.blocks.map(({ block, span }) => <div className="storage-composition-cell" key={block.id} style={{ "--block-span": span } as CSSProperties}>{render(block)}</div>)}</div>)}</div>
   </div>;
 }

@@ -11,7 +11,12 @@
 .availability-panel .panel-heading { flex-wrap: wrap; gap: 8px; padding: 10px 14px 8px; }
 .availability-panel .panel-heading h2 { font-size: min(15px, calc(13px * var(--dashboard-scale, 1))); }
 .availability-panel .panel-link { font-size: 11px; }
-.availability-panel .panel-foot { padding: 6px 14px; font-size: 10px; }
+.availability-panel > .panel-foot {
+  box-sizing: border-box; flex: none; min-height: 0; max-height: calc(28px * var(--dashboard-scale, 1)); margin: 0;
+  padding: calc(6px * var(--dashboard-scale, 1)) calc(14px * var(--dashboard-scale, 1));
+  font-size: calc(10px * var(--dashboard-scale, 1)); line-height: calc(14px * var(--dashboard-scale, 1));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .availability-grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 230px)); justify-content: start; gap: 8px;
   padding: 0 14px 10px; align-content: start; flex-shrink: 0;
@@ -36,7 +41,7 @@
   align-content: start;
 }
 /* Fileira de cima: altura pelo conteúdo; Problemas acompanha a Disponibilidade. */
-.balanced .overview-split-grid .availability-panel { flex: none; height: auto; }
+.dashboard.balanced .overview-split-grid .availability-panel { flex: none; height: auto; }
 .balanced .overview-split-grid .block-highlighted_resources,
 .balanced .overview-split-grid .block-problems {
   height: auto;

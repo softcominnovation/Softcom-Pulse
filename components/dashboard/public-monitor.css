@@ -1,5 +1,5 @@
 .public-monitor-frame { width: 100%; height: 100dvh; overflow: hidden; }
-.public-monitor-stage { width: calc(100vw / var(--public-monitor-zoom)); height: calc(100dvh / var(--public-monitor-zoom)); overflow: auto; }
+.public-monitor-stage { --monitor-meter-scale: 3; width: calc(100vw / var(--public-monitor-zoom)); height: calc(100dvh / var(--public-monitor-zoom)); overflow: auto; }
 .public-monitor-stage > .dashboard-shell { min-height: 100%; }
 @supports (zoom: 1) { .public-monitor-stage { zoom: var(--public-monitor-zoom); } }
 @supports not (zoom: 1) { .public-monitor-stage { transform: scale(var(--public-monitor-zoom)); transform-origin: top left; } }
@@ -22,3 +22,56 @@
   .public-monitor-stage .storage-composition-scroll .storage-composition-row { flex: 0 0 auto; min-height: calc(var(--row-minimum) * 1px); }
   .public-monitor-stage .storage-composition-row-content, .public-monitor-stage .storage-composition-scroll .storage-composition-row-content { flex: 0 0 auto; min-height: 0; }
 }
+
+/* Inherited text with no explicit size follows the same factor, once. */
+[data-monitor-font-scale] { font-size: calc(14px * var(--monitor-font-scale, 1)); }
+/* Panel headings and KPIs keep their existing line boxes; only the glyphs grow. */
+[data-monitor-font-scale] .panel-heading h2,
+[data-monitor-font-scale] .panel-link,
+[data-monitor-font-scale] .kpi-label,
+[data-monitor-font-scale] .dashboard-kpi > p:not(.kpi-value) { line-height: calc(1.45 / var(--monitor-font-scale, 1)); }
+[data-monitor-font-scale] .kpi-value,
+[data-monitor-font-scale] .kpi-value small { line-height: calc(1.15 / var(--monitor-font-scale, 1)); }
+[data-monitor-font-scale] .kpi-label h2,
+[data-monitor-font-scale] .dashboard-kpi > p { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Keep a complete storage reading visible before the VM list starts. */
+[data-monitor-font-scale] .asgard-compact .storage-grid { max-height: calc(72px * var(--dashboard-scale, 1) * var(--monitor-font-scale, 1)); }
+
+/* Same card/row budget and breathing room as the classic renderer. */
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] {
+  --monitor-meter-scale: 4;
+  --availability-card-height: var(--availability-base-height);
+  --availability-row-step: calc(var(--availability-base-height) + var(--availability-base-gap));
+  --monitor-card-padding: var(--monitor-compact-padding);
+  --monitor-card-name-line: var(--monitor-compact-nameLine);
+  --monitor-card-text-line: var(--monitor-compact-textLine);
+  --monitor-card-footer-padding: var(--monitor-compact-footerPadding);
+  --monitor-percentage-size: var(--monitor-compact-percentageSize);
+  --monitor-percentage-line: var(--monitor-compact-percentageLine);
+}
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size="expanded"] {
+  --monitor-card-padding: var(--monitor-expanded-padding);
+  --monitor-card-name-line: var(--monitor-expanded-nameLine);
+  --monitor-card-text-line: var(--monitor-expanded-textLine);
+  --monitor-card-footer-padding: var(--monitor-expanded-footerPadding);
+  --monitor-percentage-size: var(--monitor-expanded-percentageSize);
+  --monitor-percentage-line: var(--monitor-expanded-percentageLine);
+}
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-card {
+  height: var(--availability-card-height); min-height: var(--availability-card-height); max-height: var(--availability-card-height);
+  padding-block: var(--monitor-card-padding); gap: 2px;
+}
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-card > * { flex-shrink: 0; }
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-name { line-height: var(--monitor-card-name-line); }
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-description,
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-state,
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-footer,
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-footer strong,
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-reading > span:first-child,
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-reading strong { line-height: var(--monitor-card-text-line); }
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-readings { row-gap: 6px; }
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-reading[data-usage-percent] strong {
+  font-size: var(--monitor-percentage-size); line-height: var(--monitor-percentage-line); font-weight: 600;
+}
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-meter { margin-top: 1px; }
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-footer { padding-top: var(--monitor-card-footer-padding); margin-top: 0; }

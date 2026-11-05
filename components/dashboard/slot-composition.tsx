@@ -5,8 +5,8 @@ import type { OverviewSlots } from "@/lib/config/overview-slots";
 import { overviewSlotLayout, overviewPanelMinimum } from "@/lib/dashboard/overview-slot-layout";
 import "./slot-composition.css";
 
-export function SlotComposition({ blocks, slots, render, onOverflow }: { blocks: PresentationBlock[]; slots: OverviewSlots; render: (block: PresentationBlock) => ReactNode; onOverflow?: (value: boolean) => void }) {
-  const plan = overviewSlotLayout(blocks, slots), root = useRef<HTMLDivElement>(null), [overflow, setOverflow] = useState(false);
+export function SlotComposition({ blocks, slots, render, onOverflow, monitor = false }: { blocks: PresentationBlock[]; slots: OverviewSlots; render: (block: PresentationBlock) => ReactNode; monitor?: boolean; onOverflow?: (value: boolean) => void }) {
+  const plan = overviewSlotLayout(blocks, slots, monitor), root = useRef<HTMLDivElement>(null), [overflow, setOverflow] = useState(false);
   const signature = JSON.stringify({ summaries: plan.summaries.map(block => block.id), rows: plan.rows.map(row => ({ key: row.key, groups: row.groups.map(group => ({ key: group.key, ids: group.blocks.map(block => block.id) })), minimum: row.minimum })) });
   useEffect(() => {
     const element = root.current;

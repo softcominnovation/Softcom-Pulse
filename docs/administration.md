@@ -1,5 +1,19 @@
 # Administração da visualização
 
+**Espaçamento dos minicards no monitor (05/11/2026):** somente no `/monitor`, Padrão mede 148px e Ampliado 168px antes do zoom (+28px sobre os perfis da raiz). Disco tem 6px de separação da linha CPU/RAM no trio. Somente os valores percentuais de uso dos minicards recebem mais 30% de fonte e peso 600; nomes, descrições, badges, rótulos e rodapés conservam sua escala configurada. O fator tipográfico do bloco e o zoom são aplicados uma vez. `availabilityDimensions(size, monitor)` alimenta alturas, janela de fileiras e mínimos das composições; a grade continua sendo o único scroll de Disponibilidade. As caixas não variam ao trocar a fonte de 100% a 160%. Raiz e prévias continuam com 120/140px.
+
+## Fontes do monitor por bloco
+
+Em **Configurações → Apresentação → tela desejada → bloco**, use **Tamanho das fontes no /monitor (%)** e depois **Salvar apresentação**. Há opções de 100% a 160%, em passos de 5%. Por exemplo: Problemas ativos em 120%, Signal em 115% e Disponibilidade em 100%. Cada bloco conserva sua preferência em cada tela, inclusive ao repetir um tipo ou empilhar painéis.
+
+O percentual aumenta proporcionalmente os textos do bloco: títulos, nomes, descrições, métricas, tags, tabelas e rodapés. Em Disponibilidade, vale para todos os minicards daquele bloco. Em Indicadores, multiplica a escala de textos dos KPIs já configurada: 150% × 115% resulta em 172,5% da fonte base, antes do zoom.
+
+A opção vale somente no `/monitor`, tanto no navegador moderno quanto na versão compatível da TV/iframe. A raiz autenticada e a prévia normal continuam como antes. Cabeçalho geral, notificações, volume, zoom, distribuição, perfil dos cards e quantidade de fileiras não são alterados. **Salvar leitura do telão** não publica rascunhos dos blocos; use **Salvar apresentação**.
+
+100% mantém a fonte vigente, inclusive em configurações antigas sem o campo. A faixa vai até 160%; o espaçamento interno dos minicards se adapta para conservar os perfis de 148/168px do monitor (120/140px na raiz e prévia). Textos longos conservam truncamento/detalhe e listas podem mostrar menos registros, acessíveis pela rolagem interna. Para conferir, recarregue `/monitor` ou aplique a revisão no player pausado; verifique também outra tela e a raiz. Não exige migration, worker novo ou alteração do APK.
+
+No `/monitor`, as barras de CPU, RAM e disco dos minicards têm quatro vezes a altura original: 12px lógicos no Padrão e 16px no Ampliado. As barras dos painéis continuam em 12px (três vezes a altura original). O zoom existente continua proporcional; o fator de fonte não multiplica essas barras novamente. As faixas de histórico de disponibilidade mantêm sua altura. Não há configuração adicional para ativar as barras maiores.
+
 Em cada tela, **Serviços destacados → Fileiras visíveis** escolhe Automático ou 1/2/3, independentemente dos KPIs quando manual. Salve em **Salvar apresentação**. Perfis Padrão/Ampliado e fontes dos KPIs continuam locais ao bloco. Ocultar uma fileira inteira de painéis faz a outra aproveitar a altura disponível; tipos repetidos mantêm suas posições e opções por UUID, inclusive na prévia. A prévia avisa quando a composição precisa rolar. O encaixe automático das grades existentes não exige configuração adicional; a composição alternativa por espaços é descrita abaixo.
 
 ## Notificações de serviços

@@ -73,7 +73,7 @@ test("classic first HTML renders all metric families with disk above CPU/RAM and
   }
   const html = renderCompatibleContent(model);
   assert.match(html, /data-card-size="compact"/); assert.match(html, /data-card-rows="3"/);
-  assert.match(html, /max-height:384px/); assert.match(html, /data-measured-row="true"/);
+  assert.match(html, /max-height:468px/); assert.match(html, /data-measured-row="true"/);
   const grids = [...html.matchAll(/<span class="metric-grid mini-metrics" data-metric-count="3">([\s\S]*?)<\/span><\/span><span class="availability-footer">/g)];
   assert.equal(grids.length, 4);
   for (const grid of grids) { assert.ok(grid[1].indexOf("Disco") < grid[1].indexOf("CPU")); assert.ok(grid[1].indexOf("CPU") < grid[1].indexOf("RAM")); }

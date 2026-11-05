@@ -1,5 +1,7 @@
 # Design system do Softcom Pulse
 
+**Tipografia do monitor por bloco:** cada bloco pode aumentar seus textos proporcionalmente entre 100% e 160% apenas no `/monitor`. Reutilize as fontes, cores e hierarquia Kobra atuais, aplicando `--monitor-font-scale` uma vez ao tamanho da fonte. Não aplicar o fator às caixas, ícones ou espaçamentos nem ao zoom global. Fontes herdadas já recebem o fator do ancestral. O padrão é 1 nas demais rotas. Regras e manutenção do renderer de TV em [compatibilidade](monitor-compatibility.md#escala-de-fontes-por-bloco).
+
 Para avisos operacionais e histórico compartilhado, seguir [Notificações de serviços](notifications.md): sininho e Sheet Kobra, toast temporário sobre a página e áudio centralizado. Não acrescentar uma faixa fixa nem alterar o tamanho dos cards para acomodar notificações.
 
 Padrão para construir e ampliar a interface a partir do Kobra já integrado ao aplicativo. Referência conferida em 27/10/2026, na branch `develop`, commit `b428b22`; a adoção visual está no commit `b4b69bb`. Este documento descreve o código atual e estabelece como reutilizá-lo. A paleta escura azulada, o botão verde e a marca laranja descritos em documentos anteriores deixaram de ser o padrão de novas telas.

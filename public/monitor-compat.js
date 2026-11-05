@@ -209,12 +209,6 @@
   }
   function applyDensity() {
     syncViewport();
-    var ratio = 1;
-    var fonts = [['.panel-heading h2', 13], ['.availability-name', 12], ['.availability-description', 10], ['.availability-footer', 9], ['.reading', 10], ['.reading strong', 11], ['.panel-foot', 9], ['table', 10], ['.presentation-toolbar h1', 20]];
-    var rules = '';
-    each(fonts, function (font) { rules += font[0] + '{font-size:' + Math.round(font[1] * ratio * 100) / 100 + 'px;}'; });
-    var style = byId('compat-density');
-    if (style && style.textContent !== rules) style.textContent = rules;
     each(content.querySelectorAll('.availability-grid[data-card-size="expanded"]'), function (grid) {
       var gap = Number(grid.getAttribute('data-card-gap')), minimum = Number(grid.getAttribute('data-card-width'));
       var columns = Math.max(1, Math.floor(grid.clientWidth / (minimum + gap)));

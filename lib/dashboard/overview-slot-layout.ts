@@ -5,12 +5,12 @@ import { isAvailabilityDivided, overviewSplitRows, storageLayout, usesRowComposi
 
 export const overviewStackGap = 12;
 export const overviewPanelMinimum = 210;
-export function overviewSlotLayout(blocks: PresentationBlock[], slots: OverviewSlots) {
+export function overviewSlotLayout(blocks: PresentationBlock[], slots: OverviewSlots, monitor = false) {
   const active = blocks.filter(block => block.enabled), hasKpis = active.some(block => block.type === "summary");
   const minimum = (block: PresentationBlock) => {
     if (block.type !== "highlighted_resources") return overviewPanelMinimum;
     const options = effectiveOptions({ ...block, type: "highlighted_resources" });
-    return availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.visibleRows, isAvailabilityDivided(block, blocks, false, false, slots), hasKpis, options.rowMode));
+    return availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.visibleRows, isAvailabilityDivided(block, blocks, false, false, slots), hasKpis, options.rowMode), monitor);
   };
   const groups = overviewSlotKeys.map(key => {
     const panels = slots[key].flatMap(id => { const block = active.find(block => block.id === id); return block ? [block] : []; });

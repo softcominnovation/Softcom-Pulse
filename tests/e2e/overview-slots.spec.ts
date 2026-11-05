@@ -1,33 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
-import { execFileSync } from "node:child_process";
-import { storageUiFixture } from "../fixtures/storage";
 import { signIn } from "../fixtures/infrastructure";
 import { id } from "../fixtures/dashboard";
-import { effectiveOptions, type PresentationDocument } from "../../lib/config/presentation";
-import type { Overview, ReadResult } from "../../lib/monitoring/contracts";
 
-async function fixture(page: Page) {
-  const storage = await storageUiFixture(page), state = storage.admin;
-  const model = JSON.parse(execFileSync(process.execPath, ["--conditions=react-server", "--input-type=module", "-e", "import{monitorFixture}from'./tests/fixtures/monitor-compat.mjs';process.stdout.write(JSON.stringify(monitorFixture({cardSize:'expanded'})));"], { encoding: "utf8", windowsHide: true })) as { document: PresentationDocument; overview: ReadResult<Overview> };
-  model.document.screens = [model.document.screens[0]];
-  state.document = model.document; state.document.rotation.autoStart = false; state.document.defaultTvMode = false; state.document.publicMonitorAutoScrollOnLoad = false;
-  state.document.displayScalePercent = 100; state.document.dashboardZoomPercent = 70; state.document.publicMonitorZoomPercent = 70;
-  const screen = state.document.screens[0], find = (type: string) => screen.blocks.find(block => block.type === type)!;
-  find("storage_summary").options!.storageConfigId = storage.items[0].configId!;
-  model.overview.data.blocks.find(block => block.type === "storage_summary")!.data = { target: storage.items[0] };
-  screen.blocks.push({ id: id(8200), type: "problems", enabled: true, width: "wide", options: effectiveOptions({ type: "problems" }) });
-  model.overview.data.blocks.push({ blockId: id(8200), type: "problems", availability: "ready", stale: false, lastUpdated: model.overview.lastUpdated, data: model.overview.data.problems });
-  find("highlighted_resources").options = { ...find("highlighted_resources").options, rowMode: "manual", visibleRows: 3 };
-  screen.overviewGrid = "split_custom";
-  screen.overviewSlots = { topLeft: [find("highlighted_resources").id], topRight: [find("signal_flow").id, find("storage_summary").id], bottomLeft: [find("asgard_summary").id], bottomRight: [find("problems").id] };
-  const aggregate = (screenId: string | null) => {
-    const current = state.document.screens.find(screen => screen.id === screenId) ?? state.document.screens[0];
-    return { ...model.overview, data: { ...model.overview.data, screenId: current.id, presentationRevision: state.document.revision, blocks: current.blocks.filter(block => block.enabled).map(block => ({ ...model.overview.data.blocks.find(item => item.blockId === block.id) ?? model.overview.data.blocks.find(item => item.type === block.type)!, blockId: block.id, options: block.options })) } };
-  };
-  for (const pattern of ["**/api/dashboard/overview*", "**/api/public/dashboard/overview*"]) await page.route(pattern, route => route.fulfill({ json: aggregate(new URL(route.request().url()).searchParams.get("screenId")) }));
-  await page.route("**/api/public/settings/presentation", route => route.fulfill({ json: { data: state.document } }));
-  return { state, screen, find, storage };
-}
+import { slotUiFixture as fixture } from "../fixtures/overview-slots";
 
 async function geometry(page: Page) {
   await expect.poll(() => page.locator("[data-slot-layout]").evaluate(root => {
@@ -61,7 +36,7 @@ for (const route of ["/", "/monitor?compat=0"]) test(`custom slots fit their own
     const boxes = await group.locator(".slot-panel").evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
     expect(Math.abs(boxes[0] - boxes[1])).toBeLessThan(1);
     const height = await page.locator(".availability-card").first().evaluate(node => node.getBoundingClientRect().height);
-    expect(height).toBeCloseTo((size === "compact" ? 120 : 140) * zoom / 100, 0);
+    expect(height).toBeCloseTo(((size === "compact" ? 120 : 140) + (route === "/" ? 0 : 28)) * zoom / 100, 0);
     await expect(page.locator(".dashboard-footer")).toBeInViewport();
   }
   find("signal_flow").enabled = false; await page.reload(); await expect(page.locator("[data-overview-slot=topRight]")).toHaveAttribute("data-panel-count", "1");
@@ -142,7 +117,7 @@ for (const route of ["/", "/monitor?compat=0"]) test(`each screen renders its ow
     if (!baselineFont) baselineFont = font;
     expect(font).toBeCloseTo(baselineFont * (current === screen ? 1 : 1.5), 0);
     const cardHeight = await page.locator('.availability-card').first().evaluate(node => node.getBoundingClientRect().height);
-    expect(cardHeight).toBeCloseTo((current === screen ? 140 : 120) * 0.7, 0);
+    expect(cardHeight).toBeCloseTo(((current === screen ? 140 : 120) + (route === "/" ? 0 : 28)) * 0.7, 0);
     await geometry(page);
   }
   await page.reload();

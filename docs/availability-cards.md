@@ -1,13 +1,19 @@
 # Minicards de Disponibilidade de Serviços
 
+**Barras no monitor (05/11/2026):** CPU/RAM/disco dos minicards usam 4× a altura original: 12px no Padrão e 16px no Ampliado, proporcionais ao zoom. Painéis continuam em 12px; faixas de histórico, fontes, espaçamento e alturas externas dos cards não mudam neste refinamento. A raiz conserva suas medidas anteriores.
+
+**Espaçamento dos minicards no monitor (05/11/2026):** somente no `/monitor`, Padrão mede 148px e Ampliado 168px antes do zoom (+28px sobre os perfis da raiz). Disco tem 6px de separação da linha CPU/RAM no trio. Somente os valores percentuais de uso dos minicards recebem mais 30% de fonte e peso 600; nomes, descrições, badges, rótulos e rodapés conservam sua escala configurada. O fator tipográfico do bloco e o zoom são aplicados uma vez. `availabilityDimensions(size, monitor)` alimenta alturas, janela de fileiras e mínimos das composições; a grade continua sendo o único scroll de Disponibilidade. As caixas não variam ao trocar a fonte de 100% a 160%. Raiz e prévias continuam com 120/140px.
+
 O tamanho e a janela pertencem ao bloco de cada tela. Automático ou 1/2/3 fileiras mantém a precedência descrita abaixo; a contagem é um limite, sem reservar fileiras vazias quando há poucos cards. Ocultar outros painéis elimina suas fileiras da composição. Quando há dois blocos do mesmo tipo em Duas colunas, cada UUID tem sua própria posição e opções, sem sobreposição. Os painéis restantes ocupam a altura útil e a composição rola quando os mínimos e as fileiras completas não cabem. Consulte [encaixe](overview-fit.md).
 
 Disponibilidade tem uma única região rolável: `.availability-grid`. Cabeçalho e rodapé ficam fora dela; o painel não cria outra rolagem. No clássico, a grade é filha direta de `.availability-panel`, como no React, sem o wrapper rolável genérico `.panel-content`.
 
-| Perfil | Janela de 2 fileiras | Janela de 3 fileiras |
+| Perfil / rota | Janela de 2 fileiras | Janela de 3 fileiras |
 |---|---|---|
-| Padrão | 256px | 384px |
-| Ampliado | 296px | 444px |
+| Padrão — raiz/prévia | 256px | 384px |
+| Ampliado — raiz/prévia | 296px | 444px |
+| Padrão — monitor | 312px | 468px |
+| Ampliado — monitor | 352px | 528px |
 
 São medidas lógicas da janela, com passo de 128/148px por fileira; preservam-se a folga legada de 2px quando aplicável e os fatores de escala/zoom já vigentes. Cabeçalho, rodapé, margens, bordas e padding da fileira entram separadamente no orçamento do painel. Com a quantidade exata de fileiras, os cards cabem sem overflow; a fileira excedente rola somente nessa grade. A falta de altura para toda a composição é tratada pelo shell, mantendo a janela de cards completa e os demais painéis acessíveis.
 

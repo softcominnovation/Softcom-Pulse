@@ -1410,3 +1410,28 @@ test("VM Agent preferences share one resource, preserve availability identity an
  assert.equal((await getDatabase().query("SELECT epoch FROM notification_target_state WHERE target_ref=$1 AND condition_key='$lifecycle'",["resource:"+resource.id])).rows[0].epoch,epoch);
  await deleteResource(resource.id,triple.revision);
 });
+
+test("monitor text scales persist per block and screen through private and public presentation reads", async () => {
+  const previous = (await getPresentation()).data, hosts = process.env.PULSE_PUBLIC_HOSTS, demo = process.env.PULSE_DEMO_MODE;
+  try {
+    const { revision: ignored, ...settings } = initialV2(randomUUID); void ignored;
+    settings.screens.push(initialV2(randomUUID).screens[0]);
+    settings.screens[0].blocks[1].monitorFontScalePercent = 115;
+    settings.screens[1].blocks[1].monitorFontScalePercent = 160;
+    const saved = await savePresentation({ expectedRevision: previous.revision, settings });
+    const privateRead = (await getPresentation()).data;
+    assert.deepEqual(privateRead.screens.map(screen => screen.blocks.map(block => block.monitorFontScalePercent)), [[undefined,115,undefined,undefined],[undefined,160,undefined,undefined]]);
+    process.env.PULSE_PUBLIC_HOSTS = "fonts.example.test"; process.env.PULSE_DEMO_MODE = "0";
+    const response = await publicGet(new Request("http://fonts.example.test/api/public/settings/presentation", {headers:{Host:"fonts.example.test"}}), ["settings","presentation"]);
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).data.screens, privateRead.screens);
+    const invalid = structuredClone(settings); invalid.screens[1].blocks[1].monitorFontScalePercent = 200;
+    await assert.rejects(savePresentation({expectedRevision:saved.data.revision,settings:invalid}), error => error.name === "ZodError");
+    assert.equal((await getPresentation()).data.revision, saved.data.revision);
+  } finally {
+    if(hosts===undefined) delete process.env.PULSE_PUBLIC_HOSTS; else process.env.PULSE_PUBLIC_HOSTS=hosts;
+    if(demo===undefined) delete process.env.PULSE_DEMO_MODE; else process.env.PULSE_DEMO_MODE=demo;
+    const {revision:ignored,...settings}=previous; void ignored;
+    await savePresentation({expectedRevision:(await getPresentation()).data.revision,settings});
+  }
+});

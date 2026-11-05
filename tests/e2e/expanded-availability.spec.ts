@@ -150,7 +150,7 @@ for (const size of ["compact", "expanded"] as const) for (const split of [false,
   const grid = page.locator(".availability-grid"), panelElement = page.locator(".availability-panel");
   await expect(panelElement).toHaveAttribute("data-card-size", size); await expect(panelElement).toHaveAttribute("data-service-rows", "2");
   await expect(grid.locator(".availability-card")).toHaveCount(13);
-  const expected = (size === "expanded" ? 140 * (tv ? 1.25 : 1) : 120) * zoom / 100;
+  const expected = ((size === "expanded" ? 140 * (tv ? 1.25 : 1) : 120) + (route === "/" ? 0 : 28)) * zoom / 100;
   const all = await geometry(grid);
   await assertCardScrollOnly(grid);
   for (const header of all.headers) expect(header.dotOffset).toBeLessThan(0.5);
@@ -359,7 +359,7 @@ for (const size of ["compact", "expanded"] as const) test(`public manual rows st
   await page.setViewportSize({ width: 1280, height: 720 }); await page.goto("/monitor?compat=0");
   await expect(page.locator(".availability-panel")).toHaveAttribute("data-service-rows", "3");
   const bounds = await page.locator(".availability-grid").evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, height: node.getBoundingClientRect().height, columns: getComputedStyle(node).gridTemplateColumns.split(" ").length, cards: [...node.querySelectorAll(".availability-card")].map(card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) }));
-  expect(bounds.height).toBeCloseTo(3 * (size === "compact" ? 128 : 148) * 0.7, 0);
+  expect(bounds.height).toBeCloseTo(3 * (size === "compact" ? 156 : 176) * 0.7, 0);
   for (const card of bounds.cards.slice(0, bounds.columns * 3)) expect(card.bottom).toBeLessThanOrEqual(bounds.bottom + 1);
   expect(bounds.cards[bounds.columns * 3].top).toBeGreaterThanOrEqual(bounds.bottom - 0.1);
   await expect(page.locator(".dashboard-footer")).toBeInViewport();
@@ -393,7 +393,7 @@ for (const hasKpis of [false, true]) test(`public expanded cards respect configu
     await page.goto("/monitor?compat=0");
     await expect(page.locator(".availability-panel")).toHaveAttribute("data-card-size", "expanded");
     const current = await geometry(page.locator(".availability-grid"));
-    for (const card of current.cards) expect(card.height).toBeCloseTo(140 * zoom / 100, 1);
+    for (const card of current.cards) expect(card.height).toBeCloseTo(168 * zoom / 100, 1);
     const rows = await page.locator(".availability-grid").evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, cards: [...node.querySelectorAll(".availability-card")].map(card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) }));
     for (const card of rows.cards.slice(0, current.columns * limit)) expect(card.bottom).toBeLessThanOrEqual(rows.bottom + 1);
     expect(rows.cards[current.columns * limit].top + 0.1).toBeGreaterThanOrEqual(rows.bottom);

@@ -28,6 +28,11 @@ test("both panel budgets include every card row, gap and bottom spacing", () => 
   assert.equal(availabilityGridHeight("expanded", 2), 296);
   assert.equal(availabilityPanelMinimum("compact", 2), 356);
   assert.equal(availabilityPanelMinimum("expanded", 2), 394);
+  for (const size of ["compact", "expanded"]) for (const rows of [1, 2, 3]) {
+    // The monitor's extra breathing room belongs to each row, not to the zoom.
+    assert.equal(availabilityGridHeight(size, rows, true, true) - availabilityGridHeight(size, rows, true), rows * 28);
+    assert.equal(availabilityPanelMinimum(size, rows, true) - availabilityPanelMinimum(size, rows), rows * 28);
+  }
   const blocks = initialPresentation(randomUUID).screens[0].blocks;
   blocks[1].options.cardSize = "expanded";
   assert.equal(storageLayout(blocks, true).rows[0].minimum, 394);
@@ -43,7 +48,7 @@ test("classic initial HTML carries the expanded profile and its row budget witho
   const html = renderCompatibleContent(model);
   assert.match(html, /data-card-size="expanded"/);
   assert.match(html, /data-card-width="260" data-card-gap="8"/);
-  assert.match(html, /max-height:296px/);
+  assert.match(html, /max-height:352px/);
   assert.match(html, /data-expanded-row="true"/);
   assert.match(html, /RX/); assert.match(html, /TX/);
   assert.match(html, /VM configurada/); assert.match(html, /Serviço configurado/);
@@ -94,7 +99,7 @@ test("classic HTML respects explicit rows before JavaScript, including one compa
     block.options = { ...block.options, cardSize: size, rowMode: "manual", visibleRows: rows };
     const html = renderCompatibleContent(model);
     assert.match(html, new RegExp(`data-row-mode="manual" data-card-rows="${rows}"`));
-    assert.match(html, new RegExp(`max-height:${rows * (size === "compact" ? 128 : 148)}px`));
+    assert.match(html, new RegExp(`max-height:${rows * (size === "compact" ? 156 : 176)}px`));
     assert.match(html, /data-measured-row="true"/);
   }
 });

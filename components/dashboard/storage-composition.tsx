@@ -4,8 +4,8 @@ import type { PresentationBlock } from "@/lib/config/presentation";
 import { storageLayout } from "@/lib/dashboard/layout";
 import "./storage-composition.css";
 
-export function StorageComposition({ blocks, split, wall, render, onOverflow }: { blocks: PresentationBlock[]; split: boolean; wall: boolean; render: (block: PresentationBlock) => ReactNode; onOverflow?: (value: boolean) => void }) {
-  const plan = storageLayout(blocks, split, wall), root = useRef<HTMLDivElement>(null);
+export function StorageComposition({ blocks, split, wall, render, onOverflow, monitor = false }: { blocks: PresentationBlock[]; split: boolean; wall: boolean; render: (block: PresentationBlock) => ReactNode; monitor?: boolean; onOverflow?: (value: boolean) => void }) {
+  const plan = storageLayout(blocks, split, wall, monitor), root = useRef<HTMLDivElement>(null);
   const [overflow, setOverflow] = useState(false);
   const signature = JSON.stringify({ summaries: plan.summaries.map(block => block.id), rows: plan.rows.map(row => ({ id: row.blocks[0].block.id, minimum: row.minimum, contentSized: row.contentSized })) });
   useEffect(() => {

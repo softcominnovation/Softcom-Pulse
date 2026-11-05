@@ -438,7 +438,7 @@ test("expanded classic cards keep their profile, responsive columns and complete
       try {
         const initial = await noJs.newPage(); await initial.goto(address + '/monitor?compat=1');
         const sizes = await initial.locator('.availability-card').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
-        assert.equal(sizes.length, 6); assert.ok(sizes.every(height => height === 140));
+        assert.equal(sizes.length, 6); assert.ok(sizes.every(height => height === 168));
         await expect(initial.locator('.availability-grid')).toHaveAttribute('data-card-rows', '2');
         await assertCardScrollOnly(initial.locator('.availability-grid'), { js: false, rows: 2 });
         await initial.route('**/monitor?compat=1', route => route.fulfill({ contentType: 'text/html', body: fixture.threePage }));
@@ -470,14 +470,14 @@ test("expanded classic cards keep their profile, responsive columns and complete
         for (const card of rows.cards.slice(0, bounds.columns * 2)) assert.ok(card.bottom <= rows.bottom + 1);
         if (rows.cards.length > bounds.columns * 2) { assert.ok(rows.scroll > 0); assert.ok(rows.cards[bounds.columns * 2].top >= rows.bottom); }
         else assert.ok(rows.scroll <= 1);
-        for (const card of bounds.cards) { assert.ok(Math.abs(card.height - 140 * zoom / 100) < 1, JSON.stringify({ width, zoom, card })); assert.ok(card.fits); assert.equal(card.name, 15); }
+        for (const card of bounds.cards) { assert.ok(Math.abs(card.height - 168 * zoom / 100) < 1, JSON.stringify({ width, zoom, card })); assert.ok(card.fits); assert.equal(card.name, 15); }
         assert.ok(bounds.footer <= 721 && bounds.footer > 680, JSON.stringify(bounds));
       }
       await page.setViewportSize({ width: 1280, height: 720 });
       await frame.locator('html').evaluate(node => { node.style.zoom = ''; });
       current = fixture.compact; await frame.locator('#compat-refresh').click();
       await expect(grid).toHaveAttribute('data-card-size', 'compact');
-      assert.equal(await grid.locator('.availability-card').first().evaluate(node => node.getBoundingClientRect().height), 120);
+      assert.equal(await grid.locator('.availability-card').first().evaluate(node => node.getBoundingClientRect().height), 148);
       await assertCardScrollOnly(grid, { size: 'compact' });
       assert.ok(await grid.evaluate(node => node.scrollHeight <= node.clientHeight + 1));
       const compactDots = await grid.locator('.status-pill').evaluateAll(nodes => nodes.map(node => {
@@ -517,12 +517,12 @@ test("expanded classic cards keep their profile, responsive columns and complete
       await expect(grid).toHaveAttribute('data-card-rows', '1');
       await expect(grid).toHaveAttribute('data-card-size', 'compact');
       const one = await grid.evaluate(node => ({ bottom: node.getBoundingClientRect().bottom, height: node.getBoundingClientRect().height, cards: Array.from(node.querySelectorAll('.availability-card'), card => ({ top: card.getBoundingClientRect().top, bottom: card.getBoundingClientRect().bottom })) }));
-      assert.equal(one.height, 128);
+      assert.equal(one.height, 156);
       await assertCardScrollOnly(grid, { rows: 1, size: 'compact' });
       const firstRow = one.cards.filter(card => Math.abs(card.top - one.cards[0].top) < 1);
       for (const card of firstRow) assert.ok(card.bottom <= one.bottom + 1);
       assert.ok(one.cards[firstRow.length].top >= one.bottom);
-      for (const [snapshot, size, height] of [[fixture.threeCompact, 'compact', 120], [fixture.three, 'expanded', 140]]) {
+      for (const [snapshot, size, height] of [[fixture.threeCompact, 'compact', 148], [fixture.three, 'expanded', 168]]) {
       current = snapshot; await frame.locator('#compat-refresh').click();
       await expect(grid).toHaveAttribute('data-card-size', size);
       await expect(grid).toHaveAttribute('data-card-rows', '3');
@@ -602,7 +602,7 @@ test("classic opaque iframe applies each of three screens' own KPI and card opti
         await expect(frame.locator('.availability-grid')).toHaveAttribute('data-card-size', size);
         await expect(frame.locator('.availability-grid')).toHaveAttribute('data-card-rows', String(index+1));
         assert.ok(Math.abs(await frame.locator('.kpi-value').first().evaluate(node => parseFloat(getComputedStyle(node).fontSize)) - 28 * scale / 100) < .01);
-        await expect.poll(() => frame.locator('.availability-card').first().evaluate(node => node.getBoundingClientRect().height)).toBe(size === 'expanded' ? 140 : 120);
+        await expect.poll(() => frame.locator('.availability-card').first().evaluate(node => node.getBoundingClientRect().height)).toBe(size === 'expanded' ? 168 : 148);
       }
     } finally { await context.close(); await browser.close(); parent.closeAllConnections(); await new Promise(resolve => parent.close(resolve)); }
   });

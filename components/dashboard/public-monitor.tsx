@@ -19,7 +19,7 @@ export function PublicMonitor({ initialZoomPercent, initialAutoScrollOnLoad }: {
   }, []);
   return <div ref={root} className="public-monitor-frame" data-public-monitor-zoom={zoom} data-public-monitor-auto-scroll-on-load={autoScrollOnLoad}>
     <div className="public-monitor-stage" style={{ "--public-monitor-zoom": zoom / 100 } as CSSProperties}>
-      <AppShell dashboard publicRead publicMonitor><Dashboard initialTvMode onPresentation={update} extraControls={<Button variant="ghost" aria-label={paused ? "Retomar rolagem automática" : "Pausar rolagem automática"} aria-pressed={paused} onClick={toggle}>{paused ? <IconPlayerPlay aria-hidden="true" /> : <IconPlayerPause aria-hidden="true" />}Rolagem</Button>} /></AppShell>
+      <AppShell dashboard publicRead publicMonitor><Dashboard publicMonitor initialTvMode onPresentation={update} extraControls={<Button variant="ghost" aria-label={paused ? "Retomar rolagem automática" : "Pausar rolagem automática"} aria-pressed={paused} onClick={toggle}>{paused ? <IconPlayerPlay aria-hidden="true" /> : <IconPlayerPause aria-hidden="true" />}Rolagem</Button>} /></AppShell>
     </div>
   </div>;
 }

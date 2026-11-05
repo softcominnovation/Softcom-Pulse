@@ -4,7 +4,7 @@ import { cardMetricOrder, type CardMetric } from "../../config/agent-monitoring.
 import { vpsCardValues, vpsCardReadingMaxAgeMs } from "../../vps/labels.ts";
 import { selectProblems, selectVms, sortInventory } from "../../dashboard/block-options.ts";
 import { isAvailabilityDivided, overviewSplitRows, storageLayout, usesRowComposition } from "../../dashboard/layout.ts";
-import { availabilityCardSizes, availabilityGridHeight, availabilityPanelMinimum, availabilityRowLimit } from "../../dashboard/availability-sizing.ts";
+import { availabilityDimensions, availabilityGridHeight, availabilityPanelMinimum, availabilityRowLimit } from "../../dashboard/availability-sizing.ts";
 import { metricValue, number, timestamp, isOld } from "../../dashboard/format.ts";
 import { currentMetric, serviceAvailability } from "../../dashboard/service-availability.ts";
 import { evidenceExpired } from "../../infrastructure/navigation.ts";
@@ -21,6 +21,8 @@ import { availabilityCardSlots, mergeCardCpuRam, resolveCardCpuRam } from "../..
 import { healthReasons, healthStates, resolutionLabel, severities } from "../../services/presentation.ts";
 import { monitorIcon, type MonitorIcon } from "./icons.ts";
 import { pulseAlertTabIcon, pulseTabIcon } from "../../notifications/tab-icon.ts";
+import { compatibleBlockTypography } from "./typography.generated.ts";
+import { compatibleMinicardLayout } from "../../dashboard/monitor-readability.ts";
 import { compatibleAssetUrl } from "./assets.ts";
 
 export function escapeMonitorHtml(value: unknown) {
@@ -43,12 +45,12 @@ function empty(text: string) { return `<p class="panel-empty">${h(text)}</p>`; }
 function reading(label: string, metric: Metric | undefined, stale: boolean, now: number, series = "cpu", currentOnly = false, context = "") {
   const valid = currentMetric(metric, stale, now) && (!currentOnly || metric?.unit === "percent"), old = isOld(metric, stale, now);
   const width = valid && metric?.unit === "percent" ? Math.min(100, Math.max(0, metric.value!)) : 0;
-  return `<div class="reading${old ? " metric-old" : ""}"${currentOnly ? ' data-current-only="true"' : ""}${expiry(metric?.validUntil)} title="${h(context ? context + " · " : "")}${h(old ? "Dado desatualizado · " : "")}${h(stamp(metric?.observedAt))}"><span>${h(label)}</span><strong>${currentOnly && !valid ? "—" : h(metricValue(metric))}</strong><span class="metric-meter ${series}"><i style="width:${width}%"></i></span></div>`;
+  return `<div class="reading${old ? " metric-old" : ""}"${currentOnly || metric?.unit === "percent" ? ' data-usage-percent' : ""}${currentOnly ? ' data-current-only="true"' : ""}${expiry(metric?.validUntil)} title="${h(context ? context + " · " : "")}${h(old ? "Dado desatualizado · " : "")}${h(stamp(metric?.observedAt))}"><span>${h(label)}</span><strong>${currentOnly && !valid ? "—" : h(metricValue(metric))}</strong><span class="metric-meter ${series}"><i style="width:${width}%"></i></span></div>`;
 }
 function rawMetric(label: string, metric: Metric | undefined, stale: boolean, now: number) { return `<div class="reading${isOld(metric, stale, now) ? " metric-old" : ""}"${expiry(metric?.validUntil)} title="${h(stamp(metric?.observedAt))}"><span>${h(label)}</span><strong>${h(metricValue(metric))}</strong></div>`; }
 function percent(label: string, value: number | null, series = "cpu", missing = "Sem dados", validUntil?: string) {
   const known = value !== null && Number.isFinite(value);
-  return `<div class="reading"${validUntil ? ` data-current-only="true"${expiry(validUntil)}` : ""}><span>${h(label)}</span><strong>${known ? h(number(value, 1)) + "%" : h(missing)}</strong><span class="metric-meter ${series}"><i style="width:${known ? Math.min(100, Math.max(0, value!)) : 0}%"></i></span></div>`;
+  return `<div class="reading" data-usage-percent${validUntil ? ` data-current-only="true"${expiry(validUntil)}` : ""}><span>${h(label)}</span><strong>${known ? h(number(value, 1)) + "%" : h(missing)}</strong><span class="metric-meter ${series}"><i style="width:${known ? Math.min(100, Math.max(0, value!)) : 0}%"></i></span></div>`;
 }
 function miniReadings(metrics: readonly CardMetric[], render: (kind: CardMetric) => string) {
   return `<span class="metric-grid mini-metrics" data-metric-count="${metrics.length}">${cardMetricOrder(metrics).map(render).join("")}</span>`;
@@ -123,8 +125,9 @@ function miniCard(card: AvailabilityPanelCard, blockId: string, stale: boolean, 
     }
   }
 }
-function summaryBlock(data: Summary, options: OptionsByType["summary"], stale: boolean) {
-  const scale = options.fontScalePercent / 100;
+function summaryBlock(data: Summary, options: OptionsByType["summary"], stale: boolean, monitorFontScalePercent = 100) {
+  const monitorFactor = monitorFontScalePercent / 100;
+  const scale = options.fontScalePercent / 100 * monitorFactor;
   const catalog = {
     hosts: { icon: "server", label: "Hosts monitorados", value: data.hostsKnown, note: `${number(data.hostsReachable)} alcançáveis · ${number(data.vms)} VMs no hipervisor` },
     containers_running: { icon: "box", label: "Containers em execução", value: data.containersRunning, note: `${number(data.containersTotal)} containers no total` },
@@ -132,7 +135,7 @@ function summaryBlock(data: Summary, options: OptionsByType["summary"], stale: b
     problems: { icon: "warning", label: "Problemas ativos", value: data.problems, note: `${number(data.criticalAffected)} recursos críticos afetados` },
     jobs_waiting: { icon: "activity", label: "Jobs aguardando", value: data.jobsWaiting, note: data.jobsWaitingOldestSeconds == null ? "Sem idade informada" : `Mais antigo: ${metricValue({ value: data.jobsWaitingOldestSeconds, unit: "seconds", quality: "fresh", observedAt: null })}` },
   } as const;
-  return `<div class="dashboard-kpis" data-kpi-font-scale="${options.fontScalePercent}">${options.indicators.map(key => { const item = catalog[key]; return `<article class="dashboard-kpi"><div class="kpi-heading"><h2 style="font-size:${12 * scale}px;line-height:1.45">${h(item.label)}</h2>${monitorIcon(item.icon)}</div><p class="kpi-value" style="font-size:${28 * scale}px;line-height:1.15">${h(number(item.value))}</p><p style="font-size:${10 * scale}px;line-height:1.45">${h(stale ? "Dados desatualizados · " : "")}${h(item.note)}</p></article>`; }).join("")}</div>`;
+  return `<div class="dashboard-kpis" data-kpi-font-scale="${options.fontScalePercent}">${options.indicators.map(key => { const item = catalog[key]; return `<article class="dashboard-kpi"><div class="kpi-heading"><h2 style="font-size:${12 * scale}px;line-height:${1.45 / monitorFactor}">${h(item.label)}</h2>${monitorIcon(item.icon)}</div><p class="kpi-value" style="font-size:${28 * scale}px;line-height:${1.15 / monitorFactor}">${h(number(item.value))}</p><p style="font-size:${10 * scale}px;line-height:${1.45 / monitorFactor}">${h(stale ? "Dados desatualizados · " : "")}${h(item.note)}</p></article>`; }).join("")}</div>`;
 }
 function asgardPanel(data: AsgardSummary, block: PresentationBlock, stale: boolean, now: number) {
   const options = effectiveOptions({ ...block, type: "asgard_summary" }), host = data.host;
@@ -172,7 +175,7 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
   if (!payload || payload.data === null || payload.availability === "unavailable") return panel("Bloco indisponível", empty(model.error ?? "Este bloco não está disponível na coleta atual."));
   const block = { ...payload, options: configuration.options } as OverviewBlock;
   switch (configuration.type) {
-    case "summary": return summaryBlock(block.data as Summary, effectiveOptions({ ...configuration, type: "summary" }), stale);
+    case "summary": return summaryBlock(block.data as Summary, effectiveOptions({ ...configuration, type: "summary" }), stale, configuration.monitorFontScalePercent);
     case "highlighted_resources": {
       const options = compatibleAvailabilityOptions(configuration);
       const resolved = resolveAvailabilityPanel(block.data, options, { probes: model.overview?.data.externalServices ?? [], vps: model.overview?.data.standaloneVps ?? [], signalCards: model.overview?.data.signalCards ?? [] });
@@ -181,8 +184,8 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
       const divided = isAvailabilityDivided(configuration, model.screen.blocks, split, model.layout === "wall", model.layout === "overview" && model.screen.overviewGrid === "split_custom" ? model.screen.overviewSlots : undefined);
       const configuredRows = split && options.cardSize === "compact" && options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows;
       const visibleRows = availabilityRowLimit(options.cardSize, configuredRows, divided, model.screen.blocks.some(block => block.enabled && block.type === "summary"), options.rowMode);
-      const dimensions = availabilityCardSizes[options.cardSize];
-      return panelFrame("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" data-card-size="${options.cardSize}" data-card-divided="${divided}"${options.rowMode ? ` data-row-mode="${options.rowMode}"` : ""} data-card-rows="${visibleRows}" data-card-width="${dimensions.minWidth}" data-card-gap="${dimensions.gap}" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${availabilityGridHeight(options.cardSize, visibleRows, options.cardSize === "expanded" || options.rowMode !== undefined)}px">${cards.map(card => miniCard(card, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM / disco conforme configuração · latência nas aplicações · faixa Signal/VPS", "", "box", "availability-panel");
+      const dimensions = availabilityDimensions(options.cardSize, true);
+      return panelFrame("Disponibilidade de Serviços", cards.length ? `<div class="availability-grid" data-card-size="${options.cardSize}" data-card-divided="${divided}"${options.rowMode ? ` data-row-mode="${options.rowMode}"` : ""} data-card-rows="${visibleRows}" data-card-width="${dimensions.minWidth}" data-card-gap="${dimensions.gap}" tabindex="0" role="region" aria-label="Recursos destacados" style="max-height:${availabilityGridHeight(options.cardSize, visibleRows, options.cardSize === "expanded" || options.rowMode !== undefined, true)}px">${cards.map(card => miniCard(card, configuration.id, stale, now)).join("")}</div>` : empty("Nenhum serviço corresponde à seleção deste bloco."), "Estado do recurso · CPU / RAM / disco conforme configuração · latência nas aplicações · faixa Signal/VPS", "", "box", "availability-panel");
     }
     case "asgard_summary": return asgardPanel(block.data as AsgardSummary, configuration, stale, now);
     case "storage_summary": return storagePanel((block.data as { target: StorageView | null }).target, stale, now, effectiveOptions({ ...configuration, type: "storage_summary" }).visibleRows);
@@ -218,10 +221,10 @@ function renderBlock(model: CompatibleMonitor, configuration: PresentationBlock)
 }
 
 function renderSlotRows(model: CompatibleMonitor) {
-  const plan = overviewSlotLayout(model.screen.blocks, model.screen.overviewSlots!);
+  const plan = overviewSlotLayout(model.screen.blocks, model.screen.overviewSlots!, true);
   return plan.rows.map(row => {
     const paired = row.groups.length > 1;
-    const groups = row.groups.map((group, index) => `<div class="compat-cell compat-slot-group" data-overview-slot="${group.key}" data-panel-count="${group.blocks.length}" style="width:${paired ? index === 0 ? 100 * 5 / 9 : 100 * 4 / 9 : 100}%">${group.blocks.map(block => `<div class="compat-slot-panel block-${block.type}" data-block-id="${h(block.id)}">${renderBlock(model, block)}</div>`).join("")}</div>`).join("");
+    const groups = row.groups.map((group, index) => `<div class="compat-cell compat-slot-group" data-overview-slot="${group.key}" data-panel-count="${group.blocks.length}" style="width:${paired ? index === 0 ? 100 * 5 / 9 : 100 * 4 / 9 : 100}%">${group.blocks.map(block => `<div class="compat-slot-panel block-${block.type}" data-block-id="${h(block.id)}" data-monitor-font-scale="${block.monitorFontScalePercent ?? 100}">${renderBlock(model, block)}</div>`).join("")}</div>`).join("");
     return `<div class="compat-row compat-slot-row${paired ? " split-row" : ""}${row.hasAvailability && plan.rows.length > 1 ? " compat-slot-row-measured" : ""}" data-custom-slot-row style="min-height:${row.minimum}px;${row.hasAvailability && plan.rows.length > 1 ? `height:${row.minimum}px;` : ""}">${groups}</div>`;
   }).join("");
 }
@@ -229,7 +232,7 @@ function renderSlotRows(model: CompatibleMonitor) {
 export function renderCompatibleContent(model: CompatibleMonitor) {
   // Normalize options locally without changing the selected profile or saved document.
   model = { ...model, screen: { ...model.screen, blocks: model.screen.blocks.map(block => block.type === "highlighted_resources" ? { ...block, options: compatibleAvailabilityOptions(block) } : block) } };
-  const composition = storageLayout(model.screen.blocks, model.layout === "overview" && model.screen.overviewGrid === "split", model.layout === "wall");
+  const composition = storageLayout(model.screen.blocks, model.layout === "overview" && model.screen.overviewGrid === "split", model.layout === "wall", true);
   const enabled = model.screen.blocks.filter(block => block.enabled);
   const hasKpis = enabled.some(block => block.type === "summary");
   const gridTypes = ["highlighted_resources", "problems", "asgard_summary", "signal_flow"];
@@ -245,7 +248,7 @@ export function renderCompatibleContent(model: CompatibleMonitor) {
       const availability = row.find(block => block.type === "highlighted_resources");
       const options = availability && effectiveOptions({ ...availability, type: "highlighted_resources" });
       const divided = row.length > 1;
-      addRow(row.map((block, index) => ({ block, span: divided ? index === 0 ? left : right : 12 })), options ? availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows, divided, hasKpis, options.rowMode)) : 210, divided && !!availability);
+      addRow(row.map((block, index) => ({ block, span: divided ? index === 0 ? left : right : 12 })), options ? availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows, divided, hasKpis, options.rowMode), true) : 210, divided && !!availability);
     }
     for (const block of enabled.filter(block => block.type !== "summary" && !gridTypes.includes(block.type))) addRow([{ block, span: 12 }], 210, false);
     composition.rows = rows;
@@ -254,18 +257,19 @@ export function renderCompatibleContent(model: CompatibleMonitor) {
     const availability = row.paired && row.blocks.find(item => item.block.type === "highlighted_resources")?.block;
     if (availability) {
       const options = effectiveOptions({ ...availability, type: "highlighted_resources" });
-      row.minimum = Math.max(row.minimum, availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows, true, hasKpis, options.rowMode)));
+      row.minimum = Math.max(row.minimum, availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.rowMode === undefined ? Math.max(2, options.visibleRows) : options.visibleRows, true, hasKpis, options.rowMode), true));
     }
   }
-  const summaries = composition.summaries.map(block => `<div class="compat-summary">${renderBlock(model, block)}</div>`).join("");
+  const summaries = composition.summaries.map(block => `<div class="compat-summary" data-block-id="${h(block.id)}" data-monitor-font-scale="${block.monitorFontScalePercent ?? 100}">${renderBlock(model, block)}</div>`).join("");
   const rows = model.layout === "overview" && model.screen.overviewGrid === "split_custom" && model.screen.overviewSlots ? renderSlotRows(model) : composition.rows.map(row => {
     const expanded = row.blocks.some(({ block }) => block.type === "highlighted_resources" && effectiveOptions({ ...block, type: "highlighted_resources" }).cardSize === "expanded");
     const measured = row.blocks.some(({ block }) => block.type === "highlighted_resources");
-    const panels = row.blocks.map(({ block, span }) => `<div class="compat-cell block-${block.type}" style="width:${span / 12 * 100}%" data-block-id="${h(block.id)}">${renderBlock(model, block)}</div>`).join("");
+    const panels = row.blocks.map(({ block, span }) => `<div class="compat-cell block-${block.type}" style="width:${span / 12 * 100}%" data-block-id="${h(block.id)}" data-monitor-font-scale="${block.monitorFontScalePercent ?? 100}">${renderBlock(model, block)}</div>`).join("");
     return `<div class="compat-row${row.contentSized ? " content-sized" : ""}${row.paired ? " split-row" : ""}"${expanded ? ' data-expanded-row="true"' : ""}${measured ? ' data-measured-row="true"' : ""} data-min-height="${row.minimum}"${row.contentSized ? "" : ` style="min-height:${row.minimum}px"`}>${panels}</div>`;
   }).join("");
+  const typography = [...new Set(enabled.map(block => block.monitorFontScalePercent ?? 100))].map(value => (value === 100 ? "" : compatibleBlockTypography(value)) + compatibleMinicardLayout(value)).join("");
   const old = model.error || model.overview?.stale;
-  return `<div class="compat-evidence${old ? " is-stale" : ""}" data-updated-at="${h(model.overview?.lastUpdated)}">${old ? `<p class="compat-warning" role="alert">${h(model.error ?? "Dados desatualizados. Confira o horário de cada leitura.")}</p>` : ""}${model.document.showStatusBanner ? `<p class="monitor-status">${h(model.overview?.availability === "ready" ? "Monitoramento atualizado" : "Aguardando dados do monitoramento")} · ${h(stamp(model.overview?.lastUpdated))}</p>` : ""}${summaries}<div class="dashboard-blocks" aria-busy="false" tabindex="0" role="region" aria-label="Composição da tela">${rows}</div><footer class="dashboard-footer"><span><i class="status-dot tone-good"></i>Disponível · <i class="status-dot tone-warn"></i>Atenção · <i class="status-dot tone-bad"></i>Indisponível · <i class="status-dot tone-unknown"></i>Desconhecido / sem dados</span><span>Horários de Fortaleza · UTC−3 · Leitura ${h(stamp(model.overview?.lastUpdated))}</span></footer></div>`;
+  return `${typography ? `<style data-monitor-block-fonts>${typography}</style>` : ""}<div class="compat-evidence${old ? " is-stale" : ""}" data-updated-at="${h(model.overview?.lastUpdated)}">${old ? `<p class="compat-warning" role="alert">${h(model.error ?? "Dados desatualizados. Confira o horário de cada leitura.")}</p>` : ""}${model.document.showStatusBanner ? `<p class="monitor-status">${h(model.overview?.availability === "ready" ? "Monitoramento atualizado" : "Aguardando dados do monitoramento")} · ${h(stamp(model.overview?.lastUpdated))}</p>` : ""}${summaries}<div class="dashboard-blocks" aria-busy="false" tabindex="0" role="region" aria-label="Composição da tela">${rows}</div><footer class="dashboard-footer"><span><i class="status-dot tone-good"></i>Disponível · <i class="status-dot tone-warn"></i>Atenção · <i class="status-dot tone-bad"></i>Indisponível · <i class="status-dot tone-unknown"></i>Desconhecido / sem dados</span><span>Horários de Fortaleza · UTC−3 · Leitura ${h(stamp(model.overview?.lastUpdated))}</span></footer></div>`;
 }
 
 export function compatibleMonitorState(model: CompatibleMonitor) {
@@ -337,7 +341,6 @@ export function renderCompatiblePage(model: CompatibleMonitor, appName: string) 
 </div>
 <script id="compat-state" type="application/json">${scriptData(state)}</script>
 <template id="compat-audio-template"><div class="compat-sound-form"><p>Volume e mute pertencem a este dispositivo.</p><p class="compat-sound-state" role="status"></p><label for="compat-volume">Volume <output id="compat-volume-value">50%</output></label><input type="range" id="compat-volume" min="0" max="100" step="5" value="50" aria-label="Volume"><p>Notificações usam os sons oficiais do Kobra. Volume zero silencia todos os sons.</p><button type="button" class="control" id="compat-test-sound">${monitorIcon("volume")} Testar som</button></div></template>
-<style id="compat-density"></style>
 <script src="${h(compatibleAssetUrl("monitor-auto-scroll.js"))}" defer></script>
 <script src="${h(compatibleAssetUrl("monitor-compat.js"))}" defer></script>
 </body></html>`;

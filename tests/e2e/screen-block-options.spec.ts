@@ -51,7 +51,7 @@ async function assertScreen(page: Page, index: number, zoom: number) {
   await expect(panel).toHaveAttribute("data-card-size", profile.size);
   await expect(panel).toHaveAttribute("data-service-rows", String(profile.rows));
   const card = panel.locator(".availability-card").first();
-  await expect.poll(() => card.evaluate(node => node.getBoundingClientRect().height)).toBeCloseTo((profile.size === "expanded" ? 140 : 120) * zoom / 100, 0);
+  await expect.poll(() => card.evaluate(node => node.getBoundingClientRect().height)).toBeCloseTo(((profile.size === "expanded" ? 140 : 120) + (new URL(page.url()).pathname === "/monitor" ? 28 : 0)) * zoom / 100, 0);
   expect(await band.locator(".kpi-value").first().evaluate(node => parseFloat(getComputedStyle(node).fontSize))).toBeGreaterThan(0);
   await expect(page.locator("[data-block-id]")).toHaveCount(index === 1 ? 5 : 4);
 }
@@ -192,7 +192,7 @@ for (const route of ["/", "/monitor?compat=0"]) test(`unread notifications survi
   await expect(page.locator(".availability-panel")).toHaveAttribute("data-card-size", "compact");
   const font = await page.locator(".kpi-value").first().evaluate(node => parseFloat(getComputedStyle(node).fontSize));
   expect(enlargedFont / font).toBeCloseTo(1.5, 1);
-  expect((await page.locator(".availability-card").first().boundingBox())!.height).toBeCloseTo(120 * (route === "/" ? .8 : .7), 0);
+  expect((await page.locator(".availability-card").first().boundingBox())!.height).toBeCloseTo((route === "/" ? 120 * .8 : 148 * .7), 0);
   screen.blocks.find(block => block.type === "summary")!.options!.fontScalePercent = 150;
   screen.blocks.find(block => block.type === "highlighted_resources")!.options!.cardSize = "expanded";
   state.admin.document.revision++;

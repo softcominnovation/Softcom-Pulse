@@ -44,6 +44,8 @@ h1 { font-size: 20px; margin: 0; }
 .dashboard-kpi h2 { margin: 0; color: #aaa; font-size: 12px; font-weight: normal; }
 .kpi-heading { display: flex; align-items: center; justify-content: space-between; }
 .kpi-heading .compat-icon { color: #aaa; margin-left: 7px; }
+.kpi-heading h2 { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dashboard-kpi > p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dashboard-kpi p { font-size: 10px; color: #aaa; margin: 8px 0 0; }
 .dashboard-kpi .kpi-value { color: #fafafa; font: 29px monospace; margin: 12px 0 9px; word-wrap: break-word; }
 .compat-row { display: table; table-layout: fixed; width: 100%; border-spacing: 10px 5px; }
@@ -79,7 +81,7 @@ h1 { font-size: 20px; margin: 0; }
 .reading { min-width: 65px; padding: 3px 0 7px; }
 .reading > span:first-child { display: block; font-size: 10px; margin-bottom: 5px; }
 .reading > strong { display: block; font-family: monospace; font-size: 12px; line-height: 15px; overflow-wrap: break-word; }
-.metric-meter { display: block; height: 4px; border-radius: 5px; background: #333; overflow: hidden; margin-top: 5px; }
+.metric-meter { display: block; height: 12px; border-radius: 5px; background: #333; overflow: hidden; margin-top: 5px; }
 .metric-meter i { display: block; height: 100%; background: #35b86b; }
 .metric-meter.memory i { background: #58a6ff; }
 .metric-meter.disk i { background: #e3a700; }
@@ -101,7 +103,7 @@ h1 { font-size: 20px; margin: 0; }
 }
 .card-wrap { display: inline-block; vertical-align: top; width: 238px; max-width: 100%; padding: 4px; font-size: 12px; }
 .split-row .card-wrap { width: 25%; }
-.availability-card { display: block; text-align: left; width: 100%; height: 120px; min-width: 0; border-radius: 9px; border: 1px solid #363636; background: #1e1e1e; padding: 9px 10px; overflow: hidden; }
+.availability-card { display: block; text-align: left; width: 100%; height: 148px; min-width: 0; border-radius: 9px; border: 1px solid #363636; background: #1e1e1e; padding: 9px 10px; overflow: hidden; }
 .availability-card-heading { display: flex; align-items: center; justify-content: space-between; width: 100%; min-width: 0; }
 .availability-card-heading .availability-name { flex: 1 1 auto; min-width: 0; margin: 0 8px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .availability-card .status-pill { display: inline-flex; flex: none; padding: 2px 6px; font-size: 9px; line-height: 12px; white-space: nowrap; }
@@ -114,7 +116,7 @@ h1 { font-size: 20px; margin: 0; }
 .availability-content .reading { padding: 0 0 5px; min-width: 0; }
 .availability-content .reading > span:first-child { display: inline; font-size: 9px; }
 .availability-content .reading > strong { float: right; font-size: 10px; }
-.availability-content .metric-meter { margin-top: 4px; height: 3px; }
+.availability-content .metric-meter { margin-top: 4px; height: 12px; }
 .availability-footer { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #353535; padding-top: 5px; font-size: 9px; line-height: 12px; white-space: nowrap; }
 .availability-footer strong { font-family: monospace; font-size: 9px; }
 .strip { display: block; width: 100%; height: 16px; font-size: 0; margin: 7px 0; overflow: hidden; white-space: nowrap; }
@@ -123,7 +125,7 @@ h1 { font-size: 20px; margin: 0; }
 .availability-grid[data-card-size="expanded"] .card-wrap { width: 268px; max-width: 100%; }
 .split-row .availability-grid[data-card-size="expanded"] .card-wrap,
 .availability-grid[data-card-size="expanded"][data-card-divided="true"] .card-wrap { width: max(33.333333%, min(100%, 268px)); }
-.availability-grid[data-card-size="expanded"] .availability-card { height: 140px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
+.availability-grid[data-card-size="expanded"] .availability-card { height: 168px; padding: 12px; display: flex; flex-direction: column; gap: 4px; }
 .availability-grid[data-card-size="expanded"] .availability-name { font-size: 15px; line-height: 20px; margin: 0; }
 .availability-grid[data-card-size="expanded"] .availability-card-heading .availability-name { margin-right: 8px; }
 .availability-grid[data-card-size="expanded"] .status-pill,
@@ -134,7 +136,7 @@ h1 { font-size: 20px; margin: 0; }
 .availability-grid[data-card-size="expanded"] .reading > strong { font-size: 11px; line-height: 14px; }
 .availability-grid[data-card-size="expanded"] .availability-description { margin: 0; }
 .availability-grid[data-card-size="expanded"] .availability-content { margin-top: auto; min-height: 0; width: 100%; }
-.availability-grid[data-card-size="expanded"] .metric-meter { height: 4px; margin-top: 3px; }
+.availability-grid[data-card-size="expanded"] .metric-meter { height: 16px; margin-top: 3px; }
 .availability-grid[data-card-size="expanded"] .strip { height: 20px; margin: 0 0 7px; }
 .availability-grid[data-card-size="expanded"] .availability-footer { width: 100%; }
 .availability-grid[data-card-size="expanded"] .availability-footer > span { overflow: hidden; text-overflow: ellipsis; }
@@ -253,3 +255,16 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
 .availability-content .mini-metrics > .reading > strong { float: right; }
 .availability-content .mini-metrics .metric-meter { clear: both; }
 .availability-content .mini-metrics[data-metric-count="3"] > .reading:first-child { width: 100%; }
+
+/* The former constant applyDensity font overrides belong in the stylesheet.
+   Keep the same live sizes, including first paint and no-JS; the block font
+   generator must see the final cascade rather than an injected JS override. */
+.panel-heading h2 { font-size: 13px; }
+.availability-name { font-size: 12px; }
+.availability-description { font-size: 10px; }
+.availability-footer { font-size: 9px; }
+.reading { font-size: 10px; }
+.reading strong { font-size: 11px; }
+.panel-foot { font-size: 9px; }
+table { font-size: 10px; }
+.presentation-toolbar h1 { font-size: 20px; }

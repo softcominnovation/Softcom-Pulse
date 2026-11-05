@@ -15,7 +15,7 @@ function meterClass(label: string) {
 
 function Reading({ label, metric, stale, now, title, currentOnly = false }: { label: string; metric?: Metric; stale: boolean; now: number; title?: string; currentOnly?: boolean }) {
   const valid = currentMetric(metric, stale, now) && (!currentOnly || metric?.unit === "percent");
-  return <span className="availability-reading" title={title ? `${title}${valid ? "" : " · Sem leitura atual"}` : undefined}><span>{label}<strong>{currentOnly && !valid ? "—" : metricValue(metric)}</strong></span><span className={meterClass(label)} aria-hidden="true"><i style={{ width: valid && metric?.unit === "percent" ? Math.max(0, Math.min(100, metric.value!)) + "%" : "0%" }} /></span></span>;
+  return <span className="availability-reading" data-usage-percent={currentOnly || metric?.unit === "percent" || undefined} title={title ? `${title}${valid ? "" : " · Sem leitura atual"}` : undefined}><span>{label}<strong>{currentOnly && !valid ? "—" : metricValue(metric)}</strong></span><span className={meterClass(label)} aria-hidden="true"><i style={{ width: valid && metric?.unit === "percent" ? Math.max(0, Math.min(100, metric.value!)) + "%" : "0%" }} /></span></span>;
 }
 export function ServiceAvailabilityCard({ item, stale, preview = false }: { item: ConfiguredResource; stale: boolean; preview?: boolean }) {
   const now = useContext(EvidenceTimeContext), status = serviceAvailability(item, stale, now);

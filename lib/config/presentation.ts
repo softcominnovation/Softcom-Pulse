@@ -23,6 +23,7 @@ export const indicatorKeys = ["hosts", "containers_running", "containers_stopped
 export const defaultIndicators = ["hosts", "containers_running", "containers_stopped", "problems"] as const;
 export type IndicatorKey = typeof indicatorKeys[number];
 export const kpiFontScaleOptions = [100, 110, 125, 150] as const;
+export const monitorFontScaleOptions = [100, 105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160] as const;
 export const overviewGridModes = ["default", "split", "split_custom"] as const;
 export const blockOptionsSchemas = {
   summary: z.strictObject({ indicators: z.array(z.enum(indicatorKeys)).min(1).max(4).refine(unique).default([...defaultIndicators]), fontScalePercent: z.union([z.literal(100), z.literal(110), z.literal(125), z.literal(150)]).default(100) }),
@@ -66,6 +67,7 @@ export const blockCatalog = {
 const blockSchema = z.strictObject({
   id: uuidSchema, type: z.enum(blockTypes), enabled: z.boolean(), width: z.enum(["standard", "wide", "full"]),
   resourceConfigId: uuidSchema.optional(),
+  monitorFontScalePercent: z.number().int().min(100).max(160).multipleOf(5).optional(),
   options: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string()), z.array(z.number())])).optional(),
 }).refine(block => (block.type === "resource_card") === (block.resourceConfigId !== undefined), { path: ["resourceConfigId"], message: "Only resource cards require a resource reference" });
 const screenSchema = z.strictObject({

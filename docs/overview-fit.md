@@ -1,5 +1,17 @@
 # Encaixe da rota principal
 
+**Espaçamento dos minicards no monitor (05/11/2026):** somente no `/monitor`, Padrão mede 148px e Ampliado 168px antes do zoom (+28px sobre os perfis da raiz). Disco tem 6px de separação da linha CPU/RAM no trio. Somente os valores percentuais de uso dos minicards recebem mais 30% de fonte e peso 600; nomes, descrições, badges, rótulos e rodapés conservam sua escala configurada. O fator tipográfico do bloco e o zoom são aplicados uma vez. `availabilityDimensions(size, monitor)` alimenta alturas, janela de fileiras e mínimos das composições; a grade continua sendo o único scroll de Disponibilidade. As caixas não variam ao trocar a fonte de 100% a 160%. Raiz e prévias continuam com 120/140px.
+
+## Tipografia independente no monitor
+
+O percentual de fontes por bloco é exclusivo do `/monitor`; não entra nas contas de zoom, mínimo das fileiras, largura/altura dos minicards ou divisão dos espaços. A geometria usa 148/168px no monitor e 120/140px na raiz/prévia, com as fileiras configuradas. Na raiz e na prévia, o novo fator permanece neutro.
+
+Em componentes compartilhados, aplicar `var(--monitor-font-scale, 1)` somente à fonte, uma vez. Tamanhos relativos herdados não recebem um segundo multiplicador. Não usar `zoom`, `transform`, `rem` global ou alteração de padding para simular essa preferência. Preservar linhas dos cabeçalhos/KPIs, rodapé compacto e a grade como único scroll de Disponibilidade. Textos maiores podem ocupar mais espaço dentro dos corpos roláveis, sem esticar a distribuição externa.
+
+Ao adicionar um novo texto a um bloco, verificar os percentuais 100–160 no navegador e no clássico, incluindo pares/trios, duas/três fileiras, painéis empilhados e zooms independentes. A versão clássica usa regras literais geradas da folha CSS; instruções em [compatibilidade](monitor-compatibility.md#escala-de-fontes-por-bloco).
+
+As barras de uso dos minicards no `/monitor` têm 4× a altura original, independentemente do fator tipográfico (12px no Padrão e 16px no Ampliado, antes do zoom). As dos painéis continuam em 12px, ou 3× a altura original. `monitor-readability.ts` compartilha o orçamento de padding/linhas internas dos minicards entre React e clássico, comportando o trio nas caixas de 148/168px e recalculando a janela das fileiras. Os históricos de disponibilidade não mudam. KPIs preservam a linha com truncamento de texto longo; a área interna dos volumes do ASGARD acompanha a fonte para não cortar a primeira leitura, sem ampliar o painel externo.
+
 ## Composições com Storage
 
 `storage_summary` usa `storageLayout` e `StorageComposition`, compartilhados pela raiz e pela prévia. O caminho anterior permanece sem Storage habilitado. Indicadores têm faixa própria; demais blocos entram em fileiras de 12 colunas, por UUID, ordem e larguras. Repetições não disputam áreas CSS por tipo.
@@ -96,4 +108,4 @@ A rota exata `/monitor` usa `publicMonitorZoomPercent` (50–150, padrão 100) e
 
 ### Trio explícito respeita o perfil do bloco
 
-O conteúdo CPU/RAM/disco não substitui `highlighted_resources.options.cardSize`. Padrão (`compact`) mantém 120px e Ampliado mantém 140px em toda a grade, inclusive custom, na raiz/monitor/prévia. O observador de Storage e o planejamento clássico usam esse perfil e a geometria real. A janela manual de 1–3 fileiras tem prioridade; os mínimos, o fallback de rolagem e o preenchimento inferior continuam os mesmos. A prévia isolada de trio, sem bloco, conserva 140px.
+O conteúdo CPU/RAM/disco não substitui `highlighted_resources.options.cardSize`. Padrão (`compact`) mantém 120px e Ampliado 140px na raiz/prévia; no monitor, os envelopes são 148/168px, inclusive custom. O observador de Storage e o planejamento clássico usam esse perfil e a geometria real. A janela manual de 1–3 fileiras tem prioridade; os mínimos, o fallback de rolagem e o preenchimento inferior continuam os mesmos. A prévia isolada de trio, sem bloco, conserva 140px.

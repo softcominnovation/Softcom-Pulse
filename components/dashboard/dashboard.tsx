@@ -1,5 +1,7 @@
 "use client";
 
+import { monitorMinicardVariables } from "@/lib/dashboard/monitor-readability";
+
 import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { isAutomaticScroll } from "@/lib/client/automatic-scroll-events";
 import { useStore } from "zustand";
@@ -33,7 +35,7 @@ function hasOldEvidence(value: unknown, now: number): boolean {
   if ("validUntil" in value && typeof value.validUntil === "string" && Date.parse(value.validUntil) < now) return true;
   return Object.values(value).some(child => typeof child === "object" && hasOldEvidence(child, now));
 }
-export function Dashboard({ initialTvMode, onPresentation, extraControls }: { initialTvMode?: boolean; onPresentation?: (document: PresentationDocument) => void; extraControls?: ReactNode } = {}) {
+export function Dashboard({ initialTvMode, onPresentation, extraControls, publicMonitor = false }: { initialTvMode?: boolean; onPresentation?: (document: PresentationDocument) => void; extraControls?: ReactNode; publicMonitor?: boolean } = {}) {
   const [store] = useState(createPlayerStore), player = useStore(store);
   const [now, setNow] = useState(0);
   useEffect(() => {
@@ -125,14 +127,14 @@ export function Dashboard({ initialTvMode, onPresentation, extraControls }: { in
           const width = displayBlockWidth(block, enabled, { split, wall });
           // Keep layout and content options on the same active-screen configuration.
           // The overview supplies evidence; omitted/older payload options must not reset a block.
-          return <div className={`dashboard-block width-${width} block-${block.type}`} data-block-id={block.id} key={block.id}>
+          return <div className={`dashboard-block width-${width} block-${block.type}`} data-block-id={block.id} key={block.id} data-monitor-font-scale={publicMonitor ? block.monitorFontScalePercent ?? 100 : undefined} style={publicMonitor ? { ...monitorMinicardVariables(block.monitorFontScalePercent ?? 100), "--monitor-font-scale": (block.monitorFontScalePercent ?? 100) / 100 } as CSSProperties : undefined}>
             {payload ? <DashboardBlock block={{ ...payload, options: block.options }} hasKpis={enabled.some(item => item.type === "summary")} availabilityDivided={isAvailabilityDivided(block, enabled, split, wall, custom || undefined)} failed={stale} probes={result?.data.externalServices ?? []} vps={result?.data.standaloneVps ?? []} signalCards={result?.data.signalCards ?? []} hostMetricsSources={result?.data.hostMetricsSources} /> : result ? <section className="dashboard-panel"><p className="panel-empty">Bloco sem dados na resposta atual.</p></section> : null}
           </div>;
         };
         return <div data-dashboard-content data-fit-rows={!rowComposition && !custom || undefined} style={!rowComposition && !custom ? { "--dashboard-grid-rows": dashboardGridRows(enabled, split, wall) } as CSSProperties : undefined} className={`dashboard-blocks${split ? " overview-split" : ""}${rowComposition ? " has-storage" : ""}${custom ? " has-custom-slots" : ""}`} aria-busy={overview.loading}>
           {!result && !overview.failed && <DashboardSkeleton label="Carregando os indicadores da tela…" />}
-          {result && rowComposition && <StorageComposition blocks={enabled} split={split} wall={wall} render={renderBlock} />}
-          {result && custom && <SlotComposition blocks={enabled} slots={custom} render={renderBlock} />}
+          {result && rowComposition && <StorageComposition monitor={publicMonitor} blocks={enabled} split={split} wall={wall} render={renderBlock} />}
+          {result && custom && <SlotComposition monitor={publicMonitor} blocks={enabled} slots={custom} render={renderBlock} />}
           {result && !custom && !rowComposition && !split && enabled.map(renderBlock)}
           {result && !rowComposition && split && (() => {
             const gridTypes = new Set(["highlighted_resources", "problems", "asgard_summary", "signal_flow"]);

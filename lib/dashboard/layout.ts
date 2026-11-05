@@ -105,7 +105,7 @@ export function displayBlockWidth(block: PresentationBlock, enabled: Presentatio
 }
 
 /** Storage compositions are packed by block identity; duplicate types never share an area. */
-export function storageLayout(blocks: PresentationBlock[], split: boolean, wall = false) {
+export function storageLayout(blocks: PresentationBlock[], split: boolean, wall = false, monitor = false) {
   const enabled = blocks.filter(block => block.enabled);
   const hasKpis = enabled.some(block => block.type === "summary");
   const summaries = enabled.filter(block => block.type === "summary");
@@ -115,13 +115,13 @@ export function storageLayout(blocks: PresentationBlock[], split: boolean, wall 
   const minimum = (block: PresentationBlock) => {
     if (block.type !== "highlighted_resources") return 210;
     const options = effectiveOptions({ ...block, type: "highlighted_resources" });
-    return availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.visibleRows, isAvailabilityDivided(block, enabled, split, wall), hasKpis, options.rowMode));
+    return availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.visibleRows, isAvailabilityDivided(block, enabled, split, wall), hasKpis, options.rowMode), monitor);
   };
   const rows: Row[] = [];
   if (split && availability.length === 1 && problems.length === 1) {
     const top = [availability[0], problems[0]];
     const options = effectiveOptions({ ...availability[0], type: "highlighted_resources" });
-    rows.push({ paired: true, minimum: Math.max(minimum(top[1]), availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.visibleRows, true, hasKpis, options.rowMode))), blocks: top.map(block => ({ block, span: 6 })) });
+    rows.push({ paired: true, minimum: Math.max(minimum(top[1]), availabilityPanelMinimum(options.cardSize, availabilityRowLimit(options.cardSize, options.visibleRows, true, hasKpis, options.rowMode), monitor)), blocks: top.map(block => ({ block, span: 6 })) });
     panels = panels.filter(block => !top.some(item => item.id === block.id));
   }
   let occupied = 12;

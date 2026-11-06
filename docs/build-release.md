@@ -95,3 +95,20 @@ Validação final desta revisão:
 - Listagem de CI atualizada: **185 + 185 = 370** casos. Nenhum retry automático ou caso ignorado foi acrescentado.
 
 Essa evidência é local em Windows. O próximo CI continua responsável pela execução Linux, runners AMD64/ARM64 e montagem das imagens; nenhum commit, tag, push ou deploy foi realizado.
+
+## Correção dos shards de fontes e edição — 06/11/2026
+
+Os três casos compactos de `monitor-fonts.spec.ts` falhavam por overflow horizontal do rodapé de minicards de uptime, não pela altura das fileiras. A coluna implícita `auto` de `.probe-card-uptime` podia crescer com o texto sem quebra, sobretudo com fontes mais largas. A correção em `public-monitor.css` restringe essa coluna a `minmax(0, 1fr)`, exclusivamente no `/monitor`. Permanecem os tamanhos dos cards, os planejadores, zooms, rodapés e a rolagem interna do Storage.
+
+O diagnóstico com fontes DejaVu encontrou rodapés até 17,72px além da lateral. Um tipo de serviço longo no teste reproduziu a falha antes da correção também com as fontes padrão do Windows. Esse conteúdo agora integra a regressão permanente; a asserção mantém a tolerância de 1px e informa qual filho ultrapassou a caixa. Não foram incluídas fontes novas no produto.
+
+O timeout de `admin.spec.ts` não se reproduziu localmente. A espera anterior pela mensagem de associação não garantia que a descoberta tivesse terminado, pois a mensagem também aparecia durante o carregamento. O teste agora aguarda o estado vazio final, identifica a linha pelo nome e verifica a abertura do editor antes de preencher. Somente esse caso tem orçamento total de 60s para login e duas rotas frias; as asserções continuam com o prazo normal, preservando UUID, PATCH e persistência. Nenhuma alteração de produção na administração, retry, skip ou remoção de teste.
+
+Validação final desta correção:
+
+- `npm run check` aprovado: lint (apenas o aviso preexistente de `IconBrandWhatsapp`), tipos, 301 unitários e build/empacotamento.
+- **38/38 E2E** dos quatro arquivos completos: `admin`, `monitor-fonts`, `display-scale` e `storage-volumes`, com dois workers. Padrão/Ampliado, zoom 70/100/125, fontes até 200%, raiz e monitor, edição/persistência e Storage empilhado/não empilhado. O arquivo local ignorado de configuração concede 180s somente para iniciar o servidor de testes no Windows; não modifica as asserções nem o workflow do CI.
+- Diagnóstico adicional aprovado com fontes DejaVu carregadas somente na página de teste: todos os rodapés ficaram dentro dos cards. O teste permanente usa o texto longo e não depende desses arquivos locais.
+- **4/4 runtime** no artefato novo: cards/controles, encaixe inferior do Storage em iframe opaco, rolagem interna exclusiva e matriz de 252 combinações de fontes/zoom/perfil/KPIs, com snapshots e HTML sem JavaScript.
+
+Não houve nova rodada integral dos dois shards. A execução foi local em Windows, incluindo o diagnóstico com fontes Linux; o próximo CI confirma o runner Linux. Preferências reais, versão antiga e layout das fileiras não foram alterados. Sem commit, push ou deploy.

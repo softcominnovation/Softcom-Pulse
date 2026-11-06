@@ -23,6 +23,8 @@ for (const cardSize of ['compact', 'expanded']) for (const zoom of [70, 100, 125
   for (const card of cards) {
     if (card.kind === 'resource') card.item.config.presentation.cardMetrics = ['cpu', 'memory', 'disk'];
     if (card.kind === 'signal_service') card.item.cardMetrics = ['cpu', 'memory', 'disk'];
+    // Exercise intrinsic footer width on every OS, including wider Linux fonts.
+    if (card.kind === 'external_service') card.item.serviceType = 'ERP corporativo · Atendimento';
   }
   // Trio exercises the tightest existing card. Keep summary out for exact panel geometry checks.
   find('summary').enabled = false;
@@ -61,12 +63,16 @@ for (const cardSize of ['compact', 'expanded']) for (const zoom of [70, 100, 125
           meterHeights: cards.flatMap(card => [...card.querySelectorAll('.availability-meter')].map(meter => meter.getBoundingClientRect().height)),
           footHeight: panel.querySelector('.panel-foot')!.getBoundingClientRect().height,
           fits: cards.every(card => [...card.querySelectorAll<HTMLElement>('.availability-card-heading,.availability-description,.availability-readings,.availability-footer')].every(child => { const r = child.getBoundingClientRect(), c = card.getBoundingClientRect(); return r.top >= c.top - 1 && r.bottom <= c.bottom + 1 && r.right <= c.right + 1; })),
+          overflow: cards.flatMap(card => [...card.querySelectorAll<HTMLElement>('.availability-card-heading,.availability-description,.availability-readings,.availability-footer')].flatMap(child => {
+            const r = child.getBoundingClientRect(), c = card.getBoundingClientRect();
+            return r.top >= c.top - 1 && r.bottom <= c.bottom + 1 && r.right <= c.right + 1 ? [] : [{ card: card.querySelector('.availability-name')?.textContent, child: child.className, top: r.top - c.top, bottom: r.bottom - c.bottom, right: r.right - c.right, lineHeight: getComputedStyle(child).lineHeight }];
+          })),
           width: outer.width };
       });
       expect(measurements.height).toBeCloseTo((cardSize === 'compact' ? 148 : 168) * zoom / 100, 0);
       expect(measurements.outerScroll).toBeLessThanOrEqual(1);
       expect(measurements.footHeight).toBeLessThanOrEqual(28 * zoom / 100 + 1);
-      expect(measurements.fits, JSON.stringify(measurements)).toBe(true);
+      expect(measurements.fits, JSON.stringify({ cardSize, zoom, scale, ...measurements })).toBe(true);
       expect(measurements.metricSpacing.length).toBeGreaterThan(0);
       for (const spacing of measurements.metricSpacing) {
         expect(spacing.diskGap).toBeCloseTo(6 * zoom / 100, 0);

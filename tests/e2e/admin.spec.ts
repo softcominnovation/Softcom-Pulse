@@ -89,11 +89,29 @@ test("legacy over-limit composition is preserved until explicitly adjusted, and 
   expect(state.document.screens[0].blocks[0].options?.indicators).toEqual(["jobs_waiting"]);
 });
 test("existing resource preferences remain editable without discovery and keep the UUID", async ({ page }) => {
+  // Login and two cold Next routes share this budget; field assertions keep
+  // their normal timeout so a missing editor still fails promptly.
+  test.setTimeout(60000);
   const state = await adminFixture(page), resourceId = state.resources[0].id;
   state.service.fail = true; state.service.infrastructure.hostsFailed = true;
-  await signIn(page); await page.goto("/admin/recursos");
-  await expect(page.getByText("Associação sem evidência atual").first()).toBeVisible(); await page.locator(".admin-saved-list > li").first().getByRole("button", { name: "Editar", exact: true }).click();
-  await page.getByLabel("Nome amigável").fill("Preferência sem coleta"); await page.getByRole("button", { name: "Salvar recurso" }).click(); await expect.poll(() => state.resources[0].displayName).toBe("Preferência sem coleta");
+  const errors: string[] = []; page.on("pageerror", error => errors.push(error.message));
+  await test.step("load the saved preferences with both discovery requests unavailable", async () => {
+    await signIn(page); await page.goto("/admin/recursos");
+    // The association notice also appears while discovery is still loading.
+    // Wait for the final empty state before clicking a row that could move.
+    await expect(page.getByText("Nenhum recurso disponível nesta leitura.", { exact: true })).toBeVisible();
+    await expect(page.getByText("Associação sem evidência atual").first()).toBeVisible();
+  });
+  await test.step("edit the saved resource and preserve its identity", async () => {
+    const row = page.locator(".admin-saved-list > li").filter({ has: page.getByText(state.resources[0].displayName!, { exact: true }) });
+    await row.getByRole("button", { name: "Editar", exact: true }).click();
+    const editor = page.getByRole("region", { name: "Configuração do recurso", exact: true });
+    await expect(editor).toBeVisible();
+    await editor.getByLabel("Nome amigável").fill("Preferência sem coleta");
+    await editor.getByRole("button", { name: "Salvar recurso" }).click();
+    await expect.poll(() => state.resources[0].displayName).toBe("Preferência sem coleta");
+  });
+  expect(errors).toEqual([]);
   expect(state.resources[0].id).toBe(resourceId); expect(state.writes[0].method).toBe("PATCH");
 });
 test("pending saves prevent duplicate submission and admin routes require a session", async ({ page }) => {

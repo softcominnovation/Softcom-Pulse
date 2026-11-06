@@ -62,6 +62,9 @@
   padding-block: var(--monitor-card-padding); gap: 2px;
 }
 .public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-card > * { flex-shrink: 0; }
+/* A default auto grid track can grow to the footer's unbroken text width.
+   Keep the existing card box and let its label truncate, even with wide fonts. */
+.public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .probe-card-uptime { grid-template-columns: minmax(0, 1fr); }
 .public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-name { line-height: var(--monitor-card-name-line); }
 .public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-description,
 .public-monitor-stage [data-monitor-font-scale] .availability-panel[data-card-size] .availability-state,

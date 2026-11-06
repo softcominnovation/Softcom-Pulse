@@ -2,7 +2,13 @@
 
 ## Escala de fontes por bloco
 
-`PresentationBlock.monitorFontScalePercent` é opcional: de 100 a 160, em passos de 5; ausência equivale a 100 sem regravar a apresentação. É persistido no JSON existente por UUID do bloco/tela e disponibilizado na projeção pública. Veja [como configurar](administration.md#fontes-do-monitor-por-bloco).
+`PresentationBlock.monitorFontScalePercent` é opcional: de 100 a 200, em passos de 5; ausência equivale a 100 sem regravar a apresentação. É persistido no JSON existente por UUID do bloco/tela e disponibilizado na projeção pública. Veja [como configurar](administration.md#fontes-do-monitor-por-bloco).
+
+Extensão de 06/11/2026: as opções de 165% a 200% preservam a geometria existente. `monitorMinicardLayout` limita somente as caixas de linha ao espaço aprovado em 160%; o tamanho efetivo das letras/percentuais continua proporcional até 200%. A mesma função atende React e clássico. Nenhuma reserva nova de altura entra no planejador; zoom, fileiras, barras e opções salvas permanecem iguais.
+
+Na faixa nova, as leituras dos minicards clássicos usam flex em vez de floats para impedir que o percentual desça para outra linha e empurre o rodapé. O valor conserva sua largura; rótulos longos podem ser abreviados visualmente quando a coluna for estreita. Até 160%, o layout anterior permanece intacto.
+
+Validação da extensão: `npm run check` (lint, tipos, 301 unitários e build), 14 E2E dirigidos, integração de persistência por bloco/tela e quatro testes runtime aprovados. A matriz clássica cobre 252 combinações (21 percentuais × dois perfis × três zooms × KPIs ligados/desligados), iframe opaco, snapshots e HTML sem JavaScript. As asserções de altura/encaixe foram mantidas; sem homologação física adicional na TV.
 
 No React, apenas `PublicMonitor` habilita o atributo `data-monitor-font-scale` e a variável `--monitor-font-scale` no wrapper de cada bloco. Os tamanhos de fonte multiplicam o fator uma vez; dimensões, ícones, gaps, medidores e fórmulas de zoom não recebem esse fator. Linhas de títulos e KPIs mantêm seu espaço anterior. O fator de KPIs existente é composto, não substituído. Não se altera o tamanho da fonte de `html` nem o DOM gerenciado pelo React.
 

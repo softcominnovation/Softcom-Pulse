@@ -32,7 +32,7 @@ test('classic per-block fonts survive opaque iframe snapshots, zoom and no-JS wi
       model.document.publicMonitorZoomPercent=zoom;
       for(const block of model.screen.blocks) block.monitorFontScalePercent=scale;
       model.document.revision++;
-      const fullPage = variants.length === 0 || (summaryEnabled && size === 'expanded' && zoom === 125 && scale === 160);
+      const fullPage = variants.length === 0 || (summaryEnabled && size === 'expanded' && zoom === 125 && scale === 200);
       variants.push({size,zoom,scale,page:fullPage ? renderCompatiblePage(model,'Font fixture') : null,html:renderCompatibleContent(model),state:compatibleMonitorState(model)});
     }
     process.stdout.write(JSON.stringify(variants));
@@ -76,7 +76,7 @@ test('classic per-block fonts survive opaque iframe snapshots, zoom and no-JS wi
       }
       const cards=await frame.locator('.availability-card').evaluateAll(cards=>cards.map(card=>{
         const rect=card.getBoundingClientRect(),footer=card.querySelector('.availability-footer').getBoundingClientRect();
-        return {height:rect.height,overflow:footer.bottom-rect.bottom,content:card.scrollHeight-card.clientHeight, meters:[...card.querySelectorAll('.metric-meter')].map(meter=>meter.getBoundingClientRect().height)};
+        return {name:card.querySelector('.availability-name').textContent,height:rect.height,overflow:footer.bottom-rect.bottom,content:card.scrollHeight-card.clientHeight, meters:[...card.querySelectorAll('.metric-meter')].map(meter=>meter.getBoundingClientRect().height)};
       }));
       for(const card of cards) {
         assert.ok(Math.abs(card.height-(current.size==='compact'?148:168)*current.zoom/100)<1);
@@ -100,14 +100,15 @@ test('classic per-block fonts survive opaque iframe snapshots, zoom and no-JS wi
       assert.ok(await frame.locator('.availability-panel').evaluate(node=>node.scrollHeight-node.clientHeight)<=1);
       const storage = await frame.locator('.block-storage_summary .storage-panel').evaluate(storageScrollGeometry);
       assert.deepEqual(storage,{singleScroll:true,contentFits:true,noPageOverflow:true},`Storage at ${current.zoom}/${current.scale}`);
-      if (current.size === 'expanded' && current.zoom === 70 && current.scale === 160) await page.screenshot({ path: '.cache/font-classic-160-' + current.size + '.png' });
+      if (current.size === 'expanded' && current.zoom === 70 && current.scale === 200) await page.screenshot({ path: '.cache/font-classic-200-' + current.size + '.png' });
+      if (current.size === 'compact' && current.zoom === 125 && current.scale === 200) await page.screenshot({ path: '.cache/font-classic-200-compact.png' });
     }
     await frame.locator('#compat-auto-scroll').click();
     await expect.poll(()=>frame.locator('.block-asgard_summary .panel-content').evaluate(node=>node.scrollTop)).toBeGreaterThan(0);
     assert.deepEqual(errors,[]);
     const noJs=await browser.newContext({javaScriptEnabled:false,viewport:{width:1920,height:1080}});
     const plain=await noJs.newPage(); await plain.goto(base+'/monitor/compat');
-    assert.ok(Math.abs(await plain.locator('.panel-heading h2').first().evaluate(node=>parseFloat(getComputedStyle(node).fontSize))-20.8)<.01);
+    assert.ok(Math.abs(await plain.locator('.panel-heading h2').first().evaluate(node=>parseFloat(getComputedStyle(node).fontSize))-26)<.01);
     await noJs.close();
   } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve=>server.close(resolve)); }
 });

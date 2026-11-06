@@ -34,7 +34,7 @@ for (const cardSize of ['compact', 'expanded']) for (const zoom of [70, 100, 125
     const baseline = await readings(page);
     // Cover the previous range, its extension and the maximum in React.
     // Every 5% step is exercised by the schema and classic runtime matrix.
-    for (const scale of [115, 130, 160]) {
+    for (const scale of [115, 130, 160, 180, 200]) {
       for (const block of screen.blocks) block.monitorFontScalePercent = scale;
       await page.reload();
       const scaled = await readings(page);
@@ -76,7 +76,7 @@ for (const cardSize of ['compact', 'expanded']) for (const zoom of [70, 100, 125
       for (const height of measurements.meterHeights) expect(height).toBeCloseTo((cardSize === 'compact' ? 12 : 16) * zoom / 100, 0);
       const panelMeters = await page.locator('[data-block-id] .metric-meter').evaluateAll(nodes => nodes.map(node => node.getBoundingClientRect().height));
       for (const height of panelMeters) expect(height).toBeCloseTo(12 * zoom / 100, 0);
-      if (zoom === 70 && scale === 160) await page.screenshot({ path: '.cache/font-monitor-160-' + cardSize + '.png' });
+      if (zoom === 70 && scale === 200) await page.screenshot({ path: '.cache/font-monitor-200-' + cardSize + '.png' });
     }
   await signIn(page); await page.goto('/');
   const rootScaled = await readings(page);
@@ -97,20 +97,20 @@ test('block font preferences save independently per screen and reading save leav
   state.document.screens.push(second);
   await signIn(page); await page.goto('/admin/configuracoes');
   const block = page.getByRole('article', { name: 'Serviços destacados na tela 1', exact: true });
-  await block.getByLabel('Tamanho das fontes no /monitor (%)', { exact: true }).selectOption('160');
+  await block.getByLabel('Tamanho das fontes no /monitor (%)', { exact: true }).selectOption('200');
   await page.getByRole('button', { name: 'Salvar leitura do telão', exact: true }).click();
   await expect.poll(() => state.writes.length).toBe(1);
   expect(find('highlighted_resources').monitorFontScalePercent).toBeUndefined();
   await page.getByRole('button', { name: 'Salvar apresentação', exact: true }).click();
-  await expect.poll(() => state.document.screens[0].blocks.find(item => item.type === 'highlighted_resources')!.monitorFontScalePercent).toBe(160);
+  await expect.poll(() => state.document.screens[0].blocks.find(item => item.type === 'highlighted_resources')!.monitorFontScalePercent).toBe(200);
   expect(state.document.screens[1].blocks.every(item => item.monitorFontScalePercent === 110)).toBe(true);
-  await page.reload(); await expect(block.getByLabel('Tamanho das fontes no /monitor (%)', { exact: true })).toHaveValue('160');
+  await page.reload(); await expect(block.getByLabel('Tamanho das fontes no /monitor (%)', { exact: true })).toHaveValue('200');
   await page.goto('/monitor?compat=0');
-  await expect(page.locator('.block-highlighted_resources')).toHaveAttribute('data-monitor-font-scale', '160');
+  await expect(page.locator('.block-highlighted_resources')).toHaveAttribute('data-monitor-font-scale', '200');
   const titleSize = await page.locator('.block-highlighted_resources .panel-heading h2').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
   await page.getByRole('combobox', { name: 'Escolher tela', exact: true }).selectOption(second.id);
   await expect(page.locator('.block-highlighted_resources')).toHaveAttribute('data-monitor-font-scale', '110');
-  expect(await page.locator('.block-highlighted_resources .panel-heading h2').evaluate(node => parseFloat(getComputedStyle(node).fontSize))).toBeCloseTo(titleSize / 160 * 110, 1);
+  expect(await page.locator('.block-highlighted_resources .panel-heading h2').evaluate(node => parseFloat(getComputedStyle(node).fontSize))).toBeCloseTo(titleSize / 200 * 110, 1);
 });
 
 test('monitor block fonts compose KPI scale and leave adjacent panels unchanged', async ({ page }) => {
@@ -123,20 +123,20 @@ test('monitor block fonts compose KPI scale and leave adjacent panels unchanged'
     find('summary').monitorFontScalePercent = 100;
     await page.goto('/monitor?compat=0');
     const before = await readings(page);
-    find('summary').monitorFontScalePercent = 160;
+    find('summary').monitorFontScalePercent = 200;
     await page.reload();
     const after = await readings(page);
     for (let i = 0; i < before.length; i++) {
       expect(Math.abs(after[i].box.height - before[i].box.height), before[i].id ?? 'block').toBeLessThan(1);
-      const factor = before[i].id === find('summary').id ? 1.6 : 1;
+      const factor = before[i].id === find('summary').id ? 2 : 1;
       after[i].fonts.forEach((font, j) => expect(font.size).toBeCloseTo(before[i].fonts[j].size * factor, 1));
     }
   }
-  for (const block of screen.blocks) block.monitorFontScalePercent = 160;
+  for (const block of screen.blocks) block.monitorFontScalePercent = 200;
   state.document.publicMonitorZoomPercent = 70;
   await page.reload();
   await readings(page);
-  await page.screenshot({ path: '.cache/font-monitor-160.png' });
+  await page.screenshot({ path: '.cache/font-monitor-200.png' });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
   await expect(page.locator('.block-summary .dashboard-kpi').first()).toBeVisible();

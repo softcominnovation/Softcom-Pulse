@@ -1,15 +1,18 @@
-// Shared spacing for the monitor's 148/168px cards, including 160% block fonts.
+// Shared spacing for the monitor's fixed 148/168px cards.
 // Column counts, history strips and zoom are not changed.
 export function monitorMinicardLayout(percent: number, expanded: boolean) {
   const factor = percent / 100;
+  // Above 160% only the glyphs grow, as in panel headings/KPIs. Keep the
+  // approved line boxes so three metrics cannot push the footer out of its card.
+  const lineFactor = Math.min(factor, 1.6);
   const round = (value: number) => Number(value.toFixed(4));
   return {
     padding: round(expanded ? Math.max(6, 10 - (factor - 1) * 7) : Math.max(4, 8 - (factor - 1) * 7)),
-    nameLine: round(Math.max(expanded ? 20 : 17, (expanded ? 15 : 13) * factor * 1.05)),
-    textLine: round(Math.max(expanded ? 14 : 13, (expanded ? 11 : 10) * factor * 1.05)),
+    nameLine: round(Math.max(expanded ? 20 : 17, (expanded ? 15 : 13) * lineFactor * 1.05)),
+    textLine: round(Math.max(expanded ? 14 : 13, (expanded ? 11 : 10) * lineFactor * 1.05)),
     percentageSize: round((expanded ? 14.3 : 13) * factor),
     // Keep the approved line boxes and spacing when enlarging only the glyphs.
-    percentageLine: round(Math.max(expanded ? 14 : 13, (expanded ? 13.2 : 12) * factor * 1.1)),
+    percentageLine: round(Math.max(expanded ? 14 : 13, (expanded ? 13.2 : 12) * lineFactor * 1.1)),
     footerPadding: 2,
   };
 }
@@ -25,6 +28,15 @@ export function compatibleMinicardLayout(percent: number) {
   return [false, true].map(expanded => {
     const fit = monitorMinicardLayout(percent, expanded);
     const scope = `[data-monitor-font-scale="${percent}"] .availability-grid[data-card-size="${expanded ? 'expanded' : 'compact'}"]`;
+    // Legacy floated readings can wrap the percentage below its label at the
+    // new larger sizes. Match the modern card: reserve the value's width and
+    // truncate only the label when the column is too narrow.
+    const largeReading = percent > 160
+      ? `${scope} .mini-metrics > .reading{display:flex;flex-wrap:wrap;align-items:center}` +
+        `${scope} .mini-metrics > .reading > span:first-child{float:none;flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}` +
+        `${scope} .mini-metrics > .reading > strong{float:none;flex:0 0 auto;white-space:nowrap}` +
+        `${scope} .mini-metrics .metric-meter{flex:0 0 100%}`
+      : '';
     return `${scope} .availability-card{display:flex;flex-direction:column;gap:2px;padding-top:${fit.padding}px;padding-bottom:${fit.padding}px}` +
       `${scope} .availability-card > *{flex-shrink:0}` +
       `${scope} .availability-name{line-height:${fit.nameLine}px}` +
@@ -35,6 +47,6 @@ export function compatibleMinicardLayout(percent: number) {
       `${scope} .mini-metrics[data-metric-count="3"] > .reading:first-child{padding-bottom:6px}` +
       `${scope} .reading[data-usage-percent] > strong{font-size:${fit.percentageSize}px;line-height:${fit.percentageLine}px;font-weight:600}` +
       `${scope} .availability-content .metric-meter{margin-top:1px}` +
-      `${scope} .availability-footer{padding-top:${fit.footerPadding}px;margin-top:0}`;
+      `${scope} .availability-footer{padding-top:${fit.footerPadding}px;margin-top:0}` + largeReading;
   }).join('');
 }

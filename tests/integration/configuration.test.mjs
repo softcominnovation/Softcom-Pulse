@@ -1417,15 +1417,15 @@ test("monitor text scales persist per block and screen through private and publi
     const { revision: ignored, ...settings } = initialV2(randomUUID); void ignored;
     settings.screens.push(initialV2(randomUUID).screens[0]);
     settings.screens[0].blocks[1].monitorFontScalePercent = 115;
-    settings.screens[1].blocks[1].monitorFontScalePercent = 160;
+    settings.screens[1].blocks[1].monitorFontScalePercent = 200;
     const saved = await savePresentation({ expectedRevision: previous.revision, settings });
     const privateRead = (await getPresentation()).data;
-    assert.deepEqual(privateRead.screens.map(screen => screen.blocks.map(block => block.monitorFontScalePercent)), [[undefined,115,undefined,undefined],[undefined,160,undefined,undefined]]);
+    assert.deepEqual(privateRead.screens.map(screen => screen.blocks.map(block => block.monitorFontScalePercent)), [[undefined,115,undefined,undefined],[undefined,200,undefined,undefined]]);
     process.env.PULSE_PUBLIC_HOSTS = "fonts.example.test"; process.env.PULSE_DEMO_MODE = "0";
     const response = await publicGet(new Request("http://fonts.example.test/api/public/settings/presentation", {headers:{Host:"fonts.example.test"}}), ["settings","presentation"]);
     assert.equal(response.status, 200);
     assert.deepEqual((await response.json()).data.screens, privateRead.screens);
-    const invalid = structuredClone(settings); invalid.screens[1].blocks[1].monitorFontScalePercent = 200;
+    const invalid = structuredClone(settings); invalid.screens[1].blocks[1].monitorFontScalePercent = 205;
     await assert.rejects(savePresentation({expectedRevision:saved.data.revision,settings:invalid}), error => error.name === "ZodError");
     assert.equal((await getPresentation()).data.revision, saved.data.revision);
   } finally {

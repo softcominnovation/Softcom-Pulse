@@ -15,8 +15,8 @@ test('monitor typography is optional, bounded and independent per block and scre
     assert.equal(presentationDocumentSchema.parse(document).screens[0].blocks[0].monitorFontScalePercent, value);
     assert.equal(document.screens[0].blocks[1].monitorFontScalePercent, undefined);
   }
-  assert.deepEqual([...monitorFontScaleOptions], Array.from({length: 13}, (_, index) => 100 + index * 5));
-  for (const value of [0, -5, 99, 101, 115.5, 126, 161, 165, '115', null]) {
+  assert.deepEqual([...monitorFontScaleOptions], Array.from({length: 21}, (_, index) => 100 + index * 5));
+  for (const value of [0, -5, 99, 101, 115.5, 126, 161, 201, 205, '115', null]) {
     block.monitorFontScalePercent = value;
     assert.equal(presentationDocumentSchema.safeParse(document).success, false, String(value));
   }

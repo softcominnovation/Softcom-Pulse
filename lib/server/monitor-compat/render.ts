@@ -1,4 +1,4 @@
-import { effectiveOptions, monitorFontScaleOptions, type OptionsByType, type PresentationBlock } from "../../config/presentation.ts";
+import { effectiveOptions, type OptionsByType, type PresentationBlock } from "../../config/presentation.ts";
 import { resolveAvailabilityPanel, type AvailabilityPanelCard } from "../../dashboard/availability-cards.ts";
 import { cardMetricOrder, type CardMetric } from "../../config/agent-monitoring.ts";
 import { vpsCardValues, vpsCardReadingMaxAgeMs } from "../../vps/labels.ts";
@@ -153,7 +153,7 @@ function storagePanel(item: StorageView | null, stale: boolean, now: number, vis
   const rows = visibleStorageVolumes(item).map(volume => cells([h(volume.name), reading("", volume.metrics.diskUsagePercent, old, now, "disk"), `${h(metricValue(volume.metrics.diskUsedBytes))} / ${h(metricValue(volume.metrics.diskTotalBytes))}`, h(metricValue(volume.availableBytes)), h(metricValue(volume.inodesFreePercent)), volume.readOnly?.value == null ? "Sem dados" : volume.readOnly.value ? "Somente leitura" : "Leitura e escrita"]));
   const traffic = network ? `<p class="storage-traffic">${h(network.name)} · RX ${h(metricValue(network.metrics.networkReceiveBitsPerSecond))} · TX ${h(metricValue(network.metrics.networkTransmitBitsPerSecond))}</p>` : "";
   const volumes = rows.length ? table(["Volume", "Ocupado", "Usado / total", "Disponível", "Inodes livres", "Acesso"], rows, visibleRows, "Volumes do Storage", "storage-volumes") : empty("Nenhum dos volumes escolhidos está disponível nesta leitura.");
-  return panelFrame(item.displayName, `<div class="panel-content storage-body" data-layout-font-scale="${monitorFontScaleOptions.at(-1)}">${body}${volumes}${traffic}</div>`, `<span>${rows.length} de ${item.volumes.length} volumes visíveis · ${h(item.capacity.label)}</span><span>Leitura ${h(stamp(item.evidence.observedAt))}</span>`, badge(status.label, status.tone, earliestExpiry(item.evidence.validUntil, item.classification.validUntil)), "database", "storage-panel");
+  return panelFrame(item.displayName, `<div class="panel-content storage-body">${body}${volumes}${traffic}</div>`, `<span>${rows.length} de ${item.volumes.length} volumes visíveis · ${h(item.capacity.label)}</span><span>Leitura ${h(stamp(item.evidence.observedAt))}</span>`, badge(status.label, status.tone, earliestExpiry(item.evidence.validUntil, item.classification.validUntil)), "database", "storage-panel");
 }
 function signalPanel(data: SignalFlowBlockData, visibleRows: number) {
   const target = data.target;
@@ -268,10 +268,7 @@ export function renderCompatibleContent(model: CompatibleMonitor) {
     const panels = row.blocks.map(({ block, span }) => `<div class="compat-cell block-${block.type}" style="width:${span / 12 * 100}%" data-block-id="${h(block.id)}" data-monitor-font-scale="${block.monitorFontScalePercent ?? 100}">${renderBlock(model, block)}</div>`).join("");
     return `<div class="compat-row${row.contentSized ? " content-sized" : ""}${row.paired ? " split-row" : ""}"${expanded ? ' data-expanded-row="true"' : ""}${measured ? ' data-measured-row="true"' : ""} data-min-height="${row.minimum}"${row.contentSized ? "" : ` style="min-height:${row.minimum}px"`}>${panels}</div>`;
   }).join("");
-  // The controller measures Storage's fixed readings at the largest supported
-  // font, even when no block currently selects it. This keeps slot sizes stable.
-  const storageLayoutFont = enabled.some(block => block.type === "storage_summary") ? monitorFontScaleOptions.at(-1)! : null;
-  const typography = [...new Set([...enabled.map(block => block.monitorFontScalePercent ?? 100), ...(storageLayoutFont ? [storageLayoutFont] : [])])].map(value => (value === 100 ? "" : compatibleBlockTypography(value)) + compatibleMinicardLayout(value)).join("");
+  const typography = [...new Set(enabled.map(block => block.monitorFontScalePercent ?? 100))].map(value => (value === 100 ? "" : compatibleBlockTypography(value)) + compatibleMinicardLayout(value)).join("");
   const old = model.error || model.overview?.stale;
   return `${typography ? `<style data-monitor-block-fonts>${typography}</style>` : ""}<div class="compat-evidence${old ? " is-stale" : ""}" data-updated-at="${h(model.overview?.lastUpdated)}">${old ? `<p class="compat-warning" role="alert">${h(model.error ?? "Dados desatualizados. Confira o horário de cada leitura.")}</p>` : ""}${model.document.showStatusBanner ? `<p class="monitor-status">${h(model.overview?.availability === "ready" ? "Monitoramento atualizado" : "Aguardando dados do monitoramento")} · ${h(stamp(model.overview?.lastUpdated))}</p>` : ""}${summaries}<div class="dashboard-blocks" aria-busy="false" tabindex="0" role="region" aria-label="Composição da tela">${rows}</div><footer class="dashboard-footer"><span><i class="status-dot tone-good"></i>Disponível · <i class="status-dot tone-warn"></i>Atenção · <i class="status-dot tone-bad"></i>Indisponível · <i class="status-dot tone-unknown"></i>Desconhecido / sem dados</span><span>Horários de Fortaleza · UTC−3 · Leitura ${h(stamp(model.overview?.lastUpdated))}</span></footer></div>`;
 }

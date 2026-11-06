@@ -208,17 +208,7 @@
     }
   }
   function storageMinimum(panel) {
-    var block = panel.closest('[data-monitor-font-scale]'), body = panel.querySelector('.storage-body');
-    var originalScale = block ? block.getAttribute('data-monitor-font-scale') : null;
-    var layoutScale = body && body.getAttribute('data-layout-font-scale');
-    // Reserve the full supported font envelope, independently of the preference.
-    // The generated numeric CSS also includes this scale for old WebViews.
-    // Restore synchronously: no visible font change, state mutation or cloning.
-    if (block && layoutScale) block.setAttribute('data-monitor-font-scale', layoutScale);
-    try { return measureStorageMinimum(panel); }
-    finally { if (block && layoutScale) block.setAttribute('data-monitor-font-scale', originalScale); }
-  }
-  function measureStorageMinimum(panel) {
+    // Reserve only the readings at their configured font, not a hypothetical maximum.
     function edges(element) {
       var style = window.getComputedStyle(element);
       return (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0) + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
@@ -248,13 +238,9 @@
       each(grid.querySelectorAll('.card-wrap'), function (card) { card.style.width = 100 / columns + '%'; });
       grid.setAttribute('data-card-columns', String(columns));
     });
-    each(content.querySelectorAll('.compat-row:not([data-custom-slot-row])'), function (row) {
-      if (!row.hasAttribute('data-measured-row') && !row.querySelector('.storage-panel')) return;
-      var minimum = row.hasAttribute('data-measured-row') ? (row.parentNode.children.length > 1 ? 0 : 210) : Number(row.getAttribute('data-min-height')) || 210;
+    each(content.querySelectorAll('.compat-row[data-measured-row]'), function (row) {
+      var minimum = row.parentNode.children.length > 1 ? 0 : 210;
       var rowStyle = window.getComputedStyle(row);
-      each(row.querySelectorAll('.storage-panel'), function (panel) {
-        minimum = Math.max(minimum, storageMinimum(panel) + parseFloat(rowStyle.paddingTop || 0) + parseFloat(rowStyle.paddingBottom || 0));
-      });
       each(row.querySelectorAll('.availability-panel > .availability-grid'), function (grid) {
         var panel = grid.parentNode, border = window.getComputedStyle(panel);
         var height = parseFloat(rowStyle.paddingTop || 0) + parseFloat(rowStyle.paddingBottom || 0) + parseFloat(border.borderTopWidth || 0) + parseFloat(border.borderBottomWidth || 0);
@@ -266,7 +252,7 @@
       });
       if ((' ' + row.className + ' ').indexOf(' content-sized ') === -1) {
         row.style.minHeight = minimum + 'px';
-        if (row.hasAttribute('data-measured-row') && row.parentNode.children.length > 1) row.style.height = minimum + 'px';
+        if (row.parentNode.children.length > 1) row.style.height = minimum + 'px';
       }
     });
     each(content.querySelectorAll('.compat-row[data-custom-slot-row]'), function (row) {
@@ -275,8 +261,6 @@
         var height = 0;
         each(group.children, function (wrapper) {
           var panel = wrapper.querySelector('.availability-panel'), panelHeight = 210;
-          var storage = wrapper.querySelector('.storage-panel');
-          if (storage) panelHeight = Math.max(panelHeight, storageMinimum(storage));
           if (panel) {
             var border = window.getComputedStyle(panel);
             panelHeight = parseFloat(border.borderTopWidth || 0) + parseFloat(border.borderBottomWidth || 0);
@@ -285,13 +269,21 @@
               panelHeight += Math.max(child.offsetHeight, parseFloat(spacing.height) || 0) + parseFloat(spacing.marginTop || 0) + parseFloat(spacing.marginBottom || 0);
             });
           }
-          height = Math.max(height, panelHeight);
+          height += panelHeight;
         });
-        minimum = Math.max(minimum, height * group.children.length + Math.max(0, group.children.length - 1) * 12);
+        minimum = Math.max(minimum, height + Math.max(0, group.children.length - 1) * 12);
       });
       minimum = Math.ceil(minimum + parseFloat(rowStyle.paddingTop || 0) + parseFloat(rowStyle.paddingBottom || 0));
       row.style.minHeight = minimum + 'px';
       if ((' ' + row.className + ' ').indexOf(' compat-slot-row-measured ') !== -1) row.style.height = minimum + 'px';
+    });
+    each(content.querySelectorAll('.storage-panel'), function (panel) {
+      var body = panel.querySelector('.storage-body');
+      if (!body) return;
+      var constrained = panel.offsetHeight + 1 < storageMinimum(panel);
+      panel.setAttribute('data-storage-scroll', constrained ? 'body' : 'volumes');
+      body.setAttribute('tabindex', constrained ? '0' : '-1');
+      body.setAttribute('role', 'region'); body.setAttribute('aria-label', 'Dados do Storage');
     });
   }
   function openModal(title, html, trigger, kind) {

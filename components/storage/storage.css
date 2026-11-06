@@ -12,6 +12,8 @@
 .storage-capacity { display:flex; gap:5px; align-items:baseline; flex-wrap:wrap; }
 .storage-note { color:var(--pulse-muted); font-size:calc((12px) * var(--monitor-font-scale, 1)); margin:6px 0 10px; }
 .storage-body > .storage-volumes { flex:0 1 auto; min-height:0; max-height:calc((33px * var(--storage-rows,3) + 30px) * var(--dashboard-scale,1)); overflow:auto; }
+.storage-panel[data-storage-scroll="body"] .storage-body { overflow:auto; }
+.storage-panel[data-storage-scroll="body"] .storage-volumes { flex:none; max-height:none; overflow:visible; }
 .storage-volumes table { width:100%; border-collapse:collapse; font-size:calc((calc(11px * var(--dashboard-scale,1))) * var(--monitor-font-scale, 1)); }
 .storage-volumes th { text-align:left; color:var(--pulse-muted); background:var(--pulse-surface); position:sticky; top:0; z-index:1; }
 .storage-volumes th,.storage-volumes td { padding:6px 8px; border-bottom:1px solid var(--pulse-line); white-space:nowrap; }

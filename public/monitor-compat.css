@@ -166,6 +166,9 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
 .storage-panel .storage-body { display: flex; flex-direction: column; overflow: hidden; }
 .storage-body > * { flex-shrink: 0; }
 .storage-body > .storage-volumes { flex: 0 1 auto; min-height: 0; overflow: auto; }
+.storage-panel[data-storage-scroll="body"] .storage-body, .storage-panel:not([data-storage-scroll]) .storage-body { overflow: auto; }
+.storage-panel[data-storage-scroll="body"] .storage-volumes, .storage-panel:not([data-storage-scroll]) .storage-volumes { flex: none; max-height: none !important; overflow: visible; }
+@media (min-width:761px) { .compat-cell .storage-panel .storage-body { contain: size; } }
 .host-card-grid { overflow: auto; font-size: 0; }
 .host-card { display: inline-block; width: 49%; vertical-align: top; padding: 10px; margin: .5%; border: 1px solid #333; border-radius: 9px; font-size: 11px; }
 .host-card .panel-heading { padding: 0; min-height: 25px; }

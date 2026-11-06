@@ -3,7 +3,6 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import type { PresentationBlock } from "@/lib/config/presentation";
 import type { OverviewSlots } from "@/lib/config/overview-slots";
 import { overviewSlotLayout, overviewPanelMinimum } from "@/lib/dashboard/overview-slot-layout";
-import { storagePanelMinimum } from "@/lib/dashboard/storage-panel-size";
 import "./slot-composition.css";
 
 export function SlotComposition({ blocks, slots, render, onOverflow, monitor = false }: { blocks: PresentationBlock[]; slots: OverviewSlots; render: (block: PresentationBlock) => ReactNode; monitor?: boolean; onOverflow?: (value: boolean) => void }) {
@@ -22,22 +21,17 @@ export function SlotComposition({ blocks, slots, render, onOverflow, monitor = f
         let availability = 0;
         const minimum = Math.max(...[...row.children].map(group => {
           const children = [...group.children] as HTMLElement[];
-          const panelHeights = children.map(child => {
+          return children.reduce((total, child) => {
             const panel = child.querySelector<HTMLElement>(".availability-panel");
-            if (!panel) {
-              const storage = child.querySelector<HTMLElement>(".storage-panel");
-              return Math.max(overviewPanelMinimum * scale, storage ? storagePanelMinimum(storage) : 0);
-            }
+            if (!panel) return total + overviewPanelMinimum * scale;
             const style = getComputedStyle(panel);
             const height = [...panel.children].reduce((sum, item) => {
               const spacing = getComputedStyle(item);
               return sum + Math.max((item as HTMLElement).offsetHeight, parseFloat(spacing.height) || 0) + (parseFloat(spacing.marginTop) || 0) + (parseFloat(spacing.marginBottom) || 0);
             }, 0) + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
             availability = Math.max(availability, height);
-            return height;
-          });
-          // Stacked panels share equal halves; each half must fit the larger minimum.
-          return Math.max(0, ...panelHeights) * children.length + Math.max(0, children.length - 1) * (parseFloat(getComputedStyle(group).rowGap) || 0);
+            return total + height;
+          }, 0) + Math.max(0, children.length - 1) * (parseFloat(getComputedStyle(group).rowGap) || 0);
         }));
         if (availability && minimum > availability + 1) limited = true;
         const value = String(minimum / scale);
@@ -52,7 +46,7 @@ export function SlotComposition({ blocks, slots, render, onOverflow, monitor = f
     };
     const observer = new ResizeObserver(check), observed = new Set<Element>();
     const watch = () => {
-      const targets = new Set<Element>([element, ...element.querySelectorAll(".slot-composition-summaries, .availability-panel > *, .storage-panel > *, .storage-body > *, .storage-volumes thead, .storage-volumes tbody tr:first-child")]);
+      const targets = new Set<Element>([element, ...element.querySelectorAll(".slot-composition-summaries, .availability-panel > *")]);
       observed.forEach(node => { if (!targets.has(node)) { observer.unobserve(node); observed.delete(node); } });
       targets.forEach(node => { if (!observed.has(node)) { observer.observe(node); observed.add(node); } });
       check();

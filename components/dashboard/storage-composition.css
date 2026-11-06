@@ -22,6 +22,10 @@
   .dashboard .dashboard-blocks.has-storage .storage-composition-row-measured:not(:only-child):not(.storage-composition-row-content) { flex:0 0 auto; height:calc(var(--row-minimum) * 1px * var(--dashboard-scale,1)); }
 }
 .storage-composition .storage-body { padding:0 calc(14px * var(--dashboard-scale,1)) 6px; }
+/* A scrolling body's expanded table must not become the intrinsic row height. */
+@media (min-width:1201px) and (min-height:480px) {
+  .storage-composition .storage-panel .storage-body { contain:size; }
+}
 .storage-composition .problem-list,.storage-composition .asgard-machines,.storage-composition .signal-flow-body { flex:1; min-height:0; overflow:auto; }
 .storage-composition-scroll { overflow:auto; }
 .storage-composition-scroll .storage-composition-rows { flex:0 0 auto; }

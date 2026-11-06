@@ -1,21 +1,47 @@
 "use client";
-import { useContext, type CSSProperties, type ReactNode } from "react";
+import { useContext, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { IconDatabase } from "@tabler/icons-react";
 import type { StorageView } from "@/lib/storage/contracts";
 import { storageStatus, visibleStorageVolumes } from "@/lib/storage/presentation";
 import { timestamp } from "@/lib/dashboard/format";
 import { EvidenceTimeContext, MetricValue } from "@/components/dashboard/metrics";
 import { ServiceTitle } from "@/components/dashboard/service-title";
+import { storagePanelMinimum } from "@/lib/dashboard/storage-panel-size";
 import "./storage.css";
 
 export function StoragePanel({ item, stale = false, visibleRows = 3, actions }: { item: StorageView | null; stale?: boolean; visibleRows?: number; actions?: ReactNode }) {
+  const root = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const panel = root.current;
+    if (!panel) return;
+    const check = () => {
+      const body = panel.querySelector<HTMLElement>(".storage-body");
+      if (!body) return;
+      // Keep the dashboard's row budget. Small slots scroll their content in one
+      // place instead of enlarging the entire composition or clipping readings.
+      const constrained = panel.offsetHeight + 1 < storagePanelMinimum(panel);
+      const mode = constrained ? "body" : "volumes";
+      if (panel.dataset.storageScroll !== mode) panel.dataset.storageScroll = mode;
+      body.tabIndex = constrained ? 0 : -1;
+    };
+    const observer = new ResizeObserver(check), observed = new Set<Element>();
+    const watch = () => {
+      const targets = new Set<Element>([panel, ...panel.querySelectorAll(".panel-heading,.panel-foot,.storage-body > *,.storage-volumes thead,.storage-volumes tbody tr:first-child")]);
+      observed.forEach(node => { if (!targets.has(node)) { observer.unobserve(node); observed.delete(node); } });
+      targets.forEach(node => { if (!observed.has(node)) { observer.observe(node); observed.add(node); } });
+      check();
+    };
+    const changes = new MutationObserver(watch);
+    changes.observe(panel, { childList: true, subtree: true }); watch();
+    return () => { observer.disconnect(); changes.disconnect(); };
+  }, []);
   const now = useContext(EvidenceTimeContext);
   const old = stale || !!item?.stale;
   const volumes = item ? visibleStorageVolumes(item) : [];
   const status = item ? storageStatus({ ...item, stale: old }, now) : { label: "Sem dados", tone: "unknown" };
-  return <section className="dashboard-panel storage-panel" style={{ "--storage-rows": visibleRows } as CSSProperties} aria-label={`Storage ${item?.displayName ?? "indisponível"}`}>
+  return <section ref={root} className="dashboard-panel storage-panel" style={{ "--storage-rows": visibleRows } as CSSProperties} aria-label={`Storage ${item?.displayName ?? "indisponível"}`}>
     <div className="panel-heading"><IconDatabase aria-hidden="true" /><ServiceTitle status={<span className={`status-pill tone-${status.tone}`}><i className="status-dot" />{status.label}</span>}><h2 title={item?.displayName}>{item?.displayName ?? "Storage indisponível"}</h2></ServiceTitle>{actions && <div className="storage-actions">{actions}</div>}</div>
-    {item ? <div className="storage-body">
+    {item ? <div className="storage-body" role="region" aria-label="Dados do Storage">
       {item.presentationStatus === "unavailable" && <p role="status" className="storage-note">Personalização indisponível; identificação técnica preservada.</p>}
       {item.description && <p className="storage-note">{item.description}</p>}
       <div className="storage-primary">{([

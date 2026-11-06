@@ -112,3 +112,13 @@ Validação final desta correção:
 - **4/4 runtime** no artefato novo: cards/controles, encaixe inferior do Storage em iframe opaco, rolagem interna exclusiva e matriz de 252 combinações de fontes/zoom/perfil/KPIs, com snapshots e HTML sem JavaScript.
 
 Não houve nova rodada integral dos dois shards. A execução foi local em Windows, incluindo o diagnóstico com fontes Linux; o próximo CI confirma o runner Linux. Preferências reais, versão antiga e layout das fileiras não foram alterados. Sem commit, push ou deploy.
+
+## Referências tipográficas no runtime clássico — 06/11/2026
+
+O CI seguinte aprovou 26 dos 27 testes runtime e falhou na comparação de fontes a 200%. A reprodução com DejaVu Sans/Mono confirmou que o título `Serviço configurado` (30px) estava sendo comparado ao horário `Leitura …` do card anterior (11px), em vez de ao próprio título (15px). O teste filtrava elementos de largura zero antes de associar as medições pelo índice. Quando o rótulo opcional do rodapé era truncado por completo, todos os índices seguintes mudavam.
+
+A correção é exclusiva do teste: associar blocos por UUID e textos pela posição no DOM **antes** do filtro de visibilidade, além de conferir que o texto de referência é o mesmo. As tolerâncias continuam em 0,04px para fontes, 1,5px para altura do painel e 1px para largura; os limites de cards, fileiras, medidores e rolagem permanecem iguais. Nenhum CSS, renderer, zoom, controlador ou layout de produção foi alterado nesta etapa.
+
+A matriz original de 252 combinações continua. Um cenário adicional aumenta somente o espaçamento entre caracteres dos horários na página de teste, confirma que um rótulo perde largura visível e verifica a proporcionalidade dos demais textos por identidade. Esse estilo é removido antes da checagem de rolagem e não é enviado ao aplicativo. Não depende de fontes externas ou específicas do sistema operacional. O diagnóstico local com DejaVu reproduziu a falha antes e passou depois; os arquivos de fonte permanecem apenas na pasta ignorada de diagnóstico.
+
+Validação final: `npm run check` aprovado (lint, tipos, 301 unitários e build/empacotamento; apenas o aviso preexistente do ícone não utilizado). `npm run test:runtime` completo aprovado: **27/27**, sem skips, cancelamentos ou falhas. O caso de fontes passou também isoladamente e na reprodução com DejaVu Sans/Mono. Não houve nova execução E2E porque esta correção não altera a aplicação; o próximo CI confirma a rodada nativa Linux. Sem commit, push ou deploy.

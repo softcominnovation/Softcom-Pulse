@@ -14,9 +14,17 @@ Atualização: aplicar migrations e gerar Prisma Client, como no build/entrypoin
 
 ## Rolagem do painel
 
-O corpo externo do Storage organiza métricas e rede, sem barra própria; somente a tabela de volumes rola vertical/horizontalmente. A composição reserva cabeçalho, leituras, rede, rodapé e ao menos uma linha completa da tabela, medidos em pixels lógicos antes do zoom. Fontes ampliadas entram na medida real. Pares empilhados reservam o maior mínimo em ambas as metades; os demais painéis mantêm seus encaixes. Quando os mínimos não cabem na tela, permanece o fallback de rolagem da composição, em vez de cortar dados ou criar uma segunda barra dentro do Storage. A rolagem automática do `/monitor` acompanha a tabela.
+O corpo externo do Storage organiza métricas e rede, sem barra própria; somente a tabela de volumes rola vertical/horizontalmente. A composição reserva cabeçalho, leituras, rede, rodapé e ao menos uma linha completa da tabela, medidos em pixels lógicos antes do zoom. No `/monitor`, a reserva considera a maior fonte permitida, como detalhado abaixo. Pares empilhados reservam o maior mínimo em ambas as metades; os demais painéis mantêm seus encaixes. Quando os mínimos não cabem na tela, permanece o fallback de rolagem da composição, em vez de cortar dados ou criar uma segunda barra dentro do Storage. A rolagem automática do `/monitor` acompanha a tabela.
 
 O renderer clássico usa o mesmo filtro e uma tabela `.storage-volumes` dentro do corpo flexível. A regra geral que transfere rolagem para o corpo dos painéis ASGARD/Signal exclui a tabela do Storage. Não voltar a aplicar `overflow:auto` em `.storage-body` nem remover a rolagem interna da tabela.
+
+### Correção da geometria ao ampliar fontes — 06/11/2026
+
+O CI encontrou uma regressão do mínimo medido: usar a fonte selecionada fazia a fileira do Storage e os painéis vizinhos crescerem ao mudar apenas a tipografia. No `/monitor`, o cálculo agora reserva o espaço necessário para o maior percentual permitido (160%), independentemente do percentual escolhido. A medição é síncrona e restaura o estilo antes da próxima pintura; não grava preferências nem altera a fonte exibida. O React usa a variável local do bloco; o clássico recebe também o CSS numérico dessa escala para medir corretamente na WebView. A raiz continua usando suas medidas existentes, sem receber a escala de fonte pública.
+
+Mantidos os testes de dimensões, as fontes proporcionais e a única rolagem da tabela. Os testes de Storage também verificam que alterar somente sua fonte preserva as caixas dos outros blocos.
+
+Validação desta correção: falha clássica reproduzida antes com a mesma diferença do CI (487,1875 vs. 470,390625px). Após a correção, `npm run check` passou com 301 unitários, tipos e build; lint final dirigido sem erros. Passaram os 54 E2E dos arquivos de fontes, Storage/volumes, espaços e escala, incluindo os seis cenários reportados, e a suíte completa de 26 runtime no artefato novo. A matriz clássica cobre 156 combinações, inclusive snapshots, iframe opaco e HTML sem JavaScript. Nenhuma tolerância original de geometria foi ampliada. No Windows, o servidor E2E frio excedeu 60s na tentativa inicial; a rodada final usou uma configuração local ignorada com 180s apenas para iniciar o servidor, sem alterar prazos/assertivas dos testes ou o CI. Não houve nova migration, mudança de preferências operacionais, teste físico na TV, commit, push ou deploy.
 
 ### Validação de 06/11/2026
 

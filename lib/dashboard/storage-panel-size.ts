@@ -1,5 +1,25 @@
+import { monitorFontScaleOptions } from "../config/presentation.ts";
+
 /** Logical pixels, before route zoom. Reserve fixed readings plus one accessible table row. */
 export function storagePanelMinimum(panel: HTMLElement): number {
+  const block = panel.closest<HTMLElement>("[data-monitor-font-scale]");
+  const originalScale = block?.style.getPropertyValue("--monitor-font-scale") ?? "";
+  const originalPriority = block?.style.getPropertyPriority("--monitor-font-scale") ?? "";
+  // A font preference must not resize its slot or adjacent panels. Measure the
+  // supported font envelope synchronously, then restore before the next paint.
+  // The private root has no monitor scope and keeps its existing measurements.
+  if (block) block.style.setProperty("--monitor-font-scale", String(monitorFontScaleOptions.at(-1)! / 100));
+  try {
+    return measureStoragePanel(panel);
+  } finally {
+    if (block) {
+      if (originalScale) block.style.setProperty("--monitor-font-scale", originalScale, originalPriority);
+      else block.style.removeProperty("--monitor-font-scale");
+    }
+  }
+}
+
+function measureStoragePanel(panel: HTMLElement): number {
   const spacing = (element: Element) => {
     const style = getComputedStyle(element);
     return (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);

@@ -64,6 +64,8 @@ test('classic per-block fonts survive opaque iframe snapshots, zoom and no-JS wi
       await frame.locator('#compat-refresh').click();
       await expect(frame.locator('[data-monitor-font-scale]').first()).toHaveAttribute('data-monitor-font-scale',String(current.scale));
       await expect.poll(()=>frame.locator('html').evaluate(node=>node.style.zoom)).toBe(String(current.zoom)+'%');
+      // Measuring the largest supported font must not change the saved/rendered choice.
+      assert.ok((await frame.locator('[data-monitor-font-scale]').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('data-monitor-font-scale')))).every(value=>value===String(current.scale)));
       const measured=await measure();
       if(current.scale===100) baseline=measured;
       else for(let i=0;i<measured.length;i++) {
@@ -95,6 +97,17 @@ test('classic per-block fonts survive opaque iframe snapshots, zoom and no-JS wi
         assert.ok(Math.abs(reading.labelSize-(current.size==='compact'?9:11)*current.scale/100)<.01);
       }
       assert.ok(await frame.locator('.availability-panel').evaluate(node=>node.scrollHeight-node.clientHeight)<=1);
+      const storage = await frame.locator('.block-storage_summary .storage-panel').evaluate(panel => {
+        const body = panel.querySelector('.storage-body'), table = panel.querySelector('.storage-volumes');
+        const bounds = body.getBoundingClientRect(), rows = table.getBoundingClientRect();
+        return {
+          outerScroll: [panel, body].some(node=>/auto|scroll/.test(getComputedStyle(node).overflowY)),
+          innerScroll: getComputedStyle(table).overflowY==='auto' && table.scrollHeight>table.clientHeight,
+          firstRowFits: table.querySelector('tbody tr').getBoundingClientRect().bottom<=rows.bottom+1,
+          fixedFits: [...body.children].filter(node=>node!==table).every(node=>{ const rect=node.getBoundingClientRect(); return rect.top>=bounds.top-1 && rect.bottom<=bounds.bottom+1; }),
+        };
+      });
+      assert.deepEqual(storage,{outerScroll:false,innerScroll:true,firstRowFits:true,fixedFits:true},`Storage at ${current.zoom}/${current.scale}`);
       if (current.size === 'expanded' && current.zoom === 70 && current.scale === 160) await page.screenshot({ path: '.cache/font-classic-160-' + current.size + '.png' });
     }
     await frame.locator('#compat-auto-scroll').click();

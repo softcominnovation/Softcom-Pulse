@@ -208,6 +208,17 @@
     }
   }
   function storageMinimum(panel) {
+    var block = panel.closest('[data-monitor-font-scale]'), body = panel.querySelector('.storage-body');
+    var originalScale = block ? block.getAttribute('data-monitor-font-scale') : null;
+    var layoutScale = body && body.getAttribute('data-layout-font-scale');
+    // Reserve the full supported font envelope, independently of the preference.
+    // The generated numeric CSS also includes this scale for old WebViews.
+    // Restore synchronously: no visible font change, state mutation or cloning.
+    if (block && layoutScale) block.setAttribute('data-monitor-font-scale', layoutScale);
+    try { return measureStorageMinimum(panel); }
+    finally { if (block && layoutScale) block.setAttribute('data-monitor-font-scale', originalScale); }
+  }
+  function measureStorageMinimum(panel) {
     function edges(element) {
       var style = window.getComputedStyle(element);
       return (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0) + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);

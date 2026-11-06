@@ -36,6 +36,7 @@ for (const route of ["/", "/monitor?compat=0"]) for (const stacked of [false, tr
   storage.items[0].selectedInterface = storage.items[0].interfaces[0];
   if (!stacked) screen.overviewGrid = "default";
   if (route === "/") await signIn(page);
+  let baseline: { id: string | null; height: number; width: number }[] = [];
   for (const zoom of [70, 100, 125]) for (const font of [100, 160]) {
     state.document.dashboardZoomPercent = zoom; state.document.publicMonitorZoomPercent = zoom;
     find("storage_summary").monitorFontScalePercent = font;
@@ -56,6 +57,22 @@ for (const route of ["/", "/monitor?compat=0"]) for (const stacked of [false, tr
         noPageOverflow: document.documentElement.scrollWidth <= innerWidth + 1,
       };
     }), { message: `${route}, stacked=${stacked}, zoom=${zoom}, font=${font}` }).toEqual({ outerScroll: false, tableScroll: true, rowFits: true, fixedFits: true, noPageOverflow: true });
+    // Changing only Storage's font must not resize any slot, including its peers.
+    const geometry = await page.locator('[data-block-id]').evaluateAll(blocks => blocks.map(block => {
+      const box = block.getBoundingClientRect();
+      return { id: block.getAttribute('data-block-id'), height: box.height, width: box.width };
+    }));
+    if (font === 100) baseline = geometry;
+    else for (const [index, block] of geometry.entries()) {
+      expect(block.id).toBe(baseline[index].id);
+      expect(Math.abs(block.height - baseline[index].height), `font-only height ${route}/${stacked}/${zoom}/${block.id}`).toBeLessThan(1);
+      expect(Math.abs(block.width - baseline[index].width)).toBeLessThan(1);
+    }
+    if (route !== "/") {
+      const block = page.locator('.block-storage_summary');
+      await expect(block).toHaveAttribute('data-monitor-font-scale', String(font));
+      expect(await block.evaluate(node => (node as HTMLElement).style.getPropertyValue('--monitor-font-scale'))).toBe(String(font / 100));
+    }
     await panel.locator(".storage-volumes").focus();
     await panel.locator(".storage-volumes").press("End");
     // clientHeight/scrollHeight are rounded, while zoomed scrollTop is fractional.

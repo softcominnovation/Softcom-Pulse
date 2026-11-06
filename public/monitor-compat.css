@@ -163,6 +163,9 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
 .storage-extra { margin: 9px 0; }
 .storage-extra strong { font-size: 11px; }
 .storage-traffic { color: #aaa; font: 10px monospace; }
+.storage-panel .storage-body { display: flex; flex-direction: column; overflow: hidden; }
+.storage-body > * { flex-shrink: 0; }
+.storage-body > .storage-volumes { flex: 0 1 auto; min-height: 0; overflow: auto; }
 .host-card-grid { overflow: auto; font-size: 0; }
 .host-card { display: inline-block; width: 49%; vertical-align: top; padding: 10px; margin: .5%; border: 1px solid #333; border-radius: 9px; font-size: 11px; }
 .host-card .panel-heading { padding: 0; min-height: 25px; }
@@ -233,7 +236,7 @@ td small { display: block; color: #999; font-size: 9px; margin-top: 4px; }
   .compat-row.content-sized[data-measured-row] { flex: 0 0 auto; min-height: 0; max-height: none; }
   .compat-row[data-measured-row]:not(:only-child):not(.content-sized) { flex: 0 0 auto; }
   .content-sized .compat-cell > .dashboard-panel { flex: 0 1 auto; height: auto; }
-  .panel-content > .table-scroll, .panel-content > .host-card-grid { max-height: none !important; overflow: visible; }
+  .panel-content > .table-scroll:not(.storage-volumes), .panel-content > .host-card-grid { max-height: none !important; overflow: visible; }
   .presentation-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; }
   .presentation-toolbar h1 { display: block; }
   .presentation-controls { display: block; margin-left: auto; }

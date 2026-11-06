@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { PresentationBlock } from "@/lib/config/presentation";
 import { storageLayout } from "@/lib/dashboard/layout";
+import { storagePanelMinimum } from "@/lib/dashboard/storage-panel-size";
 import "./storage-composition.css";
 
 export function StorageComposition({ blocks, split, wall, render, onOverflow, monitor = false }: { blocks: PresentationBlock[]; split: boolean; wall: boolean; render: (block: PresentationBlock) => ReactNode; monitor?: boolean; onOverflow?: (value: boolean) => void }) {
@@ -21,9 +22,10 @@ export function StorageComposition({ blocks, split, wall, render, onOverflow, mo
       const summaryHeight = summary ? summary.offsetHeight + (parseFloat(getComputedStyle(element).rowGap) || 0) : 0;
       const needed = sizing.rows.reduce((total, row, index) => {
         const target = rows[index];
+        const storageMinimum = Math.max(0, ...[...(target?.querySelectorAll<HTMLElement>(".storage-panel") ?? [])].map(storagePanelMinimum));
         const panels = target ? [...target.querySelectorAll<HTMLElement>('.availability-panel')] : [];
         if (panels.length) {
-          const minimum = Math.max(row.contentSized || rows.length > 1 ? 0 : 210 * scale, ...panels.map(panel => {
+          const minimum = Math.max(storageMinimum, row.contentSized || rows.length > 1 ? 0 : 210 * scale, ...panels.map(panel => {
             const style = getComputedStyle(panel);
             return [...panel.children].reduce((height, child) => {
               const spacing = getComputedStyle(child);
@@ -34,8 +36,9 @@ export function StorageComposition({ blocks, split, wall, render, onOverflow, mo
           if (target.style.getPropertyValue("--row-minimum") !== value) target.style.setProperty("--row-minimum", value);
           return total + minimum;
         }
-        if (target && target.style.getPropertyValue("--row-minimum") !== String(row.minimum)) target.style.setProperty("--row-minimum", String(row.minimum));
-        return total + (row.contentSized ? target?.offsetHeight ?? 0 : row.minimum * scale);
+        const minimum = Math.max(row.minimum * scale, storageMinimum);
+        if (target && target.style.getPropertyValue("--row-minimum") !== String(minimum / scale)) target.style.setProperty("--row-minimum", String(minimum / scale));
+        return total + (row.contentSized ? target?.offsetHeight ?? 0 : minimum);
       }, 0) + Math.max(0, rows.length - 1) * rowGap + summaryHeight;
       const compact = matchMedia(element.closest(".public-monitor-stage, .root-dashboard-frame.is-zoomed") ? "(min-width:1201px) and (min-height:480px)" : "(min-width:1201px) and (min-height:740px)").matches;
       const next = compact && element.clientHeight > 0 && needed > element.clientHeight + 1;
@@ -46,7 +49,7 @@ export function StorageComposition({ blocks, split, wall, render, onOverflow, mo
       const targets = new Set<Element>([element, ...(summary ? [summary] : [])]);
       rows.forEach((row, index) => {
         if (sizing.rows[index]?.contentSized) targets.add(row);
-        row.querySelectorAll('.availability-panel > *').forEach(child => targets.add(child));
+        row.querySelectorAll('.availability-panel > *, .storage-panel > *, .storage-body > *, .storage-volumes thead, .storage-volumes tbody tr:first-child').forEach(child => targets.add(child));
       });
       observed.forEach(target => { if (!targets.has(target)) { observer.unobserve(target); observed.delete(target); } });
       targets.forEach(target => { if (!observed.has(target)) { observer.observe(target); observed.add(target); } });

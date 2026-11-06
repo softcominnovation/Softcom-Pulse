@@ -3,14 +3,15 @@
 .storage-panel .panel-heading h2 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .storage-panel .panel-heading { flex-wrap:wrap; }
 .storage-actions { margin-left:auto; }
-.storage-body { flex:1; min-height:0; overflow:auto; padding:0 calc(14px * var(--dashboard-scale,1)) 6px; }
+.storage-panel .storage-body { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; padding:0 calc(14px * var(--dashboard-scale,1)) 6px; }
+.storage-body > * { flex-shrink:0; }
 .storage-primary,.storage-secondary { display:grid; gap:calc(14px * var(--dashboard-scale,1)); margin:4px 0 12px; }
 .storage-primary { grid-template-columns:repeat(3,minmax(0,1fr)); }
 .storage-secondary { grid-template-columns:repeat(auto-fit,minmax(100px,1fr)); }
 .storage-primary > div > span,.storage-secondary > div > span { color:var(--pulse-muted); font-size:calc((calc(11px * var(--dashboard-scale,1))) * var(--monitor-font-scale, 1)); }
 .storage-capacity { display:flex; gap:5px; align-items:baseline; flex-wrap:wrap; }
 .storage-note { color:var(--pulse-muted); font-size:calc((12px) * var(--monitor-font-scale, 1)); margin:6px 0 10px; }
-.storage-volumes { max-height:calc((33px * var(--storage-rows,3) + 30px) * var(--dashboard-scale,1)); overflow:auto; }
+.storage-body > .storage-volumes { flex:0 1 auto; min-height:0; max-height:calc((33px * var(--storage-rows,3) + 30px) * var(--dashboard-scale,1)); overflow:auto; }
 .storage-volumes table { width:100%; border-collapse:collapse; font-size:calc((calc(11px * var(--dashboard-scale,1))) * var(--monitor-font-scale, 1)); }
 .storage-volumes th { text-align:left; color:var(--pulse-muted); background:var(--pulse-surface); position:sticky; top:0; z-index:1; }
 .storage-volumes th,.storage-volumes td { padding:6px 8px; border-bottom:1px solid var(--pulse-line); white-space:nowrap; }
@@ -26,6 +27,8 @@
 .storage-services-content { min-width:0; padding:0 14px 14px; }
 .storage-editor-volumes { display:flex; flex-direction:column; gap:8px; max-height:200px; overflow:auto; }
 .storage-editor-volumes legend { font-weight:700; margin-bottom:8px; }
+.storage-visible-settings { display:flex; flex-direction:column; gap:8px; }
+.storage-visible-settings legend { font-weight:700; margin-bottom:8px; }
 .storage-availability-card .availability-meter.disk i { background:var(--pulse-amber); }
 .storage-availability-card .availability-footer { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
 .storage-mini-traffic { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

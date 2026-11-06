@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { storageFixture } from "./fixtures/storage.mjs";
 import { isStorageHost, storageKey, normalizeStorage, collectStorage } from "../lib/server/zabbix/storage.ts";
 import { collectSnapshots } from "../lib/server/zabbix/collect.ts";
-import { storageCapacity, storageStatus, publicStorage } from "../lib/storage/presentation.ts";
+import { storageCapacity, storageStatus, publicStorage, visibleStorageVolumes } from "../lib/storage/presentation.ts";
 import { storageLayout } from "../lib/dashboard/layout.ts";
 import { storagePreferencesSchema, storageWriteSchema } from "../lib/config/storages.ts";
 import { effectiveOptions } from "../lib/config/presentation.ts";
@@ -89,6 +89,21 @@ test("all Storage surfaces use the same availability rules and public data drops
   const options = effectiveOptions({ type: "highlighted_resources" });
   assert.equal(buildDefaultAvailabilityCards([], [], [], [], options, [item]).length, 0);
   assert.equal(buildCustomAvailabilityCards([`storage:${item.configId}`], { resources: new Map(), probes: new Map(), vps: new Map(), signalCards: new Map(), storages: new Map([[item.configId, item]]) })[0].item, item);
+});
+
+test("visible Storage volumes are independent from capacity, preserve public labels and never fall back when missing", () => {
+  const item = view(), capacity = structuredClone(item.capacity);
+  assert.equal(visibleStorageVolumes(item).length, 2);
+  item.visibleFilesystemKeys = [item.volumes[1].key];
+  assert.deepEqual(visibleStorageVolumes(item).map(volume => volume.key), item.visibleFilesystemKeys);
+  assert.deepEqual(visibleStorageVolumes(publicStorage(item)).map(volume => volume.name), ["Volume 2"]);
+  assert.deepEqual(item.capacity, capacity);
+  assert.equal(item.volumes.length, 2);
+  item.visibleFilesystemKeys = ["sfs-" + "0".repeat(32)];
+  assert.equal(visibleStorageVolumes(item).length, 0);
+  assert.equal(storageWriteSchema.parse({ expectedRevision: 0 }).visibleFilesystemKeys, undefined);
+  assert.equal(storagePreferencesSchema.parse({}).visibleFilesystemKeys, null);
+  for (const keys of [[], ["invalid"], [item.volumes[0].key, item.volumes[0].key]]) assert.equal(storageWriteSchema.safeParse({ expectedRevision: 1, visibleFilesystemKeys: keys }).success, false);
 });
 test("Storage layout packs by UUID with ordered widths, unique top pair and independent duplicate blocks", () => {
   const block = (type, width = "wide") => ({ id: randomUUID(), type, width, enabled: true, options: type === "storage_summary" ? { storageConfigId: randomUUID(), visibleRows: 3 } : effectiveOptions({ type }) });

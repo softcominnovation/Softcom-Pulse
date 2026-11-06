@@ -11,7 +11,7 @@
 .slot-composition .availability-grid { flex:none; }
 .slot-composition .panel-heading,.slot-composition .panel-foot { flex-shrink:0; }
 .slot-composition .problem-list,.slot-composition .asgard-content,.slot-composition .asgard-machines,.slot-composition .signal-flow-body { min-height:0; flex:1; overflow:auto; }
-.slot-composition .storage-body { min-height:0; flex:1; overflow:auto; }
+.slot-composition .storage-body { min-height:0; flex:1; overflow:hidden; }
 .slot-composition-scroll { overflow:auto; }
 .slot-composition-scroll .slot-composition-rows { flex:none; }
 .dashboard-preview .dashboard-blocks.has-custom-slots { height:calc(100dvh - 250px); min-height:300px; }

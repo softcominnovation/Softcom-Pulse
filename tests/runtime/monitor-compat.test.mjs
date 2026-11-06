@@ -240,18 +240,18 @@ test("custom slots share the plan in initial HTML, opaque frames and refreshed l
             const panels=Array.from(group.querySelectorAll('.compat-slot-panel'),node=>node.getBoundingClientRect());
             return panels.length===2&&Math.abs(panels[0].height-panels[1].height)<1&&panels[1].top>=panels[0].bottom+1;
           })).toBe(true);
-          const bodies=await frame.locator('[data-overview-slot=topRight] .panel-content').evaluateAll(nodes=>nodes.map(node=>({height:node.clientHeight,overflow:getComputedStyle(node).overflowY})));
+          const bodies=await frame.locator('[data-overview-slot=topRight] .panel-content:not(.storage-body), [data-overview-slot=topRight] .storage-volumes').evaluateAll(nodes=>nodes.map(node=>({height:node.clientHeight,overflow:getComputedStyle(node).overflowY})));
           assert.ok(bodies.every(body=>body.height>40&&body.overflow==='auto'),JSON.stringify(bodies));
           await assertCardScrollOnly(frame.locator('.availability-grid'),{zoom,custom:true});
           if(zoom===70)await page.screenshot({path:fileURLToPath(new URL('.cache/screenshots/custom-slots-classic-initial.png',root))});
         }
-        const region=frame.locator('[data-overview-slot=topRight] .compat-slot-panel').last().locator('.panel-content');
+        const region=frame.locator('[data-overview-slot=topRight] .compat-slot-panel').last().locator('.storage-volumes');
         await region.focus();await region.press('End');await expect.poll(()=>region.evaluate(node=>node.scrollTop>0||node.scrollHeight<=node.clientHeight+1)).toBe(true);
         current=fixture.reversed;await frame.locator('#compat-refresh').click();
         await expect(frame.locator('[data-overview-slot=topRight] > .compat-slot-panel').first()).toContainText('Storage configurado');
         current=fixture.hidden;await frame.locator('#compat-refresh').click();await expect(frame.locator('[data-overview-slot=topRight] > .compat-slot-panel')).toHaveCount(1);
         await frame.locator('html').evaluate(node=>{node.style.zoom='70%';});
-        const remainingBody=frame.locator('[data-overview-slot=topRight] .panel-content');
+        const remainingBody=frame.locator('[data-overview-slot=topRight] .storage-volumes');
         await remainingBody.evaluate(node=>{node.scrollTop=0;});
         await frame.getByRole('button',{name:'Retomar rolagem automática',exact:true}).click();
         await expect.poll(()=>remainingBody.evaluate(node=>node.scrollTop),{timeout:12000}).toBeGreaterThan(0);
@@ -800,7 +800,7 @@ test("current classic cards fill native layout, scroll complete bodies and keep 
         }
       }
       for (const type of ["asgard_summary", "signal_flow", "storage_summary"]) {
-        const region = page.locator(`.block-${type} > .dashboard-panel > .panel-content`);
+        const region = page.locator(type === "storage_summary" ? ".block-storage_summary .storage-volumes" : `.block-${type} > .dashboard-panel > .panel-content`);
         const before = await region.evaluate(element => ({ client: element.clientHeight, scroll: element.scrollHeight, overflow: getComputedStyle(element).overflowY }));
         assert.equal(before.overflow, "auto"); assert.ok(before.client > 0);
         if (before.scroll > before.client + 2) {
@@ -865,12 +865,62 @@ test("current classic cards fill native layout, scroll complete bodies and keep 
 });
 
 async function readPanelScroll(page) {
-  return page.locator('.compat-cell > .dashboard-panel > .panel-content').evaluateAll(elements => elements.map(element => ({
+  return page.locator('.compat-cell > .dashboard-panel > .panel-content:not(.storage-body), .compat-cell > .storage-panel .storage-volumes').evaluateAll(elements => elements.map(element => ({
     id: element.closest('[data-block-id]').getAttribute('data-block-id'),
     label: element.getAttribute('aria-label'), top: element.scrollTop,
     max: Math.max(0, element.scrollHeight - element.clientHeight),
   })));
 }
+
+test('classic Storage has one inner scroll surface in opaque iframes at enlarged fonts and route zoom', { timeout: 90000 }, async () => {
+  const fixtures = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', '--input-type=module', '-e', `
+    import {monitorFixture} from './tests/fixtures/monitor-compat.mjs';
+    import {renderCompatiblePage,renderCompatibleContent,compatibleMonitorState} from './lib/server/monitor-compat/render.ts';
+    const result=[];
+    for(const font of [100,160]) for(const selected of [false,true]) {
+      const model=monitorFixture(); model.document.publicMonitorAutoScrollOnLoad=false;
+      model.screen.blocks.find(block=>block.type==='storage_summary').monitorFontScalePercent=font;
+      const item=model.overview.data.blocks.find(block=>block.type==='storage_summary').data.target;
+      if(selected) item.visibleFilesystemKeys=[item.volumes[0].key];
+      result.push({font,selected,page:renderCompatiblePage(model,'Storage test'),snapshot:{html:renderCompatibleContent(model),state:compatibleMonitorState(model)}});
+    }
+    process.stdout.write(JSON.stringify(result));
+  `], { cwd: fileURLToPath(root), encoding: 'utf8', windowsHide: true }));
+  await shipped(async base => {
+    let fixture = fixtures[0];
+    const parent = createServer(async (request, response) => {
+      response.setHeader('Access-Control-Allow-Origin', '*');
+      if (request.url === '/') { response.setHeader('Content-Type', 'text/html'); response.end('<style>body{margin:0}iframe{border:0;width:1280px;height:720px}</style><iframe sandbox="allow-scripts" src="/monitor?compat=1"></iframe>'); }
+      else if (request.url === '/monitor?compat=1') { response.setHeader('Content-Type', 'text/html'); response.end(fixture.page); }
+      else if (request.url.startsWith('/monitor/compat?fragment=1')) { response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(fixture.snapshot)); }
+      else { const upstream = await fetch(base + request.url); response.statusCode = upstream.status; response.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/octet-stream'); response.end(Buffer.from(await upstream.arrayBuffer())); }
+    });
+    const address = await listen(parent), browser = await chromium.launch();
+    try {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+      for (fixture of fixtures) {
+        await page.goto(address);
+        const frame = page.frameLocator('iframe');
+        await frame.locator('#compat-content[data-monitor-controller="ready"]').waitFor();
+        const panel = frame.locator('.block-storage_summary > .storage-panel');
+        await expect(panel.locator('tbody tr')).toHaveCount(fixture.selected ? 1 : 16);
+        for (const zoom of [70, 100, 125]) {
+          await frame.locator('html').evaluate((node, zoom) => { node.style.zoom = zoom + '%'; }, zoom);
+          await expect.poll(() => panel.evaluate(element => {
+            const body = element.querySelector('.storage-body'), table = element.querySelector('.storage-volumes');
+            const bounds = body.getBoundingClientRect(), rows = table.querySelectorAll('tbody tr');
+            return {
+              onlyInner: getComputedStyle(body).overflowY === 'hidden' && getComputedStyle(table).overflowY === 'auto',
+              fixedFits: Array.from(body.children).filter(node => node !== table).every(node => node.getBoundingClientRect().top >= bounds.top - 1 && node.getBoundingClientRect().bottom <= bounds.bottom + 1),
+              firstRowFits: table.getBoundingClientRect().bottom >= rows[0].getBoundingClientRect().bottom - 1,
+              hasScroll: table.scrollHeight > table.clientHeight + 1,
+            };
+          }), { message: JSON.stringify({ font: fixture.font, selected: fixture.selected, zoom }) }).toEqual({ onlyInner: true, fixedFits: true, firstRowFits: true, hasScroll: !fixture.selected });
+        }
+      }
+    } finally { await browser.close(); await new Promise(resolve => parent.close(resolve)); }
+  });
+});
 
 async function expectPanelScroll(page, previous) {
   await expect.poll(async () => {
@@ -896,7 +946,7 @@ test('classic snapshot keeps the latest manual scroll while its response is pend
       await page.route('**/monitor/compat?fragment=1*', async route => { await pendingResponse; await route.fulfill({ json: fixture.snapshot }); });
       await page.goto(base + '/monitor?compat=1');
       await page.locator('#compat-content[data-monitor-controller="ready"]').waitFor();
-      const bodies = page.locator('.compat-cell > .dashboard-panel > .panel-content');
+      const bodies = page.locator('.compat-cell > .dashboard-panel > .panel-content:not(.storage-body), .compat-cell > .storage-panel .storage-volumes');
       await bodies.evaluateAll(elements => elements.forEach(element => { element.scrollTop = 11; }));
       const beforeRequest = await readPanelScroll(page);
       const requested = page.waitForRequest(request => request.url().includes('/monitor/compat?fragment=1'), { timeout: 5000 });

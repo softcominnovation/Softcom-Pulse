@@ -207,6 +207,27 @@
       viewport.style.transform = ''; viewport.style.transformOrigin = '';
     }
   }
+  function storageMinimum(panel) {
+    function edges(element) {
+      var style = window.getComputedStyle(element);
+      return (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0) + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+    }
+    function margin(element) {
+      var style = window.getComputedStyle(element);
+      return (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);
+    }
+    var height = edges(panel);
+    each(panel.children, function (child) {
+      if ((' ' + child.className + ' ').indexOf(' storage-body ') === -1) { height += child.offsetHeight + margin(child); return; }
+      height += edges(child) + margin(child);
+      each(child.children, function (section) {
+        if ((' ' + section.className + ' ').indexOf(' storage-volumes ') === -1) { height += section.offsetHeight + margin(section); return; }
+        var head = section.querySelector('thead'), row = section.querySelector('tbody tr');
+        height += (head ? head.offsetHeight : 0) + (row ? row.offsetHeight : 0) + (section.scrollWidth > section.clientWidth + 1 ? 18 : 0) + edges(section) + margin(section) + 2;
+      });
+    });
+    return Math.ceil(height);
+  }
   function applyDensity() {
     syncViewport();
     each(content.querySelectorAll('.availability-grid[data-card-size="expanded"]'), function (grid) {
@@ -216,9 +237,13 @@
       each(grid.querySelectorAll('.card-wrap'), function (card) { card.style.width = 100 / columns + '%'; });
       grid.setAttribute('data-card-columns', String(columns));
     });
-    each(content.querySelectorAll('.compat-row[data-measured-row]'), function (row) {
-      var minimum = row.parentNode.children.length > 1 ? 0 : 210;
+    each(content.querySelectorAll('.compat-row:not([data-custom-slot-row])'), function (row) {
+      if (!row.hasAttribute('data-measured-row') && !row.querySelector('.storage-panel')) return;
+      var minimum = row.hasAttribute('data-measured-row') ? (row.parentNode.children.length > 1 ? 0 : 210) : Number(row.getAttribute('data-min-height')) || 210;
       var rowStyle = window.getComputedStyle(row);
+      each(row.querySelectorAll('.storage-panel'), function (panel) {
+        minimum = Math.max(minimum, storageMinimum(panel) + parseFloat(rowStyle.paddingTop || 0) + parseFloat(rowStyle.paddingBottom || 0));
+      });
       each(row.querySelectorAll('.availability-panel > .availability-grid'), function (grid) {
         var panel = grid.parentNode, border = window.getComputedStyle(panel);
         var height = parseFloat(rowStyle.paddingTop || 0) + parseFloat(rowStyle.paddingBottom || 0) + parseFloat(border.borderTopWidth || 0) + parseFloat(border.borderBottomWidth || 0);
@@ -230,7 +255,7 @@
       });
       if ((' ' + row.className + ' ').indexOf(' content-sized ') === -1) {
         row.style.minHeight = minimum + 'px';
-        if (row.parentNode.children.length > 1) row.style.height = minimum + 'px';
+        if (row.hasAttribute('data-measured-row') && row.parentNode.children.length > 1) row.style.height = minimum + 'px';
       }
     });
     each(content.querySelectorAll('.compat-row[data-custom-slot-row]'), function (row) {
@@ -239,6 +264,8 @@
         var height = 0;
         each(group.children, function (wrapper) {
           var panel = wrapper.querySelector('.availability-panel'), panelHeight = 210;
+          var storage = wrapper.querySelector('.storage-panel');
+          if (storage) panelHeight = Math.max(panelHeight, storageMinimum(storage));
           if (panel) {
             var border = window.getComputedStyle(panel);
             panelHeight = parseFloat(border.borderTopWidth || 0) + parseFloat(border.borderBottomWidth || 0);
@@ -247,9 +274,9 @@
               panelHeight += Math.max(child.offsetHeight, parseFloat(spacing.height) || 0) + parseFloat(spacing.marginTop || 0) + parseFloat(spacing.marginBottom || 0);
             });
           }
-          height += panelHeight;
+          height = Math.max(height, panelHeight);
         });
-        minimum = Math.max(minimum, height + Math.max(0, group.children.length - 1) * 12);
+        minimum = Math.max(minimum, height * group.children.length + Math.max(0, group.children.length - 1) * 12);
       });
       minimum = Math.ceil(minimum + parseFloat(rowStyle.paddingTop || 0) + parseFloat(rowStyle.paddingBottom || 0));
       row.style.minHeight = minimum + 'px';

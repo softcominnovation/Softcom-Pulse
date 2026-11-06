@@ -1,5 +1,32 @@
 # Monitoramento de VMs de Storage
 
+## Volumes visíveis no painel
+
+Em **Serviços → Storages → Configurar Storage (Editar configuração) → Volumes visíveis no painel**, desmarque **Exibir todos os volumes descobertos**, mantenha os volumes desejados e clique em **Salvar Storage**. O editor mostra o mount privado e sua correspondência pública, por exemplo **/ · Volume 1 no /monitor**. A seleção vale para o painel na raiz, `/monitor` moderno/clássico, Serviços e modal de detalhes. É uma preferência por Storage, compartilhada entre suas aparições.
+
+**Volumes monitorados** continua definindo a capacidade agregada e o alerta de disco. **Volumes visíveis** filtra somente as linhas da tabela; não muda CPU/RAM/disco do minicard, capacidade, interface, criticidade ou notificações. Para mostrar apenas Volume 1 sem alterar o alerta, use a seção de visibilidade, não a seleção de capacidade.
+
+O padrão preserva todos os volumes, inclusive os descobertos futuramente. Seleção personalizada exige ao menos um volume; volumes ausentes não são substituídos automaticamente. Se nenhum selecionado estiver disponível, o painel informa a ausência. O inventário completo continua acessível no editor. A projeção pública atribui os nomes antes do filtro: selecionar apenas o segundo conserva **Volume 2**.
+
+Persistência: `storage_config.visible_filesystem_keys`, JSON nullable, migration aditiva `20261106120000_storage_visible_volumes`. `null` exibe todos; omitir `visibleFilesystemKeys` no PUT conserva a preferência salva, inclusive nas gravações de alertas/clientes anteriores. Novas chaves exigem inventário atual e pertença ao Storage; remoção de chaves e retorno a todos não exigem coleta nova. Mesma rota/revisão; nenhum worker ou variável de ambiente novo.
+
+Atualização: aplicar migrations e gerar Prisma Client, como no build/entrypoint existente. A migration foi aplicada ao banco local `pulse`; não houve alteração das seleções reais. Reiniciar o app que já estava aberto para carregar o cliente atualizado e recarregar as páginas. Não é necessário reiniciar Collector ou outros workers para esta preferência de apresentação.
+
+## Rolagem do painel
+
+O corpo externo do Storage organiza métricas e rede, sem barra própria; somente a tabela de volumes rola vertical/horizontalmente. A composição reserva cabeçalho, leituras, rede, rodapé e ao menos uma linha completa da tabela, medidos em pixels lógicos antes do zoom. Fontes ampliadas entram na medida real. Pares empilhados reservam o maior mínimo em ambas as metades; os demais painéis mantêm seus encaixes. Quando os mínimos não cabem na tela, permanece o fallback de rolagem da composição, em vez de cortar dados ou criar uma segunda barra dentro do Storage. A rolagem automática do `/monitor` acompanha a tabela.
+
+O renderer clássico usa o mesmo filtro e uma tabela `.storage-volumes` dentro do corpo flexível. A regra geral que transfere rolagem para o corpo dos painéis ASGARD/Signal exclui a tabela do Storage. Não voltar a aplicar `overflow:auto` em `.storage-body` nem remover a rolagem interna da tabela.
+
+### Validação de 06/11/2026
+
+- `npm run check`: lint, tipos, 301 unitários e build de produção aprovados; permanece somente o aviso anterior de import não usado em `monitoring-nav.tsx`.
+- 77 integrações e 32 componentes aprovados. Integração valida default da coluna, gravação, preservação por PUT antigo, seleção alheia rejeitada, projeção pública e capacidade/alerta independentes.
+- 38 cenários E2E de Storage/encaixes verificados: 33 existentes aprovados na rodada conjunta e os cinco novos aprovados na rodada final. Cobrem raiz e `/monitor`, layouts comuns/empilhados, zoom 70/100/125%, fontes 100/160%, escalas TV, detalhe e Serviços. O teste do fim da tabela compara retângulos visíveis: `clientHeight` arredondado e `scrollTop` fracionário divergiam 1,4px a 125%, embora a última linha estivesse acessível.
+- 16 cenários runtime do monitor/rolagem verificados no build: 15 aprovados na rodada conjunta e o novo teste aprovado após ajustar o servidor de fixture para servir o iframe opaco pelo mesmo padrão dos demais. Inclui filtro de um volume, zoom, fontes, áudio, atualização, rolagem automática e conservação de posição. Não equivale a um teste no aparelho físico da TV.
+
+Teste manual: escolha somente **Volume 1**, salve e recarregue a raiz e `/monitor`; apenas essa linha deve aparecer e os totais/alertas devem continuar iguais. Reabra o editor para confirmar a seleção. Com todos os volumes, role a tabela até a última linha; cabeçalho, métricas, rede e rodapé permanecem acessíveis, sem uma segunda barra dentro do painel. Verifique também o painel empilhado e o zoom usado na TV.
+
 ## Métricas do minicard
 
 Em **Editar configuração → Métricas do minicard**, escolha CPU/RAM, CPU/Disco (padrão), Disco/RAM ou CPU/RAM/Disco. No trio, disco ocupa a linha superior inteira e CPU/RAM ficam abaixo. Na Disponibilidade, o envelope respeita Padrão (120px) ou Ampliado (140px) do bloco, compartilhado com os outros cards da grade. Os painéis grandes conservam seu conteúdo.

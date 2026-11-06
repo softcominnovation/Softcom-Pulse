@@ -27,6 +27,7 @@ export const storageCapacitySchema = z.object({
 });
 export const storageViewSchema = z.object({
   cardMetrics: cardMetricsSchema.optional(),
+  visibleFilesystemKeys: z.array(storageDeviceKeySchema).nullable().optional(),
   storageKey: storageKeySchema, technicalName: z.string(), displayName: z.string(), description: z.string().nullable(),
   configId: z.uuid().nullable(), revision: z.number().int().nonnegative(), dashboardEnabled: z.boolean(), critical: z.boolean(), displayOrder: z.number().int(),
   presentationStatus: z.enum(["ready", "unavailable"]), resolution: storageResolutionSchema, monitoringEnabled: z.boolean(),

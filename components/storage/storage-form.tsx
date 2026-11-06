@@ -20,16 +20,21 @@ export function StorageEditor({ item, onSaved, onCancel }: { item: StorageView; 
 }
 function StorageForm({ item, config, onSaved, onCancel, reload }: { item: StorageView; config: StorageConfig | null; onSaved: () => void; onCancel: () => void; reload: () => void }) {
   const defaults: StorageWrite = { ...storagePreferencesSchema.parse(config ? {
-    displayName: config.displayName, description: config.description, dashboardEnabled: config.dashboardEnabled, critical: config.critical, displayOrder: config.displayOrder, filesystemKeys: config.filesystemKeys, independentVolumesConfirmed: config.independentVolumesConfirmed, networkInterfaceKey: config.networkInterfaceKey, diskWarningPercent: config.diskWarningPercent, cardMetrics: config.cardMetrics,
+    displayName: config.displayName, description: config.description, dashboardEnabled: config.dashboardEnabled, critical: config.critical, displayOrder: config.displayOrder, filesystemKeys: config.filesystemKeys, visibleFilesystemKeys: config.visibleFilesystemKeys, independentVolumesConfirmed: config.independentVolumesConfirmed, networkInterfaceKey: config.networkInterfaceKey, diskWarningPercent: config.diskWarningPercent, cardMetrics: config.cardMetrics,
   } : {}), expectedRevision: config?.revision ?? 0 };
   const form = useForm<StorageWrite>({ defaultValues: defaults }), mutation = useMutation();
   const [error, setError] = useState("");
   const selected = useWatch({ control: form.control, name: "filesystemKeys" });
+  const visible = useWatch({ control: form.control, name: "visibleFilesystemKeys" }) ?? null;
   const cardMetrics = useWatch({ control: form.control, name: "cardMetrics" }) ?? ["cpu", "disk"];
   const warning = config?.diskWarningPercent ?? null;
   const validInventory = !item.stale && item.resolution === "resolved";
   const unknownKeys = (selected ?? []).filter(key => !item.volumes.some(volume => volume.key === key));
   const custom = selected !== null;
+  function setVisibleVolumes(keys: string[] | null) {
+    form.setValue("visibleFilesystemKeys", keys, { shouldDirty: true });
+    form.clearErrors("visibleFilesystemKeys");
+  }
   function restoreDefaults() {
     form.reset({
       ...storagePreferencesSchema.parse({}), critical: defaults.critical, diskWarningPercent: defaults.diskWarningPercent,
@@ -62,6 +67,13 @@ function StorageForm({ item, config, onSaved, onCancel, reload }: { item: Storag
     </div>
     <Check label="Destacar em Disponibilidade de Serviços"><input type="checkbox" {...form.register("dashboardEnabled")} /></Check>
     <Check label="Storage crítico"><input type="checkbox" {...form.register("critical")} /></Check>
+    <fieldset className="storage-visible-settings">
+      <legend>Volumes visíveis no painel</legend>
+      <p className="admin-hint">Escolha as linhas da tabela em Serviços, no detalhe e nos dashboards, incluindo o /monitor. Isso não altera a capacidade total, o minicard ou os alertas de disco.</p>
+      <Check label="Exibir todos os volumes descobertos"><input type="checkbox" checked={visible === null} onChange={event => setVisibleVolumes(event.target.checked ? null : item.volumes.map(volume => volume.key))} /></Check>
+      {visible !== null && <div className="storage-editor-volumes">{item.volumes.map((volume, index) => <Check key={volume.key} label={`${volume.name} · Volume ${index + 1} no /monitor`}><input type="checkbox" disabled={!validInventory && !visible.includes(volume.key)} checked={visible.includes(volume.key)} onChange={event => setVisibleVolumes(event.target.checked ? [...visible, volume.key] : visible.filter(key => key !== volume.key))} /></Check>)}{visible.filter(key => !item.volumes.some(volume => volume.key === key)).map(key => <Check key={key} label="Volume visível configurado ausente"><input type="checkbox" checked onChange={() => setVisibleVolumes(visible.filter(value => value !== key))} /></Check>)}</div>}
+      {form.formState.errors.visibleFilesystemKeys && <p role="alert" className="admin-error">{form.formState.errors.visibleFilesystemKeys.message}</p>}
+    </fieldset>
     <Check label="Selecionar volumes manualmente"><input type="checkbox" checked={custom} disabled={warning != null || !validInventory && !custom} onChange={event => { form.setValue("filesystemKeys", event.target.checked ? [] : null, { shouldDirty: true }); form.setValue("independentVolumesConfirmed", false); }} /></Check>
     <p className="admin-hint">Padrão: filesystem raiz (/), ou único filesystem descoberto. Vários volumes só podem ser somados se forem independentes, sem bind mounts ou capacidade compartilhada.</p>
     {warning !== null && <p className="admin-hint">O alerta de disco está ativo. Ativação e limite ficam em Notificações deste serviço; os volumes continuam sendo os mesmos dos cards.</p>}

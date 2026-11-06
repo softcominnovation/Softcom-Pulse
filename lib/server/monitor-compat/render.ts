@@ -11,7 +11,7 @@ import { evidenceExpired } from "../../infrastructure/navigation.ts";
 import type { AsgardSummary, ConfiguredResource, Host, Metric, OverviewBlock, ProbeCard, Problem, SignalFlowBlockData, Summary, VirtualMachine } from "../../monitoring/contracts.ts";
 import { formatLatency, formatUptime, probeStatus, sortProbeCards } from "../../probe/status.ts";
 import { signalStateLabel, signalStateTone, signalStateColor, signalWorkersLabel } from "../../signal/labels.ts";
-import { storageStatus } from "../../storage/presentation.ts";
+import { storageStatus, visibleStorageVolumes } from "../../storage/presentation.ts";
 import { overviewSlotLayout } from "../../dashboard/overview-slot-layout.ts";
 import type { StorageView } from "../../storage/contracts.ts";
 import { publicVpsNetworkLabel, vpsMonitorLabel, vpsReasonColor, vpsStrip, vpsUptimeLabel } from "../../vps/labels.ts";
@@ -59,8 +59,8 @@ function strip(values: number[], color = (value: number) => probeStatus(value < 
   if (!values.length) return `<span class="strip empty-strip">Sem leituras</span>`;
   return `<span class="strip" aria-label="Histórico de disponibilidade">${values.map(value => `<i style="width:${100 / values.length}%;background:${h(color(value))}"></i>`).join("")}</span>`;
 }
-function table(headers: string[], rows: string[], visibleRows: number, label: string) {
-  return `<div class="table-scroll" tabindex="0" role="region" aria-label="${h(label)}" style="max-height:${36 + 33 * visibleRows}px"><table><thead><tr>${headers.map(text => `<th>${h(text)}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
+function table(headers: string[], rows: string[], visibleRows: number, label: string, className = "") {
+  return `<div class="table-scroll${className ? ` ${className}` : ""}" tabindex="0" role="region" aria-label="${h(label)}" style="max-height:${36 + 33 * visibleRows}px"><table><thead><tr>${headers.map(text => `<th>${h(text)}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
 }
 function cells(values: string[]) { return `<tr>${values.map(value => `<td>${value}</td>`).join("")}</tr>`; }
 function hostState(host: Host | VirtualMachine, stale: boolean, now: number) {
@@ -150,9 +150,10 @@ function storagePanel(item: StorageView | null, stale: boolean, now: number, vis
   if (!item) return panel("Storage", empty("Nenhum Storage disponível para esta configuração."), "", "", "database");
   const old = stale || item.stale, status = storageStatus({ ...item, stale: old }, now), network = item.selectedInterface;
   const body = `<p class="muted storage-description">${h(item.description ?? "Storage")}</p><div class="metric-grid">${reading("CPU", item.metrics.cpuUsagePercent, old, now)}${reading("RAM", item.metrics.memoryUsagePercent, old, now, "memory")}${reading("Disco ocupado", item.capacity.usagePercent, old, now, "disk")}</div><div class="metric-grid storage-extra">${rawMetric("Usado", item.capacity.usedBytes, old, now)}${rawMetric("Total", item.capacity.totalBytes, old, now)}${rawMetric("Disponível", item.capacity.availableBytes, old, now)}${rawMetric("Tempo ativo", item.metrics.uptimeSeconds, old, now)}${rawMetric("Espera por I/O", item.metrics.ioWaitPercent, old, now)}</div>`;
-  const rows = item.volumes.map(volume => cells([h(volume.name), reading("", volume.metrics.diskUsagePercent, old, now, "disk"), `${h(metricValue(volume.metrics.diskUsedBytes))} / ${h(metricValue(volume.metrics.diskTotalBytes))}`, h(metricValue(volume.availableBytes)), h(metricValue(volume.inodesFreePercent)), volume.readOnly?.value == null ? "Sem dados" : volume.readOnly.value ? "Somente leitura" : "Leitura e escrita"]));
+  const rows = visibleStorageVolumes(item).map(volume => cells([h(volume.name), reading("", volume.metrics.diskUsagePercent, old, now, "disk"), `${h(metricValue(volume.metrics.diskUsedBytes))} / ${h(metricValue(volume.metrics.diskTotalBytes))}`, h(metricValue(volume.availableBytes)), h(metricValue(volume.inodesFreePercent)), volume.readOnly?.value == null ? "Sem dados" : volume.readOnly.value ? "Somente leitura" : "Leitura e escrita"]));
   const traffic = network ? `<p class="storage-traffic">${h(network.name)} · RX ${h(metricValue(network.metrics.networkReceiveBitsPerSecond))} · TX ${h(metricValue(network.metrics.networkTransmitBitsPerSecond))}</p>` : "";
-  return panel(item.displayName, body + table(["Volume", "Ocupado", "Usado / total", "Disponível", "Inodes livres", "Acesso"], rows, visibleRows, "Volumes do Storage") + traffic, `<span>${h(item.capacity.label)}</span><span>Leitura ${h(stamp(item.evidence.observedAt))}</span>`, badge(status.label, status.tone, earliestExpiry(item.evidence.validUntil, item.classification.validUntil)), "database");
+  const volumes = rows.length ? table(["Volume", "Ocupado", "Usado / total", "Disponível", "Inodes livres", "Acesso"], rows, visibleRows, "Volumes do Storage", "storage-volumes") : empty("Nenhum dos volumes escolhidos está disponível nesta leitura.");
+  return panelFrame(item.displayName, `<div class="panel-content storage-body">${body}${volumes}${traffic}</div>`, `<span>${rows.length} de ${item.volumes.length} volumes visíveis · ${h(item.capacity.label)}</span><span>Leitura ${h(stamp(item.evidence.observedAt))}</span>`, badge(status.label, status.tone, earliestExpiry(item.evidence.validUntil, item.classification.validUntil)), "database", "storage-panel");
 }
 function signalPanel(data: SignalFlowBlockData, visibleRows: number) {
   const target = data.target;

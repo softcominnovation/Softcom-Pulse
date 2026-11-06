@@ -27,14 +27,15 @@ export function saveStorageConfig(key: string, body: unknown) {
   return database(() => getPrisma().$transaction(async tx => {
     const current = await tx.storageConfig.findUnique({ where: { storageKey: key } });
     if ((current?.revision ?? 0) !== input.expectedRevision) throw new BffError(409, "revision_conflict");
-    const { expectedRevision, diskWarningPercent, cardMetrics, ...rest } = input;
+    const { expectedRevision, diskWarningPercent, cardMetrics, visibleFilesystemKeys, ...rest } = input;
     void expectedRevision;
-    const preferences = storagePreferencesSchema.parse({ ...rest, cardMetrics: cardMetrics ?? current?.cardMetrics, diskWarningPercent: diskWarningPercent === undefined ? current?.diskWarningPercent ?? null : diskWarningPercent });
+    const preferences = storagePreferencesSchema.parse({ ...rest, visibleFilesystemKeys: visibleFilesystemKeys === undefined ? current?.visibleFilesystemKeys ?? null : visibleFilesystemKeys, cardMetrics: cardMetrics ?? current?.cardMetrics, diskWarningPercent: diskWarningPercent === undefined ? current?.diskWarningPercent ?? null : diskWarningPercent });
+    const addedVisibleKeys = (preferences.visibleFilesystemKeys ?? []).filter(key => !(current?.visibleFilesystemKeys as string[] | null)?.includes(key));
     const selectionChanged = JSON.stringify(current?.filesystemKeys ?? null) !== JSON.stringify(input.filesystemKeys) || (current?.networkInterfaceKey ?? null) !== input.networkInterfaceKey;
     const capacityChanged = JSON.stringify([...(current?.filesystemKeys as string[] ?? [])].sort()) !== JSON.stringify([...(input.filesystemKeys ?? [])].sort()) || current?.independentVolumesConfirmed !== input.independentVolumesConfirmed;
     const verifyCapacity = preferences.diskWarningPercent !== null && (current?.diskWarningPercent == null || capacityChanged);
     let source: StorageTechnical | undefined;
-    if (!current || verifyCapacity || selectionChanged && (input.filesystemKeys !== null || input.networkInterfaceKey !== null)) {
+    if (!current || verifyCapacity || addedVisibleKeys.length || selectionChanged && (input.filesystemKeys !== null || input.networkInterfaceKey !== null)) {
       const batch = await readSnapshotBatch([snapshotKeys.storages]).catch(() => { throw new BffError(409, "storage_inventory_unavailable"); });
       const snapshot = snapshotData(batch, snapshotKeys.storages, storageSnapshotSchema.nullable(), null);
       if (!snapshot || snapshot.status !== "ok" || batch.sync?.status !== "ok" || !snapshot.lastSuccessfulAt || Date.now() - Date.parse(snapshot.lastSuccessfulAt) >= snapshotTiming().staleAfter) throw new BffError(409, "storage_inventory_unavailable");
@@ -42,12 +43,13 @@ export function saveStorageConfig(key: string, body: unknown) {
       if (!source) throw new BffError(current ? 409 : 404, "storage_not_found");
       if (identityKey(source.hostid) !== key || !source.classification.validUntil || Date.parse(source.classification.validUntil) <= Date.now()) throw new BffError(409, "storage_identity_unverified");
       if (input.filesystemKeys?.some(key => !source!.volumes.some(volume => volume.key === key)) || input.networkInterfaceKey && !source.interfaces.some(item => item.key === input.networkInterfaceKey)) throw new BffError(409, "storage_selection_unverified");
+      if (addedVisibleKeys.some(key => !source!.volumes.some(volume => volume.key === key))) throw new BffError(409, "storage_selection_unverified");
       if (verifyCapacity) {
         const capacity = filesystemCapacity(source.volumes, preferences), metric = capacity.usagePercent;
         if (!source.monitoringEnabled || capacity.coverage !== "complete" || metric?.quality !== "fresh" || !metric.validUntil || Date.parse(metric.validUntil) <= Date.now()) throw new BffError(409, "storage_capacity_unavailable");
       }
     }
-    const data = { ...preferences, filesystemKeys: input.filesystemKeys ?? Prisma.DbNull };
+    const data = { ...preferences, filesystemKeys: input.filesystemKeys ?? Prisma.DbNull, visibleFilesystemKeys: preferences.visibleFilesystemKeys ?? Prisma.DbNull };
     if (current) {
       const updated = await tx.storageConfig.updateMany({ where: { storageKey: key, revision: input.expectedRevision }, data: { ...data, revision: { increment: 1 } } });
       if (updated.count !== 1) throw new BffError(409, "revision_conflict");

@@ -12,6 +12,16 @@ import { initialPublicMonitorSettings } from "../lib/server/monitor-compat/setti
 import { buildDemoHosts, buildDemoOverview, buildDemoPresentation } from "../lib/server/monitoring/demo-data.ts";
 import { monitorFixture } from "./fixtures/monitor-compat.mjs";
 
+test("classic Storage table applies display selection independently and keeps its original public ordinal", () => {
+  const model = monitorFixture(), item = model.overview.data.blocks.find(block => block.type === "storage_summary").data.target;
+  item.visibleFilesystemKeys = [item.volumes[1].key];
+  const html = renderCompatibleContent(model);
+  assert.match(html, /class="table-scroll storage-volumes"/);
+  assert.match(html, /<td>Volume 2<\/td>/);
+  assert.doesNotMatch(html, /<td>Volume 1<\/td>/);
+  assert.match(html, /1 de 16 volumes visíveis/);
+});
+
 test("classic KPI text scales before scripts and hidden indicators leave no summary band", () => {
   const model = monitorFixture({ fontScalePercent: 150 });
   const html = renderCompatibleContent(model);

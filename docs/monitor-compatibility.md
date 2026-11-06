@@ -93,7 +93,7 @@ Essa regressão foi reproduzida antes da correção e validada depois em 50/70/1
 
 O dashboard React e seu encaixe existente não foram substituídos. Na apresentação clássica, CSS convencional organiza as mesmas fileiras e larguras. Em viewports a partir de 761×480, flexbox ocupa o espaço disponível e os corpos dos painéis podem encolher com `min-height: 0`. Cabeçalhos e rodapés permanecem fora da área rolável. Abaixo desse recorte, o fluxo da página permite rolagem para manter o conteúdo acessível.
 
-ASGARD, Signal, Storage e tabelas longas têm corpo rolável por teclado, toque ou roda. Conteúdo não é reduzido a altura zero para aparentar encaixe. Quando os mínimos das fileiras não cabem, a composição também pode rolar dentro da área disponível, conservando a legenda e a página. O controlador preserva foco/rolagem após atualizações. Disponibilidade conserva o tamanho dos minicards e seu limite de linhas.
+ASGARD, Signal e tabelas longas têm corpo rolável por teclado, toque ou roda. No Storage, somente a tabela de volumes rola; leituras e rede permanecem fora dela. Conteúdo não é reduzido a altura zero para aparentar encaixe. Quando os mínimos das fileiras não cabem, a composição também pode rolar dentro da área disponível, conservando a legenda e a página. O controlador preserva foco/rolagem após atualizações. Disponibilidade conserva o tamanho dos minicards e seu limite de linhas.
 
 O clássico não infere zoom por DPR ou estilo computado e não usa sensores. Com suporte nativo aplica CSS zoom; sem suporte, usa apenas `transform: scale()` com o fator explicitamente configurado e a área lógica inversa, sem calibrador automático. Na WebView 83, o zoom computado da raiz pode incluir densidade nativa sem declaração CSS; tratá-lo como zoom manual encolhia a tela.
 
@@ -196,3 +196,8 @@ Verificação Monitor 03 (31/10/2026): check final com lint sem erros, TypeScrip
 ## Minicards com três métricas
 
 A combinação explícita `["cpu","memory","disk"]` é renderizada com Disco inteiro acima de CPU/RAM, em todas as famílias com esses dados. Pares preservam a ordem; aplicações/Signal HTTP e VPS em modo padrão conservam faixas. A grade respeita Padrão (148px) ou Ampliado (168px) conforme `cardSize` do bloco, mesmo com trio; Fileiras visíveis manuais e zoom público continuam preservados. SSR e snapshots compartilham essa decisão, inclusive sem JS. `mini-metrics` usa flex-wrap para a WebView antiga. Leituras percentuais atuais expiradas são substituídas por — e barras zeradas pelo controlador, sem renovar evidência ou tocar som. Nenhum ajuste de APK é necessário.
+## Storage: seleção de volumes e rolagem única — 06/11/2026
+
+O painel clássico respeita `visibleFilesystemKeys`, como o React, sem filtrar o inventário usado na capacidade/alertas. Nomes públicos são atribuídos antes da seleção, preservando Volume 1/2. A configuração fica em Serviços → Storage → Volumes visíveis no painel; detalhes e atualização em [Storage](storage.md).
+
+Somente `.storage-volumes` rola dentro desse painel. `.storage-body` conserva métricas e rede; o cálculo de densidade reserva esses elementos, o rodapé e a primeira linha completa, inclusive com fontes ampliadas. Painéis empilhados de mesma altura usam o maior mínimo de cada par. O controlador automático e a restauração de posição seguem a tabela. ASGARD/Signal mantêm a rolagem de seus corpos; não aplicar essa exceção globalmente.

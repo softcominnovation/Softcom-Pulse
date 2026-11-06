@@ -11,13 +11,14 @@ export const storagePreferenceFields = {
   dashboardEnabled: z.boolean().default(false), critical: z.boolean().default(false),
   displayOrder: z.number().int().min(0).max(100000).default(0),
   filesystemKeys: z.array(storageDeviceKeySchema).min(1).max(32).refine(values => new Set(values).size === values.length).nullable().default(null),
+  visibleFilesystemKeys: z.array(storageDeviceKeySchema).min(1, "Selecione ao menos um volume para exibir.").max(32).refine(values => new Set(values).size === values.length).nullable().default(null),
   independentVolumesConfirmed: z.boolean().default(false),
   networkInterfaceKey: storageDeviceKeySchema.nullable().default(null),
   diskWarningPercent: z.number().int().min(1).max(100).nullable().default(null),
 };
 const diskSelection = { path: ["filesystemKeys"], message: "Selecione ao menos um volume para alertar a ocupação do disco." };
 export const storagePreferencesSchema = z.strictObject(storagePreferenceFields).refine(value => !value.filesystemKeys || value.filesystemKeys.length < 2 || value.independentVolumesConfirmed, { path: ["independentVolumesConfirmed"], message: "Confirme a independência dos volumes." }).refine(value => value.diskWarningPercent === null || !!value.filesystemKeys?.length, diskSelection);
-export const storageWriteSchema = z.strictObject({ ...storagePreferenceFields, cardMetrics: cardMetricsSchema.optional(), diskWarningPercent: storagePreferenceFields.diskWarningPercent.removeDefault().optional(), expectedRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1) }).refine(value => !value.filesystemKeys || value.filesystemKeys.length < 2 || value.independentVolumesConfirmed, { path: ["independentVolumesConfirmed"], message: "Confirme a independência dos volumes." }).refine(value => value.diskWarningPercent == null || !!value.filesystemKeys?.length, diskSelection);
+export const storageWriteSchema = z.strictObject({ ...storagePreferenceFields, visibleFilesystemKeys: storagePreferenceFields.visibleFilesystemKeys.removeDefault().optional(), cardMetrics: cardMetricsSchema.optional(), diskWarningPercent: storagePreferenceFields.diskWarningPercent.removeDefault().optional(), expectedRevision: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER - 1) }).refine(value => !value.filesystemKeys || value.filesystemKeys.length < 2 || value.independentVolumesConfirmed, { path: ["independentVolumesConfirmed"], message: "Confirme a independência dos volumes." }).refine(value => value.diskWarningPercent == null || !!value.filesystemKeys?.length, diskSelection);
 export const storageConfigSchema = z.object({
   ...storagePreferenceFields, id: z.uuid(), storageKey: storageKeySchema, zabbixHostId: z.string().regex(/^\d+$/), originalName: z.string().min(1).max(512),
   revision: z.number().int().positive(), createdAt: z.iso.datetime({ offset: true }), updatedAt: z.iso.datetime({ offset: true }),

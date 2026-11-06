@@ -2,6 +2,10 @@ import { filesystemCapacity } from "../monitoring/filesystem-capacity.ts";
 import { storageViewSchema, type StorageView } from "./contracts.ts";
 
 export const storageCapacity = filesystemCapacity;
+/** Keep the inventory intact for capacity/alerts and apply only the display preference. */
+export function visibleStorageVolumes(item: StorageView) {
+  return item.visibleFilesystemKeys == null ? item.volumes : item.volumes.filter(volume => item.visibleFilesystemKeys!.includes(volume.key));
+}
 export function storageStatus(item: StorageView, now = Date.now()): { label: string; tone: "good" | "warn" | "bad" | "unknown" } {
   if (item.resolution === "monitoring_disabled") return { label: "Monitoramento desativado", tone: "unknown" };
   if (item.resolution !== "resolved") return { label: item.resolution === "tag_missing" ? "Tag removida" : item.resolution === "host_missing" ? "Host ausente" : "Sem dados", tone: "unknown" };

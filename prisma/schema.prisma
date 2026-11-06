@@ -257,6 +257,7 @@ model StorageConfig {
   critical                    Boolean  @default(false)
   displayOrder                Int      @default(0) @map("display_order")
   filesystemKeys              Json?    @map("filesystem_keys")
+  visibleFilesystemKeys       Json?    @map("visible_filesystem_keys")
   independentVolumesConfirmed Boolean  @default(false) @map("independent_volumes_confirmed")
   networkInterfaceKey         String?  @map("network_interface_key") @db.VarChar(40)
   diskWarningPercent          Int?     @map("disk_warning_percent")

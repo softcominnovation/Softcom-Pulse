@@ -76,6 +76,13 @@ test("severity escalation uses changed facts, not the opening clock, and cannot 
   assert.equal(higherAgain.event, null); assert.equal(higherAgain.checkpoint.incident.highestAnnouncedRank, 5);
 });
 
+test("a Zabbix problem crossing the configured minimum is newly eligible on actual escalation", () => {
+  const below = observe(null, 1, "unavailable", { eligible: false, baseline: true }, { sourceSeverity: 3, confirmation: "explicit" });
+  const above = observe(below.checkpoint, 2, "unavailable", {}, { sourceSeverity: 4, confirmation: "explicit" });
+  assert.equal(above.event, "opened");
+  assert.equal(observe(above.checkpoint, 3, "unavailable", {}, { sourceSeverity: 4 }).event, null);
+});
+
 test("invalid future evidence is ignored without mutating the previous checkpoint", () => {
   const checkpoint = baseline(), saved = structuredClone(checkpoint);
   assert.equal(observe(checkpoint, 2, "unavailable", { now: origin }).ignored, true);

@@ -39,7 +39,10 @@ test("only the visible target's last confirmed recovery starts a five-second bor
   apply(change("7", "redis", "active", true));
   apply(change("7", "redis", "resolved", false, Date.now() - 61000));
   assert.deepEqual(states, {});
-  apply(change("8", "redis", "active", true));
+  apply(change("8", "redis", "active", true), change("9", "other", "active", true));
+  assert.deepEqual(states, { redis: "error", other: "error" });
+  apply(change("8", "redis", "active", false));
+  assert.deepEqual(states, { other: "error" });
   reducer.replace([]);
   assert.deepEqual(states, {});
   reducer.dispose();

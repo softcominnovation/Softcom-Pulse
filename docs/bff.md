@@ -6,7 +6,7 @@ As rotas `/api/monitoring/notifications` oferecem histórico, incidentes, detalh
 
 `GET /api/monitoring/notifications/history` (também público) filtra por `from`/`to` em YYYY-MM-DD no fuso de Fortaleza. Início omitido assume hoje; final omitido consulta apenas o dia inicial. Datas futuras/invertidas retornam 400. O filtro usa o índice de created_at e conserva a paginação; Não lidas, incidentes e contagens globais mantêm seus contratos.
 
-As cinco tabelas `notification_*` são persistência operacional deliberada, separada da configuração humana e das séries externas. Elas guardam transições, checkpoints mínimos e leitura global; Redis não determina o histórico. `standalone_vps.critical` é a única propriedade nova nos cadastros de domínio.
+O PostgreSQL guarda incidentes, eventos, leitura compartilhada, configuração e entregas externas. `POST /api/monitoring/notifications/incidents/:id/dismiss` permite ao editor silenciar uma ocorrência ativa até a recuperação. Repetir o pedido para o mesmo incidente descartado devolve seu estado. Uma ocorrência já encerrada sem descarte devolve 409. `GET/PUT /api/settings/notifications/webhook` administram o destino privado com revisão própria e chave cifrada.
 
 ## Métricas dos minicards de recursos
 

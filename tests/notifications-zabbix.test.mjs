@@ -10,7 +10,7 @@ function fixture() {
   return { targets: [resource, storage], configs: [{ id: "one", resourceType: "host", zabbixHostKey: "host-one" }],
     inventory: { hosts: [{ hostKey: "host-one", availability: "reachable", evidence }], containers: [], itemResources: new Map() },
     hosts: [{ hostid: "1", host: "host-one", status: "0" }],
-    problems: [{ eventid: "10", objectid: "100", severity: "4", clock: String(Math.floor(time / 1000)) }],
+    problems: [{ eventid: "10", objectid: "100", name: "Filesystem somente leitura", severity: "4", clock: String(Math.floor(time / 1000)) }],
     triggers: [{ triggerid: "100", status: "0", hosts: [{ host: "host-one" }], items: [] }],
     storage: { status: "ok", items: [{ hostid: "2", technicalName: "host-two", monitoringEnabled: true, availability: "reachable", evidence }], absent: [] },
     checkedAt: time, rpc: async () => { throw new Error("fixture upstream failure"); } };
@@ -18,7 +18,9 @@ function fixture() {
 test("failed supplemental Storage problems preserve primary host evidence and do not resolve Storage incidents", async () => {
   const input = fixture(), records = [];
   await recordZabbixNotifications(input, { prior: async () => [{ target_ref: storage.ref, condition_key: "problem:20:200" }], record: async (...args) => records.push(args) });
-  assert.equal(records[0][1].some(row => row.key === "problem:10:100"), true);
+  assert.deepEqual(records[0][1].find(row => row.key === "problem:10:100").diagnostic, {
+    title: "Filesystem somente leitura", host: "host-one", zabbixEventId: "10", zabbixTriggerId: "100",
+  });
   assert.equal(records[0][2].includes("problems"), true);
   assert.deepEqual(records[1][1].map(row => row.key), ["availability"]);
   assert.equal(records[1][2].includes("problems"), false);
@@ -34,6 +36,16 @@ test("tag removal suppresses availability, incomplete absence stays unknown, dis
   await recordZabbixNotifications(input, { prior: async () => [], record: async (...args) => records.push(args) });
   assert.equal(records[1][1][0].observation.state, "unknown");
 });
+test("a lost Docker item, suppressed problem or disabled item cannot announce a host failure", async () => {
+  const input = fixture(), records = [];
+  const active = input.problems[0];
+  input.triggers[0].items = [{ itemid: "old", key_: 'docker.container_info.state.health["/old-task"]', status: "0" }];
+  input.problems.push({ ...active, eventid: "12", objectid: "101", suppressed: "1" }, { ...active, eventid: "13", objectid: "102" });
+  input.triggers.push(...["101", "102"].map(id => ({ ...input.triggers[0], triggerid: id, items: [{ itemid: id, key_: "system.cpu.util", status: id === "102" ? "1" : "0" }] })));
+  await recordZabbixNotifications(input, { prior: async () => [{ target_ref: resource.ref, condition_key: "problem:10:100" }], record: async (...args) => records.push(args) });
+  assert.deepEqual(records[0][1].filter(row => row.family === "problems").map(row => [row.key, row.observation.state]), [["problem:10:100", "suppressed"]]);
+});
+
 test("expired budget skips notification work and hook failure never invalidates the published snapshot", async () => {
   const input = fixture(); input.signal = AbortSignal.abort();
   await recordZabbixNotifications(input, { prior: async () => assert.fail("expired work"), record: async () => assert.fail("expired write") });

@@ -6,6 +6,7 @@ import { publishProbeSync } from "../lib/server/probe/store.ts";
 import { getDatabase } from "../lib/server/database.ts";
 import { getCache } from "../lib/server/cache.ts";
 import { getPrisma } from "../lib/server/prisma.ts";
+import { dispatchWebhooks } from "../lib/server/notifications/webhook-dispatch.ts";
 import { BffError } from "../lib/server/bff.ts";
 
 export function createProbeCycle(run = runProbeCycle) {
@@ -39,11 +40,13 @@ export async function runProbe(once = false) {
   const pool = getDatabase();
   const lease = await pool.connect();
   lease.on("error", stop);
+  let dispatch: Promise<void> | undefined;
   let locked = false, lastPurge = 0;
   try {
     locked = (await lease.query("SELECT pg_try_advisory_lock(734021007::bigint) AS locked")).rows[0].locked; // 734021005 stays with template writes
     if (!locked) throw new BffError(503, "probe_already_running");
     console.log(JSON.stringify({ event: "probe_started", intervalMs: interval }));
+    if (!once) dispatch = dispatchWebhooks(shutdown.signal);
     const cycle = createProbeCycle();
     do {
       const started = Date.now();
@@ -60,6 +63,8 @@ export async function runProbe(once = false) {
     console.error(JSON.stringify({ event: "probe_stopped", error: code }));
     process.exitCode = 1;
   } finally {
+    shutdown.abort();
+    await dispatch;
     process.removeListener("SIGTERM", stop); process.removeListener("SIGINT", stop);
     if (locked) await lease.query("SELECT pg_advisory_unlock(734021007::bigint)").catch(() => undefined);
     lease.release();

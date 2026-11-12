@@ -22,10 +22,12 @@ async function consult(target: Target, transport: Transport, signal?: AbortSigna
   const ping = await call("/ping/latency");
   const accepted = !("error" in ping) && ping.status >= 200 && ping.status < 300;
   const status = accepted ? await call("/status") : null;
+  if (signal?.aborted) return;
   const check = classifyVpsCheck(ping, status, target.timeoutMs);
   const checkedAt = new Date();
   await recordVpsSample(target.id, checkedAt, check.reason, check.latencyMs, check.reading?.cpuPercent ?? null, check.reading?.memoryPercent ?? null, check.reading?.diskPercent ?? null);
-  await recordHttpNotification(notificationTarget, "vps", check.reason, checkedAt);
+  const response = status ?? ping;
+  await recordHttpNotification(notificationTarget, "vps", check.reason, checkedAt, "status" in response ? response.status : null, "error" in response ? response.error : undefined);
   await publishVpsResult(target.id, checkedAt.toISOString(), check.reason, check.latencyMs, check.reading).catch(() => undefined);
 }
 
@@ -39,7 +41,10 @@ export async function runVpsMonitorCycle(options: { signal?: AbortSignal; transp
       const target = targets[index++];
       if (!target) break;
       await consult(target, transport, options.signal, notificationTargets.get(`standalone_vps:${target.id}`)).catch(error => {
-        if (error instanceof BffError && (error.code === "database_unavailable" || error.code === "cache_unavailable")) throw error;
+        if (options.signal?.aborted) return;
+        const reason = error instanceof BffError ? error.code : "vps_monitor_read_failed";
+        console.error(JSON.stringify({ event: "vps_monitor_target_failed", targetRef: `standalone_vps:${target.id}`, reason }));
+        if (reason === "database_unavailable" || reason === "cache_unavailable") throw error;
       });
     }
   };

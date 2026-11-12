@@ -15,6 +15,7 @@ export type NotificationIncidentView = {
   id: string; targetRef: string; displayName: string; severity: NotificationSeverity; sourceSeverity: number | null;
   status: "active" | "resolved" | "cancelled"; messageCode: NotificationMessageCode;
   metricContext?: MetricContext | null; contextOccurredAt?: string | null;
+  dismissedAt?: string | null; description?: string;
   openedAt: string; confirmedAt: string; changedAt: string; closedAt: string | null; revision: string;
 };
 export type NotificationEventView = {
@@ -23,6 +24,7 @@ export type NotificationEventView = {
   criticalAtOccurrence: boolean; messageCode: NotificationMessageCode; occurredAt: string; createdAt: string;
   createdRevision: string; revision: string; readAt: string | null; announce: boolean;
   metricContext?: MetricContext | null;
+  description?: string;
   incidentStatus: NotificationIncidentView["status"]; toastEligible: boolean; sound: NotificationSound | false;
 };
 export type NotificationCounts = { unreadCount: number; activeCount: number };
@@ -57,7 +59,8 @@ export const notificationReadSchema = z.union([
   z.strictObject({ allThrough: z.string().min(1).max(1200) }),
 ]);
 
-export function notificationText(event: { messageCode: NotificationMessageCode; metricContext?: MetricContext | null; targetRef?: string }) {
+export function notificationText(event: { messageCode: NotificationMessageCode; metricContext?: MetricContext | null; targetRef?: string; description?: string }) {
+ if (event.description) return event.description;
  const context = metricContextSchema.safeParse(event.metricContext);
  const storage = event.targetRef?.startsWith("storage:");
  if (!context.success || !event.messageCode.startsWith("usage_")) return storage && event.messageCode === "usage_disk" ? "Disco do Storage acima do limite" : notificationMessages[event.messageCode];

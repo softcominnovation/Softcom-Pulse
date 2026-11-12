@@ -1,5 +1,5 @@
 import "server-only";
-import { appendChange, notificationTransaction, readPolicy } from "./database.ts";
+import { appendChange, notificationTransaction, readPolicy, webhookEligibleSql } from "./database.ts";
 
 export async function maintainNotifications() {
   try {
@@ -12,7 +12,11 @@ export async function maintainNotifications() {
       await client.query(`DELETE FROM notification_target_state WHERE (target_ref,condition_key) IN (
         SELECT target_ref,condition_key FROM notification_target_state WHERE condition_key<>'$lifecycle' AND incident_id IS NULL AND updated_at<$1
         ORDER BY target_ref,condition_key LIMIT 200 FOR UPDATE SKIP LOCKED)`, [cutoff]);
+      await client.query(`DELETE FROM notification_webhook_delivery WHERE event_id IN (
+        SELECT event_id FROM notification_webhook_delivery WHERE finished_at < now()-interval '7 days' ORDER BY finished_at LIMIT 2000)`);
       const rows = (await client.query(`SELECT id FROM notification_incident i WHERE status<>'active' AND changed_at<$1
+        AND NOT EXISTS(SELECT 1 FROM notification_event e JOIN notification_webhook w ON w.active AND e.created_revision>w.cursor_revision
+          WHERE i.dismissed_at IS NULL AND e.incident_id=i.id AND ${webhookEligibleSql})
         AND NOT EXISTS(SELECT 1 FROM notification_event e WHERE e.incident_id=i.id AND (e.read_at IS NULL OR e.read_at>=$1)) ORDER BY id LIMIT 200 FOR UPDATE`, [cutoff])).rows;
       if (rows.length) await client.query("DELETE FROM notification_incident WHERE id=ANY($1::uuid[])", [rows.map(row => row.id)]);
       await appendChange(client, "retention", {});

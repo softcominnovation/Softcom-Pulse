@@ -25,7 +25,21 @@ try {
   const states = (await pool.query("SELECT target_ref,checkpoint->>'confirmed' AS state FROM notification_target_state WHERE condition_key='availability'")).rows;
   assert.equal(states.length, 3, JSON.stringify(states));
   if (healthy) assert.ok(states.every(row => row.state === "healthy"), JSON.stringify(states));
+  if (process.argv[2] === "candidate") {
+    const { saveWebhookSettings } = await load("lib/server/notifications/webhook-settings.ts");
+    await saveWebhookSettings({ expectedRevision: 1, active: true, url: "https://192.0.2.15/alerts", apiKey: "runtime-sentinel" });
+  }
   if (process.argv[2] === "confirmed") {
+    const { enqueueWebhookEvents, deliverNextWebhook } = await load("lib/server/notifications/webhook-dispatch.ts");
+    await enqueueWebhookEvents();
+    const received = [];
+    while (await deliverNextWebhook(new AbortController().signal, async (_url, key, id, json) => {
+      const data = JSON.parse(json);
+      assert.equal(key, "runtime-sentinel"); assert.equal(data.eventId, id);
+      received.push(data.source);
+      return { status: 204 };
+    })) { /* Drain the three independent sources. */ }
+    assert.deepEqual(received.sort(), ["probe", "signal", "vps"]);
     const events = (await pool.query("SELECT source FROM notification_incident WHERE status='active' ORDER BY source")).rows;
     assert.deepEqual(events.map(row => row.source), ["probe", "signal", "vps"]);
     assert.equal((await pool.query("SELECT count(*)::int AS count FROM notification_event WHERE announce")).rows[0].count, 3);

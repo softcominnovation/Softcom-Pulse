@@ -28,6 +28,7 @@ export type ConditionCheckpoint = {
   candidate: { state: KnownState; count: number; firstObservedAt: number } | null;
   incident: ConditionIncident | null;
   eligible: boolean;
+  lastRank?: number;
 };
 export type ConditionTransition = {
   checkpoint: ConditionCheckpoint;
@@ -80,14 +81,22 @@ export function evaluateCondition(
   checkpoint.eligible = options.eligible;
   if (observation.fingerprint === checkpoint.fingerprint && !policyBecameEligible && !options.baseline) return result;
   checkpoint.fingerprint = observation.fingerprint;
-  const baseline = options.baseline || policyBecameEligible;
+  // Enabling a policy for the same failure is silent. A new failure after a
+  // filtered state (e.g. slow VPS → offline) still needs normal confirmation.
+  const sameFailure = checkpoint.confirmed === state || checkpoint.candidate?.state === state;
   const rank = observation.sourceSeverity ?? ({ info: 0, warning: 2, critical: 4 }[observation.severity]);
   if (!Number.isInteger(rank) || rank < 0 || rank > 5) return { ...result, checkpoint: previous ?? emptyCheckpoint(options.expectedEpoch), ignored: true };
+
+  const worsened = checkpoint.lastRank !== undefined && rank > checkpoint.lastRank;
+  checkpoint.lastRank = rank;
+  const baseline = options.baseline || (policyBecameEligible && sameFailure && !worsened);
 
   if (state === checkpoint.confirmed) {
     checkpoint.candidate = null;
     if (!checkpoint.incident && state !== "healthy" && options.eligible) {
-      checkpoint.incident = { startedAt: observation.observedAt, confirmedAt: observation.checkedAt, severity: observation.severity, rank, highestAnnouncedRank: null };
+      const announce = worsened && !baseline;
+      checkpoint.incident = { startedAt: observation.observedAt, confirmedAt: observation.checkedAt, severity: observation.severity, rank, highestAnnouncedRank: announce ? rank : null };
+      if (announce) result.event = "opened";
       result.incidentAction = "opened";
     }
     if (checkpoint.incident) {

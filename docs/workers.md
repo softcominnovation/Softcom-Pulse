@@ -4,6 +4,14 @@ Storage é um ramo do **Collector Zabbix existente**, com descoberta por tag de 
 
 O limite opt-in `diskWarningPercent` também é avaliado nesse Collector, pelo adaptador de uso Storage e pelo motor `usage` já compartilhado com VMs. Usa a capacidade dos volumes selecionados, sem depender de vínculo ASGARD. A captura de configuração anterior à coleta é revalidada sob locks; alteração/desativação cancela somente o disco, na transação do cadastro. Histórico, política, som e leitura seguem a central existente.
 
+## Entrega de notificações externas
+
+O processo contínuo `pulse-probe` consulta a fila de eventos críticos no PostgreSQL a cada cinco segundos quando ocioso. Ele também funciona sem aplicações HTTP cadastradas. A fila possui cursor e reservas persistentes. A sonda libera a conexão com o banco antes de iniciar o POST e retoma entregas pendentes após reiniciar. O modo de coleta pontual `probe:once` faz apenas a sondagem.
+
+O orçamento por requisição é de cinco segundos. Timeouts, erros transitórios de rede, HTTP 408, 429 e 5xx admitem até cinco tentativas com a mesma chave de idempotência. Os intervalos são de aproximadamente 15 s, 1 min, 5 min e 15 min. O receptor pode solicitar até uma hora de espera em 429/503. Se a sonda reiniciar durante a quinta tentativa e perder a confirmação, registra `receipt_unknown` sem emitir um sexto POST. Use o `eventId` para consultar o receptor. Demais erros HTTP encerram a entrega. O log `notification_webhook_delivery_failed` registra IDs de evento e incidente, geração do destino, tentativa, motivo, duração, status HTTP e `retryMs` (nulo na falha definitiva). `notification_webhook_queue_unavailable` indica falha de acesso ou processamento da fila. Um erro externo não altera o histórico nem o estado do recurso no Pulse.
+
+A migration `20261112090000_notification_webhook` inicializa o envio desativado. A `20261112110000_notification_incident_dismissal` persiste o diagnóstico e o descarte por ocorrência. Em instalações locais, aplique as migrations com `npx prisma migrate deploy` antes de iniciar a nova versão. Atualize a aplicação e os processos de coleta para a mesma imagem. O BFF e a sonda precisam da mesma `TOKEN_ENCRYPTION_KEY`, já presente nas stacks. Novas preferências salvas na interface passam a valer sem reiniciar processos. Se uma VPS não produzir amostras, procure `vps_monitor_target_failed` no container `pulse-vps-monitor`. O log identifica o recurso e o motivo, inclusive uma chave de monitoramento que o processo não conseguiu decifrar. [Configuração do envio](notifications.md#envio-externo-de-erros-críticos)
+
 ## Visão geral
 
 O **Pulse** é uma aplicação **Next.js** composta por:

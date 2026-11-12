@@ -41,6 +41,8 @@ export async function readPolicy(client: PoolClient, lock = false) {
   if (!parsed.success) throw new BffError(503, "notifications_unavailable");
   return parsed.data;
 }
+export const webhookEligibleSql = "e.announce AND e.critical_at_occurrence AND e.severity='critical' AND e.transition IN ('opened','escalated')";
+
 export type Stream = { revision: string; delivery_revision: string; generation: string; minimum_revision: string };
 export async function readStream(client: PoolClient) {
   const { rows } = await client.query<Stream>("SELECT revision,delivery_revision,generation,minimum_revision FROM notification_stream_state WHERE id=1");

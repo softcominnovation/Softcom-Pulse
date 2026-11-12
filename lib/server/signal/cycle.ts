@@ -13,10 +13,11 @@ type Consult = (baseUrl: string, timeoutMs: number, signal?: AbortSignal) => Pro
 
 async function consult(target: Target, transport: Consult, signal?: AbortSignal, notificationTarget?: NotificationTarget) {
   const { live, ready } = await transport(target.baseUrl, target.timeoutMs, signal);
+  if (signal?.aborted) return;
   const classification = classifySignalSample(live, ready, target.timeoutMs);
   const checkedAt = new Date();
   await recordSignalSample(target.id, checkedAt, classification);
-  await recordHttpNotification(notificationTarget, "signal", classification.state, checkedAt);
+  await recordHttpNotification(notificationTarget, "signal", classification.state, checkedAt, classification.httpStatus);
 }
 
 export async function runSignalMonitorCycle(options: {

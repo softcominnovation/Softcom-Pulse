@@ -3,7 +3,8 @@ import { z } from "zod";
 import { BffError, protectedResponse, queryParams, jsonBody } from "../bff.ts";
 import { requireSession } from "../auth/index.ts";
 import { notificationListQuery, notificationChangesQuery, notificationHistoryQuery } from "../../notifications/contracts.ts";
-import { listNotifications, notificationHistory, notificationDetail, notificationChanges, markNotificationsRead } from "./read.ts";
+import { listNotifications, notificationHistory, notificationDetail, notificationChanges, markNotificationsRead, dismissNotificationIncident } from "./read.ts";
+import { readWebhookSettings, saveWebhookSettings } from "./webhook-settings.ts";
 import { notificationSettings, saveNotificationSettings } from "./settings.ts";
 
 export async function readNotificationRoute(request: Request, segments: string[], scope: "public" | "private") {
@@ -28,22 +29,27 @@ export function notificationsGet(request: Request, context: Context) {
 }
 export function notificationsPost(request: Request, context: Context) {
   return protectedResponse(request, async () => {
-    if ((await context.params).segments?.join("/") !== "read") throw new BffError(404, "notification_not_found");
+    const segments = (await context.params).segments ?? [];
     const email = requireSession(request).user.email;
     if (!email) throw new BffError(403, "editor_required");
+    if (segments.length === 3 && segments[0] === "incidents" && segments[2] === "dismiss") return dismissNotificationIncident(segments[1], email);
+    if (segments.join("/") !== "read") throw new BffError(404, "notification_not_found");
     return markNotificationsRead(await jsonBody(request), email);
   });
 }
 export function notificationSettingsGet(request: Request, context: Context) {
   return protectedResponse(request, async editor => {
     if (!editor) throw new BffError(403, "editor_required");
-    if ((await context.params).segments?.length) throw new BffError(404, "notification_not_found");
+    const { segments } = await context.params;
+    if (segments?.join("/") === "webhook") return readWebhookSettings();
+    if (segments?.length) throw new BffError(404, "notification_not_found");
     return notificationSettings();
   });
 }
 export function notificationSettingsPut(request: Request, context: Context) {
   return protectedResponse(request, async () => {
     const segments = (await context.params).segments ?? [];
+    if (segments.join("/") === "webhook") return saveWebhookSettings(await jsonBody(request));
     if (!segments.length) return saveNotificationSettings(await jsonBody(request, 512 * 1024));
     if (segments.length === 2 && segments[0] === "targets") return saveNotificationSettings(await jsonBody(request), segments[1]);
     throw new BffError(404, "notification_not_found");

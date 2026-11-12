@@ -124,7 +124,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           visuals.apply(changes, Date.parse(latest.serverTime), runtime.maxDeliveryAgeMs);
           const events = changes.flatMap(change => change.payload.event ? [change.payload.event] : []);
           const read = changes.flatMap(change => change.kind === "read" ? change.payload.ids ?? [] : []);
-          const closed = changes.flatMap(change => change.payload.incident?.status !== "active" && change.payload.incident ? [change.payload.incident.id] : []);
+          const closed = changes.flatMap(change => change.payload.incident && (change.payload.incident.status !== "active" || change.payload.incident.dismissedAt) ? [change.payload.incident.id] : []);
           if (visibleEvents.some(event => read.includes(event.id) || !event.recovery && closed.includes(event.incidentId))) { dismissToast(toastId); visibleEvents = []; }
           delivery.update(events, read, closed);
           const heard = events.filter(event => !read.includes(event.id) && (event.eventType === "recovery" || !closed.includes(event.incidentId)));

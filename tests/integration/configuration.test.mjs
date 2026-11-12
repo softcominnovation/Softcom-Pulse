@@ -23,7 +23,7 @@ import { runProbeCycle } from "../../lib/server/probe/cycle.ts";
 import { listEnabledExternalServices, purgeExternalSamples } from "../../lib/server/probe/repository.ts";
 import { probeKeys } from "../../lib/server/probe/store.ts";
 import { runVpsMonitorCycle } from "../../lib/server/vps/cycle.ts";
-import { purgeVpsSamples } from "../../lib/server/vps/repository.ts";
+import { listEnabledMonitoredVps, purgeVpsSamples } from "../../lib/server/vps/repository.ts";
 import { vpsResultKey } from "../../lib/server/vps/store.ts";
 import { runSignalMonitorCycle } from "../../lib/server/signal/cycle.ts";
 import { purgeSignalSamples } from "../../lib/server/signal/repository.ts";
@@ -132,7 +132,7 @@ const originalFetch = globalThis.fetch;
 const hostConfig = { resourceType: "host", zabbixHostKey: "asgard", dashboardEnabled: true };
 const editorEmail = "editor@pulse.test";
 const user = { id: 42, email: editorEmail, administrador: false, permissoes: [] };
-const publicTables = ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "notification_change", "notification_event", "notification_incident", "notification_stream_state", "notification_target_state", "pulse_settings", "signal_infra_link", "signal_monitor_sample", "signal_service", "signal_target", "standalone_vps", "storage_config", "vm_display_config", "vm_template_config", "vps_monitor_sample", "vps_stack"];
+const publicTables = ["_prisma_migrations", "external_service", "external_service_sample", "monitored_resource_config", "notification_change", "notification_event", "notification_incident", "notification_stream_state", "notification_target_state", "notification_webhook", "notification_webhook_delivery", "pulse_settings", "signal_infra_link", "signal_monitor_sample", "signal_service", "signal_target", "standalone_vps", "storage_config", "vm_display_config", "vm_template_config", "vps_monitor_sample", "vps_stack"];
 const request = (path = "/", method = "GET", body, auth = token) => new Request("http://localhost/api" + path, {
   method, headers: { "Content-Type": "application/json", ...(auth ? { Authorization: "Bearer " + auth } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }),
 });
@@ -1103,7 +1103,7 @@ function runVpsMonitorProcess(overrides = {}, unset = []) {
 }
 const vpsInput = (extra = {}) => ({ name: "Lab", ip: "10.8.0.4", ...extra });
 
-test("standalone VPS registration keeps the monitor key local and does not change Zabbix resources", async () => {
+test("standalone VPS registration keeps the monitor key local and does not change Zabbix resources", async t => {
   const resourcesBefore = Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM monitored_resource_config")).rows[0].total);
   const servicesBefore = Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM external_service")).rows[0].total);
   const vmsBefore = Number((await getDatabase().query("SELECT COUNT(*)::int AS total FROM vm_display_config")).rows[0].total);
@@ -1130,7 +1130,13 @@ test("standalone VPS registration keeps the monitor key local and does not chang
   assert.equal(monitored.body.data.apiKey, secret);
   assert.equal((await handlers.standaloneVpsPatch(request("/", "PATCH", { expectedRevision: 1, name: "Atrasado" }), params({ id }))).status, 409);
   const calls = [];
-  await runVpsMonitorCycle({ transport: async url => { calls.push(url); throw new Error("unreachable"); } });
+  const invalid = { id: randomUUID(), baseUrl: "https://192.0.2.42", apiKeyCiphertext: "invalid-key-envelope", timeoutMs: 5000 };
+  const log = t.mock.method(console, "error", () => {});
+  await runVpsMonitorCycle({ targets: [invalid, ...await listEnabledMonitoredVps()], transport: async url => { calls.push(url); throw new Error("unreachable"); } });
+  assert.deepEqual(log.mock.calls.map(call => JSON.parse(call.arguments[0])), [
+    { event: "vps_monitor_target_failed", targetRef: `standalone_vps:${invalid.id}`, reason: "vps_monitor_secret_unavailable" },
+  ]);
+  log.mock.restore();
   assert.deepEqual(calls, ["http://10.8.0.4:9100/monitor/ping/latency"]);
   const failed = await result(await handlers.standaloneVpsDetailGet(request("/"), params({ id })));
   assert.deepEqual(failed.body.data.samples, []);

@@ -43,6 +43,27 @@ test("fresh events display once and offline polling keeps known counts without a
   await expect(page.locator('[data-operational-toast]')).toHaveCount(0);
 });
 
+test("an editor can discard just the open occurrence from its detail", async ({ page }) => {
+  const state = notificationFixtureState(), event = addNotification(state);
+  await adminFixture(page); await notificationFixture(page, state);
+  let dismissedAt: string | null = null;
+  const incident = () => ({ id: event.incidentId, displayName: event.displayName, status: "active", severity: "critical", messageCode: "connection", description: "O monitor recebeu um status HTTP inesperado · HTTP 503", openedAt: event.occurredAt, confirmedAt: event.createdAt, dismissedAt });
+  const path = "**/api/monitoring/notifications/incidents/" + event.incidentId;
+  await page.route(path, route => route.fulfill({ json: { incident: incident(), events: [event], targetHref: null } }));
+  await page.route(path + "/dismiss", route => {
+    expect(route.request().method()).toBe("POST");
+    dismissedAt = new Date().toISOString();
+    return route.fulfill({ json: { incident: incident() } });
+  });
+  await signIn(page);
+  await page.getByRole("button", { name: /^Notificações: 1 não lidas/ }).click();
+  await page.getByRole("button", { name: "Ver incidente" }).click();
+  await expect(page.getByText(/HTTP 503/)).toBeVisible();
+  await page.getByRole("button", { name: "Descartar", exact: true }).click();
+  await expect(page.getByText(/Avisos desta ocorrência descartados/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Descartar", exact: true })).toHaveCount(0);
+});
+
 test("saving a service exception preserves the unsaved general draft and conflict keeps edits", async ({ page }) => {
   const admin = await adminFixture(page), state = await notificationFixture(page); await signIn(page); await page.goto("/admin/configuracoes");
   const section = page.locator("section").filter({ has: page.getByRole("heading", { name: "Notificações de serviços", exact: true }) });

@@ -34,7 +34,7 @@
           } else if (incidents[item.id]) {
             delete incidents[item.id];
             var age = serverTime - Date.parse(item.closedAt);
-            endings[ref] = item.status === 'resolved' && age >= 0 && age <= maxAge;
+            endings[ref] = item.status === 'resolved' && !item.dismissedAt && age >= 0 && age <= maxAge;
           } else return;
           changed = true;
         });

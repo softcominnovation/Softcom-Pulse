@@ -7,7 +7,7 @@ type ServiceRow = { id: string; targetId: string; servicePrefix: string; enabled
 
 function observation(target: NotificationTarget, key: string, family: NotificationObservation["family"], state: NotificationObservation["observation"]["state"], checkedAt: number): NotificationObservation {
   return {
-    key, family, source: "zabbix",
+    key, family, source: "zabbix", diagnostic: { reason: family },
     eventType: state === "attention" ? "attention" : "unavailable",
     messageCode: state === "attention" ? "attention" : "unavailable",
     observation: {

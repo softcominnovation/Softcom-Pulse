@@ -14,7 +14,7 @@ export const itemSchema = z.object({
   valuemap: z.union([z.array(z.unknown()), z.object({ mappings: z.array(z.object({ type: text, value: text, newvalue: text })) })]).optional(),
   itemDiscovery: z.union([z.array(z.never()).length(0), z.object({ status: text.optional() })]).transform(value => Array.isArray(value) ? {} : value).optional(),
 });
-export const zabbixProblemSchema = z.object({ eventid: text, objectid: text, name: text, severity: text, clock: text, tags: z.array(tagSchema).default([]) });
+export const zabbixProblemSchema = z.object({ eventid: text, objectid: text, name: text, severity: text, clock: text, suppressed: text.optional(), tags: z.array(tagSchema).default([]) });
 export type ZabbixHost = z.infer<typeof zabbixHostSchema>;
 export type Item = z.infer<typeof itemSchema>;
 export type ZabbixProblem = z.infer<typeof zabbixProblemSchema>;

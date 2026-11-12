@@ -1,5 +1,6 @@
 import { metricContextSchema, type MetricContext } from "../../config/agent-monitoring.ts";
 import { evaluateUsage, type UsageCheckpoint, type UsageSample } from "../../notifications/usage.ts";
+import { diagnosticSchema, type WebhookDiagnostic } from "./webhook-diagnostic.ts";
 import { usageRule, storageUsageRule } from "./usage-rule.ts";
 import "server-only";
 import { randomUUID } from "node:crypto";
@@ -23,9 +24,10 @@ const inputSchema = z.strictObject({
   messageCode: notificationMessageSchema, observation: observationSchema,
   usage: z.object({ metric: z.enum(["cpu", "memory", "disk"]), limit: z.number(), token: z.string(), sampleAt: z.number(), validUntil: z.number(), value: z.number().nullable(), rule: z.string(), scopeRevision: z.number() }).optional(),
   metricContext: metricContextSchema.optional(),
+  diagnostic: diagnosticSchema.optional().catch(undefined),
   resourceIdentity: z.string().min(1).max(256).optional(),
 });
-export type NotificationObservation = { key: string; family: "availability" | "status" | "health" | "problems" | "metrics"; source: "zabbix" | "probe" | "vps" | "signal"; eventType: Exclude<NotificationEventType, "recovery">; messageCode: NotificationMessageCode; observation: ConditionObservation; resourceIdentity?: string; usage?: UsageSample & { scopeRevision: number }; metricContext?: MetricContext };
+export type NotificationObservation = { key: string; family: "availability" | "status" | "health" | "problems" | "metrics"; source: "zabbix" | "probe" | "vps" | "signal"; eventType: Exclude<NotificationEventType, "recovery">; messageCode: NotificationMessageCode; observation: ConditionObservation; resourceIdentity?: string; usage?: UsageSample & { scopeRevision: number }; metricContext?: MetricContext; diagnostic?: WebhookDiagnostic };
 
 export async function recordNotificationObservations(target: NotificationTarget, input: NotificationObservation[], completeFamilies: string[], replay = false, signal?: AbortSignal) {
   const observations = z.array(inputSchema).max(5004).parse(input).sort((a, b) => a.key.localeCompare(b.key));
@@ -38,7 +40,7 @@ export async function recordNotificationObservations(target: NotificationTarget,
     }
     const current = await lockTarget(client, target);
     if (!current) return;
-    const { rows: states } = await client.query("SELECT * FROM notification_target_state WHERE target_ref=$1 ORDER BY condition_key FOR UPDATE", [target.ref]);
+    const { rows: states } = await client.query("SELECT s.*, i.dismissed_at, (i.id IS NOT NULL AND i.diagnostic IS NULL) AS missing_diagnostic FROM notification_target_state s LEFT JOIN notification_incident i ON i.id=s.incident_id WHERE s.target_ref=$1 ORDER BY s.condition_key FOR UPDATE OF s", [target.ref]);
     const lifecycle = states.find(row => row.condition_key === "$lifecycle");
     if (!lifecycle || lifecycle.epoch !== target.epoch) return;
     const checkedAt = Math.max(0, ...observations.map(row => row.observation.checkedAt));
@@ -76,32 +78,48 @@ export async function recordNotificationObservations(target: NotificationTarget,
         eventType: row.eventType, severity: row.observation.severity, sourceSeverity: row.observation.sourceSeverity });
       const recovery = notificationDecision(policy, { targetRef: current.ref, critical: current.critical, monitoringEnabled: current.enabled,
         eventType: "recovery", severity: "info", previouslyAnnounced: previous?.incident?.highestAnnouncedRank != null });
-      const result = evaluateCondition(row.usage && previous?.confirmed === null ? { ...previous, eligible: decision.enabled } : previous ?? null, { ...row.observation, state: current.enabled ? row.observation.state : "suppressed" }, {
+      const observation = { ...row.observation };
+      if (!current.enabled) observation.state = "suppressed";
+      // A successful HTTP check ends this dismissal as soon as the card returns to healthy.
+      if (existing?.dismissed_at && row.source !== "zabbix" && row.key === "availability" && observation.state === "healthy") {
+        observation.confirmation = "explicit";
+      }
+      const result = evaluateCondition(row.usage && previous?.confirmed === null ? { ...previous, eligible: decision.enabled } : previous ?? null, observation, {
         now: Date.now(), expectedEpoch: current.epoch, baseline: row.usage ? false : !baselines[row.family], eligible: decision.enabled, recoveryEnabled: recovery.enabled,
       });
       if (result.ignored) continue;
       if (usage) Object.assign(result.checkpoint, { usage });
       let incidentId: string | null = existing?.incident_id ?? null;
+      let dismissed = false;
       if (result.incidentAction === "opened" && result.checkpoint.incident) {
         const incident = result.checkpoint.incident; incidentId = randomUUID();
-        await client.query(`INSERT INTO notification_incident(id,target_ref,condition_key,display_name,source,severity,source_severity,status,message_code,opened_at,confirmed_at)
-          VALUES($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10)`, [incidentId, target.ref, row.key, current.label, row.source, incident.severity, row.observation.sourceSeverity, row.messageCode, new Date(incident.startedAt), new Date(incident.confirmedAt)]);
+        await client.query(`INSERT INTO notification_incident(id,target_ref,condition_key,display_name,source,severity,source_severity,status,message_code,opened_at,confirmed_at,diagnostic)
+          VALUES($1,$2,$3,$4,$5,$6,$7,'active',$8,$9,$10,$11)`, [incidentId, target.ref, row.key, current.label, row.source, incident.severity, row.observation.sourceSeverity, row.messageCode, new Date(incident.startedAt), new Date(incident.confirmedAt), row.diagnostic ?? null]);
       } else if (result.incidentAction && incidentId) {
         const status = result.incidentAction === "resolved" ? "resolved" : result.incidentAction === "cancelled" ? "cancelled" : "active";
-        await client.query(`UPDATE notification_incident SET status=$2::text,severity=$3,source_severity=$4,message_code=$5,changed_at=clock_timestamp(),
-          closed_at=CASE WHEN $2::text='active' THEN NULL ELSE clock_timestamp() END WHERE id=$1`,
+        const updated = await client.query(`UPDATE notification_incident SET status=$2::text,severity=$3,source_severity=$4,message_code=$5,changed_at=clock_timestamp(),
+          diagnostic=CASE WHEN $2::text='active' THEN coalesce($6::jsonb,diagnostic) ELSE diagnostic END,
+          closed_at=CASE WHEN $2::text='active' THEN NULL ELSE clock_timestamp() END WHERE id=$1 RETURNING dismissed_at`,
         [incidentId, status, result.checkpoint.incident?.severity ?? result.previousIncident?.severity ?? row.observation.severity, row.observation.sourceSeverity,
-          status === "resolved" ? (row.usage ? "usage_recovered" : "recovered") : status === "cancelled" ? "monitor_changed" : row.messageCode]);
+          status === "resolved" ? (row.usage ? "usage_recovered" : "recovered") : status === "cancelled" ? "monitor_changed" : row.messageCode, row.diagnostic ?? null]);
+        dismissed = updated.rows[0]?.dismissed_at != null;
+      }
+      // Existing installations can have active incidents predating diagnostic capture.
+      if (!result.incidentAction && incidentId && existing?.missing_diagnostic && row.diagnostic &&
+          result.checkpoint.confirmed === row.observation.state && result.checkpoint.incident) {
+        const enriched = await client.query("UPDATE notification_incident SET diagnostic=$2 WHERE id=$1 AND diagnostic IS NULL AND status='active'", [incidentId, row.diagnostic]);
+        if (enriched.rowCount) changes.push({ incidentId, eventId: null });
       }
       let eventId: string | null = null;
-      if (result.event && incidentId) {
+      if (result.event && incidentId && !dismissed) {
         eventId = randomUUID(); const recovered = result.event === "recovered";
         const rank = result.checkpoint.incident?.highestAnnouncedRank ?? "closed";
-        await client.query(`INSERT INTO notification_event(id,incident_id,transition_key,target_ref,display_name,event_type,transition,severity,source_severity,critical_at_occurrence,message_code,occurred_at,announce,metric_context)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        await client.query(`INSERT INTO notification_event(id,incident_id,transition_key,target_ref,display_name,event_type,transition,severity,source_severity,critical_at_occurrence,message_code,occurred_at,announce,metric_context,diagnostic)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
         [eventId, incidentId, `${incidentId}:${result.event}:${rank}`, target.ref, current.label, recovered ? "recovery" : row.eventType,
           result.event, recovered ? "info" : row.observation.severity, row.observation.sourceSeverity, current.critical,
-          recovered ? (row.usage ? "usage_recovered" : "recovered") : row.messageCode, new Date(recovered ? row.observation.observedAt : result.checkpoint.incident!.startedAt), !replay, row.metricContext ? JSON.stringify(row.metricContext) : null]);
+          recovered ? (row.usage ? "usage_recovered" : "recovered") : row.messageCode, new Date(recovered ? row.observation.observedAt : result.checkpoint.incident!.startedAt), !replay, row.metricContext ? JSON.stringify(row.metricContext) : null,
+          !recovered ? row.diagnostic ?? null : null]);
       }
       await client.query(`INSERT INTO notification_target_state(target_ref,condition_key,epoch,checkpoint,incident_id) VALUES($1,$2,$3,$4,$5)
         ON CONFLICT(target_ref,condition_key) DO UPDATE SET epoch=EXCLUDED.epoch,checkpoint=EXCLUDED.checkpoint,incident_id=EXCLUDED.incident_id,updated_at=clock_timestamp()`,
@@ -129,8 +147,8 @@ export async function safelyRecordNotifications(target: NotificationTarget, obse
   const signal = AbortSignal.any([AbortSignal.timeout(2500), ...(parentSignal ? [parentSignal] : [])]);
   try { await recordNotificationObservations(target, observations, families, false, signal); }
   catch {
-    // One bounded retry, with the original observation identity; recovery of a failed write is silent.
-    try { await delay(75, undefined, { signal }); await recordNotificationObservations(target, observations, families, true, signal); }
+    // Same observation and checkpoint: a rolled-back write can announce, a committed one is ignored.
+    try { await delay(75, undefined, { signal }); await recordNotificationObservations(target, observations, families, false, signal); }
     catch { console.error(JSON.stringify({ event: "notification_persistence_failed", targetRef: target.ref })); }
   }
 }

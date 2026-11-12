@@ -150,6 +150,8 @@ model NotificationIncident {
   changedAt DateTime @default(now()) @map("changed_at") @db.Timestamptz(3)
   closedAt DateTime? @map("closed_at") @db.Timestamptz(3)
   revision BigInt @default(0)
+  dismissedAt DateTime? @map("dismissed_at") @db.Timestamptz(3)
+  diagnostic Json?
   events NotificationEvent[]
   @@index([status, changedAt(sort: Desc), id], map: "notification_incident_status_idx")
   @@map("notification_incident")
@@ -163,6 +165,7 @@ model NotificationEvent {
   targetRef String @map("target_ref") @db.VarChar(60)
   displayName String @map("display_name") @db.VarChar(120)
   metricContext Json? @map("metric_context")
+  diagnostic Json?
   eventType String @map("event_type") @db.VarChar(16)
   transition String @db.VarChar(16)
   severity String @db.VarChar(16)
@@ -179,6 +182,30 @@ model NotificationEvent {
   @@index([createdAt(sort: Desc), id(sort: Desc)], map: "notification_event_history_idx")
   @@index([incidentId, createdAt(sort: Desc), id], map: "notification_event_incident_idx")
   @@map("notification_event")
+}
+
+model NotificationWebhook {
+  id Int @id
+  revision Int @default(1)
+  active Boolean @default(false)
+  url String?
+  secret String?
+  generation String @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cursorRevision BigInt @default(0) @map("cursor_revision")
+  @@map("notification_webhook")
+}
+
+model NotificationWebhookDelivery {
+  eventId String @id @map("event_id") @db.Uuid
+  incidentId String @map("incident_id") @db.Uuid
+  generation String @db.Uuid
+  body Json
+  attempts Int @default(0)
+  dueAt DateTime @default(now()) @map("due_at") @db.Timestamptz(3)
+  lease String? @db.Uuid
+  finishedAt DateTime? @map("finished_at") @db.Timestamptz(3)
+  outcome String?
+  @@map("notification_webhook_delivery")
 }
 
 model NotificationStreamState {

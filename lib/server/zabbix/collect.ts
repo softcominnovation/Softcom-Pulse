@@ -28,7 +28,7 @@ const triggerSchema = z.object({
   triggerid: z.string(),
   status: z.string(),
   hosts: z.array(z.object({ host: z.string() })),
-  items: z.array(z.object({ itemid: z.string() })),
+  items: z.array(z.object({ itemid: z.string(), key_: z.string().optional(), status: z.string().optional() })),
 });
 
 /** Keep only problems whose trigger exists and is enabled (status "0"). Disabled/missing triggers are not operational. */
@@ -78,11 +78,11 @@ export async function collectSnapshots(options: {
   if (selected.some(i => !byId.has(i.itemid))) throw new BffError(503, "zabbix_cycle_incomplete");
   const items = metadata.map(item => ({ ...item, ...byId.get(item.itemid) }));
   const inventory = normalizeInventory(scope.hosts, items, scope.asgardHostKey, scope.vmLinks, options.now);
-  const rawProblems = z.array(zabbixProblemSchema).parse(await rpc("problem.get", { hostids, source: 0, object: 0, recent: false, output: ["eventid", "objectid", "name", "severity", "clock"], selectTags: ["tag", "value"], limit: 5001 }, signal));
+  const rawProblems = z.array(zabbixProblemSchema).parse(await rpc("problem.get", { hostids, source: 0, object: 0, recent: false, output: ["eventid", "objectid", "name", "severity", "clock", "suppressed"], selectTags: ["tag", "value"], limit: 5001 }, signal));
   if (rawProblems.length > 5000) throw new BffError(503, "zabbix_problems_too_large");
   const triggerids = [...new Set(rawProblems.map(problem => problem.objectid))];
   const triggerRows = rawProblems.length
-    ? z.array(triggerSchema).parse(await rpc("trigger.get", { triggerids, output: ["triggerid", "status"], selectHosts: ["host"], selectItems: ["itemid"] }, signal))
+    ? z.array(triggerSchema).parse(await rpc("trigger.get", { triggerids, output: ["triggerid", "status"], selectHosts: ["host"], selectItems: ["itemid", "key_", "status"] }, signal))
     : [];
   const activeProblems = selectActiveProblems(rawProblems, triggerRows);
   const triggers: Trigger[] = triggerRows

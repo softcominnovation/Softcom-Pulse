@@ -22,11 +22,11 @@ export function isBlockedAddress(address: string) {
   if (family === 0) return false;
   return blocked.check(address, family === 6 ? "ipv6" : "ipv4");
 }
-function resolveProbeHosts(hostname: string, signal: AbortSignal) {
+export function resolveProbeHosts(hostname: string, signal: AbortSignal) {
+  signal.throwIfAborted();
   const pending = lookup(hostname, { all: true, verbatim: true });
   return new Promise<Awaited<typeof pending>>((resolve, reject) => {
     const abort = () => reject(Object.assign(new Error("timeout"), { code: "ETIMEDOUT" }));
-    if (signal.aborted) { abort(); return; }
     signal.addEventListener("abort", abort, { once: true });
     pending.then(value => { signal.removeEventListener("abort", abort); resolve(value); }, error => { signal.removeEventListener("abort", abort); reject(error); });
   });

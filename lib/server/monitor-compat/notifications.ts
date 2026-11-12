@@ -1,7 +1,7 @@
 import "server-only";
 import { notificationText, type NotificationEventView, type NotificationIncidentView } from "../../notifications/contracts.ts";
 
-type Message = Pick<NotificationEventView, "messageCode" | "metricContext" | "targetRef">;
+type Message = Pick<NotificationEventView, "messageCode" | "metricContext" | "targetRef" | "description">;
 /** Add presentation text to the current public DTO; never rebuild policy or metric semantics in ES5. */
 export function compatibleNotification<T extends Message>(entry: T) {
   return { ...entry, message: notificationText(entry) };

@@ -2,6 +2,16 @@
 
 A central do cabeçalho reúne histórico, não lidas e incidentes atuais. Avisos temporários usam o toast Kobra sobre a página, sem reservar espaço dos cards. O bloco legado comentado permanece preservado. Consulte também [Design system](design-system.md), [Sons](interface-sounds.md), [BFF](bff.md) e [Workers](workers.md).
 
+## Envio externo de erros críticos
+
+Em **Configurações → Notificações externas**, informe a URL HTTPS e a API key do receptor. Marque **Ativar envio externo** e clique em **Salvar envio externo**. É possível salvar um rascunho desativado e ativá-lo depois. A chave fica cifrada no PostgreSQL. Para trocá-la, preencha uma nova e salve. Para removê-la, desative o envio e marque **Remover chave cadastrada**.
+
+O `pulse-probe` envia um POST para cada abertura ou escalada **anunciada, de gravidade crítica, em recurso marcado como crítico na ocorrência**. A entrega funciona mesmo com as TVs desligadas. Leitura, mute e posição do card não influenciam. Uma ultrapassagem de disco classificada como aviso e uma recuperação ficam apenas na central. A ativação vale para ocorrências novas. Trocar a URL ou desativar cancela as pendências do destino anterior. Trocar só a chave preserva as pendências.
+
+O receptor recebe os headers `Content-Type: application/json`, `api_key` e `Idempotency-Key`. O JSON versão 1 inclui `eventId`, `incidentId`, tipo, transição, severidade, origem, horários UTC, `resource` com referência e nome na ocorrência e `error` com código, mensagem e contexto disponível. Problemas do Zabbix podem incluir título, host, ID do evento e ID do trigger. Uma resposta 2xx confirma o recebimento. Use o UUID do evento para deduplicar se a resposta se perder após o processamento.
+
+A URL deve atender às mesmas regras HTTPS das sondas, sem credenciais embutidas, query ou fragmento. O BFF verifica a resolução DNS ao salvar e a sonda verifica o destino novamente ao conectar. Redirecionamentos encerram a tentativa. Para inspecionar falhas e intervalos de repetição, consulte os [logs da sonda](workers.md#entrega-de-notificações-externas).
+
 ## Destaque no painel
 
 Na Visão geral, no `/monitor` (inclusive no WebView clássico) e nos cards correspondentes de Serviços, um erro crítico anunciado pela política do serviço acende o contorno do alvo. O efeito é automático. A borda vermelha de 3 px pulsa com um halo externo. Com movimento reduzido, o contorno fica estático. Ler a notificação ou silenciar o volume mantém o destaque.
@@ -9,6 +19,16 @@ Na Visão geral, no `/monitor` (inclusive no WebView clássico) e nos cards corr
 Se cair apenas o Redis ou o Postgres, acendem seu indicador no Signal e os minicards daquele serviço. Se cair o próprio Signal, o Storage ou o hipervisor ASGARD cadastrado, acende o painel correspondente. A identidade é o UUID do alvo monitorado, mesmo que dois cards tenham o mesmo nome.
 
 Ao abrir uma tela, os erros ativos elegíveis voltam a aparecer, inclusive os já lidos. Uma recuperação confirmada do último erro destacado troca a borda para verde por cinco segundos na tela que acompanhava o incidente. Um novo erro interrompe o verde imediatamente. Cancelamentos e releituras de histórico não disparam a recuperação visual. A borda usa o fluxo existente de notificações e respeita a rolagem interna dos painéis.
+
+## Descartar uma ocorrência
+
+Na central autenticada, abra **Ver incidente → Descartar**. Editores podem silenciar uma ocorrência ativa para todas as telas. O Pulse marca os eventos dessa ocorrência como lidos, retira o destaque e cancela as entregas externas pendentes. Um POST já enviado pode chegar ao receptor. O histórico conserva a ocorrência e o horário de descarte. O monitor continua coletando até confirmar a recuperação. Outros incidentes do mesmo recurso continuam independentes. Uma nova queda após a recuperação recebe outro identificador e volta a notificar.
+
+Cada alvo com um erro crítico anunciado recebe seu próprio destaque, inclusive quando vários falham no mesmo ciclo. Nos monitores HTTP (aplicações, VPS e Signal), duas leituras consecutivas de falha confirmam uma queda. A recuperação normalmente também exige duas leituras saudáveis. Se a ocorrência foi descartada, a primeira leitura nova classificada como saudável encerra o descarte silenciosamente. Duas falhas consecutivas depois disso abrem outra ocorrência, com notificação e destaque conforme a política do serviço. Leituras antigas ou sem dados não encerram o descarte.
+
+Uma leitura lenta filtrada pela política não silencia a queda posterior. A primeira coleta de um monitor novo estabelece a referência silenciosa. Uma falha de autenticação é classificada como aviso, com o motivo e o status HTTP quando disponível.
+
+Os textos distinguem falha de rede, prazo excedido, autorização, status HTTP, saúde e estado do container. Na área autenticada, um evento do Zabbix pode incluir o título saneado da trigger. No telão público, a mensagem usa a categoria do item e a severidade. Triggers desabilitadas, problemas suprimidos e itens desabilitados não disparam novos alertas. Problemas de containers ou VMs identificados apenas por itens filhos não passam a ser incidentes do host quando o item sai do inventário. Incidentes antigos sem diagnóstico podem receber detalhes na próxima confirmação da mesma evidência.
 
 ## Período do histórico
 
@@ -108,7 +128,10 @@ Para inicializar o telão, os leitores privado e público aceitam `?limit=1&high
 | `GET /api/monitoring/notifications/incidents` | Lista de incidentes |
 | `GET /api/monitoring/notifications/:eventId` | Detalhe do evento e do incidente |
 | `GET /api/monitoring/notifications/incidents/:incidentId` | Detalhe e histórico do incidente |
+| `POST /api/monitoring/notifications/incidents/:incidentId/dismiss` | Descarte compartilhado da ocorrência ativa por editor |
 | `POST /api/monitoring/notifications/read` | Leitura global por IDs ou revisão limite |
+| `GET /api/settings/notifications/webhook` | Configuração externa para editor, com indicação de chave cadastrada |
+| `PUT /api/settings/notifications/webhook` | Salva o destino, a credencial e a ativação com revisão esperada |
 | `GET /api/settings/notifications` | Política, serviços e exceções órfãs |
 | `PUT /api/settings/notifications` | Política geral com revisão esperada |
 | `PUT /api/settings/notifications/targets/:targetRef` | Exceção de serviço com revisão esperada |
@@ -117,7 +140,7 @@ As seis consultas também existem sob `/api/public/monitoring/notifications`, su
 
 `GET .../history` aceita `from` e `to` em `YYYY-MM-DD`, severidade, alvo, limite e cursor. Datas inválidas/futuras e intervalos invertidos retornam 400. O cursor de paginação é vinculado ao intervalo e não pode ser reutilizado com outras datas ou na listagem sem período. O cursor de sincronização continua global para as operações já existentes.
 
-DTOs usam IDs opacos e mensagens permitidas. Não expõem credenciais, payloads HTTP, nomes brutos de problemas, hostid, chaves internas de condição ou identidade de quem marcou como lida. Links de detalhe são internos e respeitam modo público/privado.
+DTOs usam IDs opacos e mensagens permitidas. O título saneado de um problema Zabbix fica disponível para leitores autenticados. As projeções públicas omitem títulos de origem, nomes técnicos, IDs do Zabbix e dados de coleta brutos. Links de detalhe são internos e respeitam modo público/privado.
 
 ## Uso das VMs com Agent
 

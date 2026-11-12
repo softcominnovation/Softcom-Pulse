@@ -72,3 +72,32 @@ for (const path of ["/", "/monitor?compat=0"]) test(`incident borders preserve c
   expect((await page.screenshot({ clip })).equals(gapBefore)).toBe(true);
   expect(await geometry()).toEqual(before);
 });
+
+for (const path of ["/", "/monitor?compat=0"]) test(`both failed VPS cards are highlighted from the shared snapshot on ${path}`, async ({ page }) => {
+  const { document } = await adminFixture(page);
+  const base = path === "/" ? "/api" : "/api/public";
+  const model = overview(document);
+  const serverTime = new Date().toISOString();
+  const ids = [id(191), id(192)];
+  model.data.standaloneVps = ids.map((id, index) => ({
+    id, name: `VPS ${index + 1}`, provider: null, ip: "", enabled: true, monitorConfigured: true,
+    monitorPaused: false, monitorState: "down", critical: true, cpuPercent: null, memoryPercent: null,
+    diskPercent: null, checkedAt: serverTime, strip: [],
+  }));
+  await page.route("**" + base + "/settings/presentation", route => route.fulfill({ json: { data: document } }));
+  await page.route("**" + base + "/dashboard/overview*", route => route.fulfill({ json: model }));
+  const snapshot = {
+    counts: { activeCount: 2, unreadCount: 2 }, serverTime, streamRevision: "2",
+    runtime: notificationRuntime(defaultNotificationPolicy(), "1"),
+    events: [], incidents: [], syncCursor: "2",
+    highlights: ids.map((vpsId, index) => ({ incidentId: id(195 + index), targetRef: `standalone_vps:${vpsId}` })),
+  };
+  await page.route("**" + base + "/monitoring/notifications**", route => route.fulfill({
+    json: new URL(route.request().url()).pathname.endsWith("/changes")
+      ? { ...snapshot, changes: [], nextCursor: "2", hasMore: false } : snapshot,
+  }));
+  if (path === "/") await signIn(page);
+  await page.goto(path);
+  for (const vpsId of ids) await expect(page.locator(`.availability-card[data-incident-target="standalone_vps:${vpsId}"]`))
+    .toHaveAttribute("data-incident-state", "error");
+});

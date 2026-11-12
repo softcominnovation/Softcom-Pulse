@@ -478,7 +478,7 @@
           text(body, '');
           var title = document.createElement('h3'), message = document.createElement('p'), stateText = document.createElement('p');
           text(title, data.incident.displayName); text(message, data.incident.message);
-          text(stateText, data.incident.status === 'active' ? 'Incidente atual' : data.incident.status === 'resolved' ? 'Resolvido' : 'Acompanhamento encerrado');
+          text(stateText, data.incident.status === 'active' && data.incident.dismissedAt ? 'Avisos descartados até a recuperação' : data.incident.status === 'active' ? 'Incidente atual' : data.incident.status === 'resolved' ? 'Resolvido' : 'Acompanhamento encerrado');
           body.appendChild(title); body.appendChild(message); body.appendChild(stateText);
           if (data.incident.metricContext) {
             var context = document.createElement('p'); text(context, 'Valor histórico · ' + data.incident.metricContext.coverage); body.appendChild(context);
@@ -602,7 +602,7 @@
         each(changes, function (change) {
           if (change.payload.event) events.push(change.payload.event);
           if (change.kind === 'read') read = read.concat(change.payload.ids || []);
-          if (change.payload.incident && change.payload.incident.status !== 'active') closed.push(change.payload.incident.id);
+          if (change.payload.incident && (change.payload.incident.status !== 'active' || change.payload.incident.dismissedAt)) closed.push(change.payload.incident.id);
         });
         each(visibleEvents, function (event) { if (read.indexOf(event.id) >= 0 || event.eventType !== 'recovery' && closed.indexOf(event.incidentId) >= 0) hideToast(); });
         if (latest.runtime.deliveryRevision === deliveryRevision) {

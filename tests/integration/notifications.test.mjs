@@ -5,11 +5,14 @@ import pg from "pg";
 import { withMigrationLock } from "../../docker/migration-lock.mjs";
 import { runMigrationProcess } from "../../docker/migrate.mjs";
 import { getDatabase } from "../../lib/server/database.ts";
+import { readWebhookSettings, saveWebhookSettings } from "../../lib/server/notifications/webhook-settings.ts";
+import { enqueueWebhookEvents, deliverNextWebhook } from "../../lib/server/notifications/webhook-dispatch.ts";
 import { notificationTargets } from "../../lib/server/notifications/targets.ts";
 import { recordNotificationObservations } from "../../lib/server/notifications/engine.ts";
-import { httpNotificationObservation } from "../../lib/server/notifications/http.ts";
+import { httpNotificationObservation, recordHttpNotification } from "../../lib/server/notifications/http.ts";
+import { classifyProbe } from "../../lib/server/probe/classify.ts";
 import { notificationListQuery, notificationHistoryQuery } from "../../lib/notifications/contracts.ts";
-import { listNotifications, notificationHistory, notificationChanges, markNotificationsRead, notificationDetail } from "../../lib/server/notifications/read.ts";
+import { listNotifications, notificationHistory, notificationChanges, markNotificationsRead, notificationDetail, dismissNotificationIncident } from "../../lib/server/notifications/read.ts";
 import { notificationDay } from "../../lib/notifications/history-range.ts";
 import { notificationTransaction, appendChange } from "../../lib/server/notifications/database.ts";
 import { maintainNotifications } from "../../lib/server/notifications/maintenance.ts";
@@ -40,6 +43,7 @@ after(async () => {
   for (const [key, value] of Object.entries(savedAuth)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
 });
 beforeEach(async () => {
+  await getDatabase().query("TRUNCATE notification_webhook_delivery; UPDATE notification_webhook SET active=false, url=NULL, secret=NULL, revision=1, cursor_revision=0, generation=gen_random_uuid()");
   await getDatabase().query("DELETE FROM external_service; DELETE FROM notification_event; DELETE FROM notification_incident; DELETE FROM notification_target_state; DELETE FROM notification_change; UPDATE notification_stream_state SET revision=0,minimum_revision=0,delivery_revision=1,maintained_at=NULL; UPDATE pulse_settings SET value='{\"schemaVersion\":1,\"revision\":1}' WHERE key='notifications'");
 });
 async function target() {
@@ -55,6 +59,153 @@ async function incident() {
   await record(selected, 0, at); await record(selected, 5, at + 60000); await record(selected, 5, at + 120000);
   return { selected, at };
 }
+
+const endpoint = "https://192.0.2.12/alerts";
+const signal = new AbortController().signal;
+const configure = async changes => {
+  const current = await readWebhookSettings();
+  return saveWebhookSettings({ expectedRevision: current.revision, active: current.active, url: current.url, ...changes });
+};
+
+test("webhook activation starts after commit and retries independently of notification reads and producers", async () => {
+  await incident();
+  assert.equal(await enqueueWebhookEvents(), false);
+  const settings = await configure({ active: true, url: endpoint, apiKey: "first-key" });
+  assert.deepEqual(settings, { revision: 2, active: true, url: endpoint, hasApiKey: true });
+  assert.notEqual((await getDatabase().query("SELECT secret FROM notification_webhook")).rows[0].secret, "first-key");
+  await incident();
+  await Promise.all([enqueueWebhookEvents(), enqueueWebhookEvents()]);
+  const deliveries = () => getDatabase().query("SELECT * FROM notification_webhook_delivery ORDER BY due_at");
+  const [job] = (await deliveries()).rows;
+  assert.equal((await deliveries()).rowCount, 1);
+  const { eventId, incidentId, resource, error } = job.body;
+  assert.equal(eventId, job.event_id);
+  assert.equal(incidentId, job.incident_id);
+  assert.equal(resource.name, "Serviço de teste");
+  assert.equal(error.context.reason, "timeout");
+  const entered = Promise.withResolvers(), finish = Promise.withResolvers();
+  const sending = deliverNextWebhook(signal, async (url, key, id, body) => {
+    entered.resolve({ url, key, id, body });
+    return finish.promise;
+  });
+  try {
+    const posted = await entered.promise;
+    assert.deepEqual(posted, { url: endpoint, key: "first-key", id: eventId, body: JSON.stringify(job.body) });
+    assert.equal(await deliverNextWebhook(signal), false);
+    await markNotificationsRead({ ids: [eventId] }, "reader@example.test");
+    await incident();
+    assert.equal((await listNotifications(query, "public")).events.length, 3);
+    await configure({ apiKey: "rotated-key" });
+  } finally { finish.resolve({ status: 503, retryAfter: "120" }); await sending; }
+  const retry = (await deliveries()).rows[0];
+  assert.equal(retry.finished_at, null);
+  assert.equal(retry.attempts, 1);
+  assert.ok(retry.due_at.getTime() > Date.now() + 110000);
+  await getDatabase().query("UPDATE notification_webhook_delivery SET due_at=now()");
+  await deliverNextWebhook(signal, async (_url, key, id, body) => {
+    assert.equal(key, "rotated-key"); assert.equal(id, eventId); assert.deepEqual(JSON.parse(body), job.body);
+    return { status: 204 };
+  });
+  assert.equal((await deliveries()).rows[0].outcome, "delivered");
+});
+
+test("editors can disable a registered destination even if its DNS has since disappeared", async () => {
+  await configure({ active: true, url: endpoint, apiKey: "old-key" });
+  await getDatabase().query("UPDATE notification_webhook SET url='https://retired.invalid/alerts'");
+  assert.equal((await configure({ active: false })).active, false);
+});
+
+test("Zabbix openings and escalations freeze diagnostic context and expose sanitized titles only to private readers", async () => {
+  await configure({ active: true, url: endpoint, apiKey: "sentinel" });
+  const selected = await target(), at = start();
+  await recordNotificationObservations(selected, [], ["problems"]);
+  async function problem(rank, title, now) {
+    await recordNotificationObservations(selected, [{
+      key: "problem:321:123", source: "zabbix", family: "problems", eventType: "problem", messageCode: "problem",
+      diagnostic: { title, zabbixEventId: "321", zabbixTriggerId: "123", host: "internal-host" },
+      observation: { epoch: selected.epoch, state: "unavailable", severity: "critical", sourceSeverity: rank, checkedAt: now,
+        observedAt: now, validUntil: Date.now()+60000, fingerprint: String(rank), confirmation: "explicit" },
+    }], ["problems"]);
+  }
+  await problem(4, "Filesystem somente leitura", at);
+  await problem(5, "API_KEY=hidden", at+60000);
+  await enqueueWebhookEvents();
+  const { rows } = await getDatabase().query("SELECT body FROM notification_webhook_delivery ORDER BY (body->>'sourceSeverity')::int");
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].body.error.message, "Filesystem somente leitura");
+  assert.equal(rows[0].body.error.context.zabbixTriggerId, "123");
+  assert.equal(rows[1].body.error.message, "Problema ativo no Zabbix · severidade 5/5");
+  assert.equal(rows[0].body.incidentId, rows[1].body.incidentId);
+  assert.notEqual(rows[0].body.eventId, rows[1].body.eventId);
+  assert.deepEqual(rows.map(r=>r.body.transition), ["opened","escalated"]);
+  for (const scope of ["public","private"]) {
+    const history = await listNotifications(query, scope);
+    assert.doesNotMatch(JSON.stringify(history), /internal-host|API_KEY=hidden/);
+    assert.equal(JSON.stringify(history).includes("Filesystem somente leitura"), scope === "private");
+  }
+});
+
+test("webhook retains pending events, skips silent and noncritical events and resumes abandoned leases", async () => {
+  const db = getDatabase();
+  await configure({ active: true, url: endpoint, apiKey: "secret" });
+  const { selected } = await incident();
+  const event = (await db.query("SELECT * FROM notification_event WHERE target_ref=$1", [selected.ref])).rows[0];
+  for (const alteration of ["announce=false", "severity='warning'", "critical_at_occurrence=false", "transition='recovered'"]) {
+    await db.query("UPDATE notification_event SET " + alteration + " WHERE id=$1", [event.id]);
+    await enqueueWebhookEvents();
+    assert.equal((await db.query("SELECT count(*)::int AS n FROM notification_webhook_delivery")).rows[0].n, 0, alteration);
+    await db.query("UPDATE notification_event SET severity='critical', announce=true, critical_at_occurrence=true, transition='opened' WHERE id=$1", [event.id]);
+    await db.query("UPDATE notification_webhook SET cursor_revision=0");
+  }
+  await db.query("UPDATE notification_event SET read_at=now()-interval '50 days' WHERE id=$1", [event.id]);
+  await db.query("UPDATE notification_incident SET status='resolved', changed_at=now()-interval '50 days' WHERE id=$1", [event.incident_id]);
+  await maintainNotifications();
+  assert.equal((await db.query("SELECT id FROM notification_event WHERE id=$1", [event.id])).rowCount, 1);
+  await enqueueWebhookEvents();
+  await db.query("UPDATE notification_stream_state SET maintained_at=NULL");
+  await maintainNotifications();
+  assert.equal((await db.query("SELECT id FROM notification_event WHERE id=$1", [event.id])).rowCount, 0);
+  await db.query("UPDATE notification_webhook_delivery SET lease=gen_random_uuid(),due_at=now()-interval '1 minute'");
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    assert.ok(await deliverNextWebhook(signal, async () => { throw Object.assign(new Error(), {code:"ETIMEDOUT"}); }));
+    const result = (await db.query("SELECT * FROM notification_webhook_delivery")).rows[0];
+    assert.equal(result.attempts, attempt);
+    assert.equal(result.event_id, event.id);
+    assert.equal(result.outcome, "timeout");
+    assert.equal(result.finished_at !== null, attempt === 5);
+    await db.query("UPDATE notification_webhook_delivery SET due_at=now()");
+  }
+  assert.equal(await deliverNextWebhook(signal), false);
+  // A crash after sending attempt five leaves a lease but no receipt.
+  await db.query("UPDATE notification_webhook_delivery SET finished_at=NULL,lease=gen_random_uuid(),due_at=now()");
+  let calls = 0;
+  await deliverNextWebhook(signal, async () => { calls++; return { status:204 }; });
+  assert.equal(calls, 0);
+  assert.equal((await db.query("SELECT outcome FROM notification_webhook_delivery")).rows[0].outcome, "receipt_unknown");
+});
+
+test("webhook cancels previous destinations and rejects invalid activation or concurrent edits", async () => {
+  await assert.rejects(configure({ url: endpoint, active: true }), { code: "invalid_request" });
+  const draft = await configure({ apiKey: "secret" });
+  assert.equal(draft.active, false);
+  await assert.rejects(saveWebhookSettings({ active: false, url: null, expectedRevision: 1 }), { code: "revision_conflict" });
+  await configure({ url: endpoint, active: true });
+  await incident(); await enqueueWebhookEvents();
+  await configure({ url: "https://192.0.2.13/alerts" });
+  assert.equal(await deliverNextWebhook(signal), false);
+  await assert.rejects(configure({ apiKey: null }), { code: "invalid_request" });
+  await incident(); await enqueueWebhookEvents();
+  await deliverNextWebhook(signal, async () => ({ status: 401 }));
+  assert.equal(await deliverNextWebhook(signal), false);
+  const cleared = await configure({ active: false, apiKey: null });
+  assert.equal(cleared.hasApiKey, false);
+  await incident();
+  await configure({ active: true, apiKey: "new-key" });
+  await enqueueWebhookEvents();
+  assert.equal(await deliverNextWebhook(signal), false);
+  const outcomes = await getDatabase().query("SELECT outcome FROM notification_webhook_delivery ORDER BY outcome");
+  assert.deepEqual(outcomes.rows.map(r => r.outcome), ["cancelled","http_error"]);
+});
 
 test("durable notification transitions deduplicate concurrent samples and share read state", async () => {
   const selected = await target(), at = start();
@@ -92,6 +243,102 @@ test("incident highlights survive shared reads and exclude silent baselines, dis
   await record(selected, 0, at + 150000);
   await record(selected, 0, at + 180000);
   assert.deepEqual((await snapshot()).highlights, []);
+});
+
+test("two critical VPS can alert together after slow samples; dismissal follows only one occurrence through recovery", async () => {
+  const at = Date.now() - 160000, ids = [randomUUID(), randomUUID()];
+  try {
+    await configure({ active: true, url: endpoint, apiKey: "sentinel" });
+    for (const id of ids) await getDatabase().query("INSERT INTO standalone_vps(id,name,ip,critical,base_url,api_key_ciphertext) VALUES($1,$2,'192.0.2.18',true,$3,'fixture')", [id, id, endpoint]);
+    const targets = (await notificationTargets()).filter(t => ids.includes(t.id));
+    assert.equal(targets.length, 2);
+    const sample = (target, code, step) => recordNotificationObservations(target, [httpNotificationObservation(target, "vps", code, new Date(at+step*10000), code === 3 ? 503 : null)], ["availability"]);
+    const both = (code, step) => Promise.all(targets.map(t => sample(t, code, step)));
+    await both(0,0); await both(1,1); await both(1,2);
+    const snapshot = () => listNotifications({ ...query, limit: 1, highlights: "1" }, "public");
+    const before = await snapshot();
+    await both(3,3); await both(3,4);
+    const active = await snapshot();
+    assert.equal(active.highlights.length, 2);
+    assert.deepEqual(new Set(active.highlights.map(h => h.targetRef)), new Set(targets.map(t => t.ref)));
+    assert.match(active.events[0].description, /HTTP 503/);
+    const id = active.highlights.find(h => h.targetRef === targets[0].ref).incidentId;
+    await enqueueWebhookEvents();
+    await Promise.all([dismissNotificationIncident(id, "first"), dismissNotificationIncident(id, "second")]);
+    const remaining = await snapshot();
+    assert.deepEqual(remaining.highlights.map(h => h.targetRef), [targets[1].ref]);
+    assert.deepEqual(remaining.counts, { activeCount: 1, unreadCount: 1 });
+    const changes = await notificationChanges(before.syncCursor,100,"public");
+    assert.equal(changes.changes.filter(c => c.payload.event?.toastEligible).length, 1);
+    assert.equal(changes.changes.filter(c => c.payload.highlighted).length, 1);
+    const sent = [];
+    while (await deliverNextWebhook(signal, async (_url,_key,_id,json) => { sent.push(JSON.parse(json).resource.ref); return { status: 200 }; })) { /* drain */ }
+    assert.deepEqual(sent, [targets[1].ref]);
+    await sample(targets[0],3,5); await sample(targets[0],0,6); await sample(targets[0],0,7);
+    const old = await notificationDetail(id,"private",true);
+    assert.ok(old.incident.dismissedAt); assert.equal(old.incident.status,"resolved"); assert.equal(old.events.length,1);
+    await sample(targets[0],3,8); await sample(targets[0],3,9);
+    const next = await snapshot();
+    assert.equal(next.highlights.length,2); assert.ok(next.highlights.every(h => h.incidentId !== id));
+    await enqueueWebhookEvents();
+    assert.equal(await deliverNextWebhook(signal, async (_url,_key,_id,json) => { assert.equal(JSON.parse(json).resource.ref,targets[0].ref); return {status:204}; }),true);
+  } finally { await getDatabase().query("DELETE FROM standalone_vps WHERE id=ANY($1::uuid[])", [ids]); }
+});
+
+test("one healthy probe sample after dismissal rearms alerts for a separately confirmed outage", async () => {
+  const probe = await target();
+  const at = start();
+  const sample = (step, status) => {
+    const result = classifyProbe("http_status", [200], null, null, { status, latencyMs: 20 });
+    return recordHttpNotification(probe, "probe", result.reason, new Date(at + step * 10000), result.httpStatus);
+  };
+  const snapshot = () => listNotifications({ ...query, highlights: "1" }, "public");
+
+  await sample(0, 200);
+  await sample(1, 404);
+  await sample(2, 404);
+  const first = await snapshot();
+  assert.equal(first.highlights.length, 1);
+  const oldId = first.highlights[0].incidentId;
+  await dismissNotificationIncident(oldId, "editor");
+  const dismissed = await snapshot();
+  assert.equal(dismissed.highlights.length, 0);
+
+  await sample(0, 200); // Out-of-order success from before the incident.
+  await sample(3, 404);
+  await sample(4, 404);
+  assert.equal((await notificationDetail(oldId, "private", true)).incident.status, "active");
+  assert.equal((await snapshot()).highlights.length, 0);
+
+  await sample(5, 200);
+  const closed = await notificationDetail(oldId, "private", true);
+  assert.equal(closed.incident.status, "resolved");
+  assert.ok(closed.incident.dismissedAt);
+  assert.deepEqual(closed.events.map(e => e.transition), ["opened"]);
+
+  await sample(6, 404);
+  await sample(6, 404); // Replaying a failed sample cannot confirm a new outage.
+  assert.equal((await snapshot()).highlights.length, 0);
+  await sample(7, 404);
+  const next = await snapshot();
+  assert.equal(next.highlights.length, 1);
+  const [highlight] = next.highlights;
+  assert.equal(highlight.targetRef, probe.ref);
+  assert.notEqual(highlight.incidentId, oldId);
+  assert.deepEqual(next.counts, { activeCount: 1, unreadCount: 1 });
+  const changes = await notificationChanges(dismissed.syncCursor, 100, "public");
+  const arrivals = changes.changes.map(change => change.payload.event).filter(event => event?.toastEligible);
+  assert.deepEqual(arrivals.map(event => [event.incidentId, event.transition, event.severity]),
+    [[highlight.incidentId, "opened", "critical"]]);
+
+  // This new occurrence was never dismissed: its recovery is confirmed and announced normally.
+  await sample(8, 200);
+  assert.equal((await snapshot()).highlights[0].incidentId, highlight.incidentId);
+  await sample(9, 200);
+  assert.equal((await snapshot()).highlights.length, 0);
+  const recovery = await notificationChanges(next.syncCursor, 100, "public");
+  assert.ok(recovery.changes.some(change => change.payload.event?.transition === "recovered"
+    && change.payload.event.incidentId === highlight.incidentId && change.payload.event.toastEligible));
 });
 
 test("history filters indexed creation times by Fortaleza dates and binds pagination to its range", async () => {
@@ -245,11 +492,23 @@ test("notification routes enforce private editor writes, public projection, host
   assert.equal((await publicGet(request("GET", undefined, undefined, "forged.test"), ["monitoring", "notifications"])).status, 403);
   assert.equal((await publicGet(request("POST", { ids: [event.id] }, "editor@example.test"), ["monitoring", "notifications", "read"])).status, 405);
   assert.equal((await publicGet(request(), ["settings", "notifications"])).status, 404);
+  assert.equal((await publicGet(request(), ["settings", "notifications", "webhook"])).status, 404);
+  assert.equal((await notificationSettingsGet(request(), context("webhook"))).status, 401);
+  assert.equal((await notificationSettingsGet(request("GET", undefined, "reader@example.test"), context("webhook"))).status, 403);
+  assert.equal((await notificationSettingsPut(request("PUT", {}, "reader@example.test"), context("webhook"))).status, 403);
+  const webhook = await notificationSettingsPut(request("PUT", { expectedRevision: 1, active: true, url: endpoint, apiKey: "sentinel" }, "editor@example.test"), context("webhook"));
+  assert.equal(webhook.status, 200);
+  assert.deepEqual(await webhook.json(), { revision: 2, active: true, url: endpoint, hasApiKey: true });
+  assert.equal((await notificationSettingsGet(request("GET", undefined, "editor@example.test"), context("webhook"))).status, 200);
   assert.equal((await notificationSettingsGet(request("GET", undefined, "reader@example.test"), context())).status, 403);
   assert.equal((await notificationsPost(request("POST", { ids: [event.id] }, "reader@example.test"), context("read"))).status, 403);
   assert.equal((await notificationsPost(request("POST", { ids: [event.id] }, "editor@example.test"), context("read"))).status, 200);
   assert.equal((await notificationSettingsPut(request("PUT", { value: "x".repeat(513 * 1024) }, "editor@example.test"), context())).status, 400);
   assert.equal((await notificationSettingsPut(request("PUT", { value: "x".repeat(65 * 1024) }, "editor@example.test"), context("targets", event.targetRef))).status, 400);
+  const discard = context("incidents", event.incidentId, "dismiss");
+  assert.equal((await notificationsPost(request("POST", {}, "reader@example.test"), discard)).status, 403);
+  assert.equal((await publicGet(request("POST", {}, "editor@example.test"), ["monitoring","notifications","incidents",event.incidentId,"dismiss"])).status, 405);
+  assert.equal((await notificationsPost(request("POST", {}, "editor@example.test"), discard)).status, 200);
   const publicDetail = await publicGet(request(), ["monitoring", "notifications", event.id]);
   const detail = await publicDetail.json(); assert.equal(publicDetail.status, 200); assert.match(detail.targetHref, /^\/monitor\//);
   const serialized = JSON.stringify(detail);

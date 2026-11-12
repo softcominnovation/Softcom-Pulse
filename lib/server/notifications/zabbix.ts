@@ -9,8 +9,19 @@ import type { NotificationTarget } from "./targets.ts";
 import { notificationTransaction } from "./database.ts";
 import { safelyRecordNotifications, type NotificationObservation } from "./engine.ts";
 
-const triggerSchema = z.object({ triggerid: z.string(), status: z.string(), hosts: z.array(z.object({ host: z.string() })), items: z.array(z.object({ itemid: z.string() })) });
+const triggerSchema = z.object({ triggerid: z.string(), status: z.string(), hosts: z.array(z.object({ host: z.string() })), items: z.array(z.object({ itemid: z.string(), key_: z.string().optional(), status: z.string().optional() })) });
 type Trigger = z.infer<typeof triggerSchema>;
+
+function problemSubject(trigger: Trigger) {
+  const keys = trigger.items.map(item => item.key_ ?? "");
+  if (keys.some(key => key.startsWith("docker.container_info.state.health"))) return "container_health";
+  if (keys.some(key => key.startsWith("docker.container_info.state."))) return "container_state";
+  if (keys.some(key => key.startsWith("vfs.fs."))) return "filesystem";
+  if (keys.some(key => key.startsWith("vm.memory."))) return "memory";
+  if (keys.some(key => key.startsWith("system.cpu."))) return "cpu";
+  if (keys.some(key => key === "agent.ping" || key.startsWith("zabbix[host,agent,"))) return "agent";
+  return undefined;
+}
 export type ZabbixNotificationInput = {
   targets: NotificationTarget[]; configs: ResourceConfig[]; inventory: ReturnType<typeof normalizeInventory>;
   hosts: ZabbixHost[]; problems: ZabbixProblem[]; triggers: Trigger[]; storage: StorageSnapshot;
@@ -41,7 +52,7 @@ export async function recordZabbixNotifications(input: ZabbixNotificationInput, 
     if (extras.length > 100) throw new Error("notification_host_limit");
     if (extras.length) {
       const extra = z.array(zabbixProblemSchema).parse(await input.rpc("problem.get", { hostids: extras.map(item => item.hostid), source: 0, object: 0, recent: false,
-        output: ["eventid", "objectid", "name", "severity", "clock"], selectTags: ["tag", "value"], limit: 5001 }, input.signal));
+        output: ["eventid", "objectid", "name", "severity", "clock", "suppressed"], selectTags: ["tag", "value"], limit: 5001 }, input.signal));
       if (extra.length > 5000) throw new Error("notification_problem_limit");
       problems = [...new Map([...problems, ...extra].map(problem => [problem.eventid, problem])).values()];
     }
@@ -49,12 +60,13 @@ export async function recordZabbixNotifications(input: ZabbixNotificationInput, 
   try {
     const ids = [...new Set([...problems.map(problem => problem.objectid), ...prior.map(row => String(row.condition_key).split(":")[2])])].filter(id => id && !triggers.some(trigger => trigger.triggerid === id));
     if (ids.length > 5000) throw new Error("notification_trigger_limit");
-    if (ids.length) triggers = [...triggers, ...z.array(triggerSchema).parse(await input.rpc("trigger.get", { triggerids: ids, output: ["triggerid", "status"], selectHosts: ["host"], selectItems: ["itemid"], limit: 5001 }, input.signal))];
+    if (ids.length) triggers = [...triggers, ...z.array(triggerSchema).parse(await input.rpc("trigger.get", { triggerids: ids, output: ["triggerid", "status"], selectHosts: ["host"], selectItems: ["itemid", "key_", "status"], limit: 5001 }, input.signal))];
     if (triggers.length > 5000) throw new Error("notification_trigger_limit");
   } catch {
     // Existing verified triggers remain usable; missing ones cannot prove recovery.
     console.error(JSON.stringify({ event: "notification_trigger_lookup_incomplete" }));
   }
+  const byTrigger = new Map(triggers.map(trigger => [trigger.triggerid, trigger]));
   for (const target of targets) {
     if (input.signal?.aborted) break;
     const observations: NotificationObservation[] = [], families: string[] = [];
@@ -83,25 +95,44 @@ export async function recordZabbixNotifications(input: ZabbixNotificationInput, 
       } else observations.push(condition(target, "availability", "availability", "unknown", input.checkedAt, null, null));
       families.push(...observations.filter(row => row.observation.state !== "unknown" && row.observation.validUntil > input.checkedAt).map(row => row.family));
     }
+    const childOnly = (trigger: Trigger) => trigger.items.length > 0 && trigger.items.every(item =>
+      /^(?:docker\.(?:container_info|container_stats|networks)[.\[]|proxmox\.(?:vm|qemu|lxc)\.)/.test(item.key_ ?? ""));
     const matches = (trigger: Trigger) => {
       if (target.kind === "storage") return trigger.hosts.some(host => host.host === hostName);
+      if (target.identity.resourceType === "host" && childOnly(trigger)) return false;
       const related = trigger.items.flatMap(item => { const resource = input.inventory.itemResources.get(item.itemid); return resource ? [resource] : []; });
       if (related.length) return related.some(resource => resource.hostKey === hostName && (resourceReference ? resource.type === "docker_container" && resource.reference === resourceReference : target.identity.resourceType === "host" && resource.type === "host"));
       return target.identity.resourceType === "host" && trigger.hosts.some(host => host.host === hostName);
     };
     const complete = input.problems.length <= 5000 && (target.kind !== "storage" || !extras.some(item => item.hostid === target.identity.hostId) || storageComplete);
     if (complete && hostMonitored) {
-      const current = problems.filter(problem => { const trigger = triggers.find(trigger => trigger.triggerid === problem.objectid); return trigger?.status === "0" && matches(trigger); });
-      for (const problem of current) observations.push(condition(target, `problem:${problem.eventid}:${problem.objectid}`, "problems", "unavailable", input.checkedAt, new Date(Number(problem.clock) * 1000).toISOString(), new Date(input.checkedAt + 120000).toISOString(), Number(problem.severity)));
+      const inactive = (trigger: Trigger) => trigger.status === "1" || (trigger.items.length > 0 && trigger.items.every(item => item.status === "1"));
+      const current = problems.filter(problem => {
+        const trigger = byTrigger.get(problem.objectid);
+        return problem.suppressed !== "1" && trigger?.status === "0" && !inactive(trigger) && matches(trigger);
+      });
+      for (const problem of current) {
+        const row = condition(target, `problem:${problem.eventid}:${problem.objectid}`, "problems", "unavailable", input.checkedAt,
+          new Date(Number(problem.clock) * 1000).toISOString(), new Date(input.checkedAt + 120000).toISOString(), Number(problem.severity));
+        const subject = problemSubject(byTrigger.get(problem.objectid)!);
+        row.diagnostic = { ...(subject ? { subject } : {}), title: problem.name, host: hostName ?? undefined, zabbixEventId: problem.eventid, zabbixTriggerId: problem.objectid };
+        observations.push(row);
+      }
       for (const old of prior.filter(row => row.target_ref === target.ref && !current.some(problem => row.condition_key === `problem:${problem.eventid}:${problem.objectid}`))) {
         const trigger = triggers.find(trigger => trigger.triggerid === String(old.condition_key).split(":")[2]);
-        const stillPresent = problems.some(problem => `problem:${problem.eventid}:${problem.objectid}` === old.condition_key);
-        const state = trigger?.status === "1" ? "suppressed" : trigger?.status === "0" && matches(trigger) && !stillPresent ? "healthy" : "unknown";
+        const stillPresent = problems.find(problem => `problem:${problem.eventid}:${problem.objectid}` === old.condition_key);
+        const unrelated = stillPresent && target.identity.resourceType === "host" && trigger && childOnly(trigger);
+        const cancelled = trigger && (inactive(trigger) || stillPresent?.suppressed === "1" || unrelated);
+        const resolved = !stillPresent && trigger?.status === "0" && matches(trigger);
+        const state = cancelled ? "suppressed" : resolved ? "healthy" : "unknown";
         observations.push(condition(target, old.condition_key, "problems", state, input.checkedAt, new Date(input.checkedAt).toISOString(), new Date(input.checkedAt + 120000).toISOString()));
       }
       if (problems.every(problem => triggers.some(trigger => trigger.triggerid === problem.objectid))) families.push("problems");
     }
-    if (resourceReference) for (const row of observations) row.resourceIdentity = resourceReference;
+    for (const row of observations) {
+      if (hostName && !row.diagnostic) row.diagnostic = { host: hostName, reason: row.family };
+      if (resourceReference) row.resourceIdentity = resourceReference;
+    }
     await deps.record(target, observations, families, input.signal);
   }
 }

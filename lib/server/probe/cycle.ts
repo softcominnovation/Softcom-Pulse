@@ -33,11 +33,12 @@ async function checkOne(service: ServiceRow, transport: ProbeTransport, signal?:
     observation = { status: response.status, body: response.body, latencyMs: response.latencyMs };
     certNotAfter = response.certNotAfter;
   } catch (error) { observation = observationError(error); }
+  if (signal?.aborted) return;
   const classified = classifyProbe(service.successMode, service.expectedStatuses, service.jsonPointer, service.expectedValue, observation, service.timeoutMs ?? probeDefaultTimeoutMs);
   const stats = await recordExternalSample(service.id, started, classified.reason, classified.latencyMs, classified.httpStatus);
   await Promise.all([
     publishProbeResult(service.id, started.toISOString(), { ...classified, certNotAfter, ...stats }),
-    recordHttpNotification(notificationTarget, "probe", classified.reason, started),
+    recordHttpNotification(notificationTarget, "probe", classified.reason, started, classified.httpStatus),
   ]);
 }
 export async function runProbeCycle(options: { signal?: AbortSignal; transport?: ProbeTransport; services?: ServiceRow[] } = {}) {

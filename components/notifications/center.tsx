@@ -94,7 +94,7 @@ function NotificationList({ editor, publicRead, revision, refresh }: { editor: b
     {editor && data && <Button size="sm" variant="outline" disabled={busy || !data.counts.unreadCount} onClick={() => void mark({ allThrough: data.syncCursor })}>Marcar notificações existentes como lidas</Button>}
     {error && <p role="status" className="text-sm text-muted-foreground">{error} <Button size="sm" onClick={() => setRefreshKey(key => key + 1)}>Recarregar</Button></p>}
     <div className="min-h-0 flex-1 overflow-y-auto space-y-2" aria-live="off">
-      {detail ? <><Button size="sm" onClick={() => setDetail(null)}>Voltar à lista</Button><IncidentDetail key={detail} id={detail} revision={revision} /></> : <>
+      {detail ? <><Button size="sm" onClick={() => setDetail(null)}>Voltar à lista</Button><IncidentDetail key={detail} id={detail} revision={revision} editor={editor} refresh={refresh} /></> : <>
         {!data && !error && <p className="text-muted-foreground">Carregando notificações…</p>}
         {data && !data.events.length && !data.incidents.length && <p className="text-muted-foreground">Nenhum registro neste filtro.</p>}
         {data?.events.map(event => <article key={event.id} className="rounded-xl border p-3 space-y-2">
@@ -112,7 +112,8 @@ function NotificationList({ editor, publicRead, revision, refresh }: { editor: b
 }
 
 type Detail = NotificationSnapshot & { incident: NotificationIncidentView; targetHref: string | null };
-function IncidentDetail({ id, revision }: { id: string; revision: string }) {
+function IncidentDetail({ id, revision, editor, refresh }: { id: string; revision: string; editor: boolean; refresh: () => void }) {
+  const [dismissError, setDismissError] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null), [error, setError] = useState(false), [busy, setBusy] = useState(false);
   const [retry, setRetry] = useState(0), generation = useRef(0), heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
@@ -122,6 +123,16 @@ function IncidentDetail({ id, revision }: { id: string; revision: string }) {
     }).catch(() => { if (!abort.signal.aborted) setError(true); });
     return () => { abort.abort(); generation.current = run + 1; };
   }, [id, revision, retry]);
+  async function dismiss() {
+    if (!detail || busy) return;
+    setBusy(true); setDismissError("");
+    try {
+      const response = await api.post<{ incident: NotificationIncidentView }>(`/monitoring/notifications/incidents/${id}/dismiss`, {});
+      setDetail(current => current && { ...current, incident: response.data.incident });
+      setRetry(value => value + 1); refresh();
+    } catch { setDismissError("Não foi possível descartar o incidente. Atualize o detalhe e tente novamente."); setRetry(value => value + 1); }
+    finally { setBusy(false); }
+  }
   const loaded = !!detail;
   useEffect(() => { if (loaded) heading.current?.focus(); }, [id, loaded]);
   async function more() {
@@ -135,6 +146,9 @@ function IncidentDetail({ id, revision }: { id: string; revision: string }) {
   return <article className="rounded-xl border p-3 space-y-2">
     {error && <p role="status">Não foi possível atualizar o incidente. <Button size="sm" onClick={() => setRetry(value => value + 1)}>Recarregar</Button></p>}
     {!detail && !error && <p>Carregando incidente…</p>}
-    {detail && <><h3 ref={heading} tabIndex={-1} className="font-semibold">{detail.incident.displayName}</h3><p>{notificationText(detail.incident)}</p><p>{statuses[detail.incident.status]}</p>{detail.incident.metricContext && detail.incident.contextOccurredAt && <p className="text-xs text-muted-foreground">Último evento: {date(detail.incident.contextOccurredAt)} · {detail.incident.metricContext.coverage}. Valor histórico.</p>}<p className="text-xs text-muted-foreground">Observado: {date(detail.incident.openedAt)} · Confirmado: {date(detail.incident.confirmedAt)}</p>{!detail.events.length && <p>Condição preexistente, acompanhada sem aviso retroativo.</p>}{detail.events.map(event => <p key={event.id} className="text-xs">{date(event.createdAt)} · {notificationText(event)} · {event.readAt ? "Lida" : "Não lida"}</p>)}{detail.nextPageCursor && <Button size="sm" disabled={busy} onClick={() => void more()}>Mais eventos do incidente</Button>}{detail.targetHref && <Link className="inline-block underline" href={detail.targetHref}>Ver serviço</Link>}</>}
+    {detail && <><h3 ref={heading} tabIndex={-1} className="font-semibold">{detail.incident.displayName}</h3><p>{notificationText(detail.incident)}</p><p>{statuses[detail.incident.status]}</p>
+    {detail.incident.dismissedAt && <p className="text-xs text-muted-foreground">Avisos desta ocorrência descartados em {date(detail.incident.dismissedAt)}.</p>}
+    {editor && detail.incident.status === "active" && !detail.incident.dismissedAt && <div><Button size="sm" variant="outline" disabled={busy} onClick={() => void dismiss()}>Descartar</Button><p className="text-xs text-muted-foreground">Silencia esta ocorrência em todas as telas até a recuperação. Uma nova falha voltará a notificar.</p></div>}
+    {dismissError && <p role="status">{dismissError}</p>}{detail.incident.metricContext && detail.incident.contextOccurredAt && <p className="text-xs text-muted-foreground">Último evento: {date(detail.incident.contextOccurredAt)} · {detail.incident.metricContext.coverage}. Valor histórico.</p>}<p className="text-xs text-muted-foreground">Observado: {date(detail.incident.openedAt)} · Confirmado: {date(detail.incident.confirmedAt)}</p>{!detail.events.length && <p>Condição preexistente, acompanhada sem aviso retroativo.</p>}{detail.events.map(event => <p key={event.id} className="text-xs">{date(event.createdAt)} · {notificationText(event)} · {event.readAt ? "Lida" : "Não lida"}</p>)}{detail.nextPageCursor && <Button size="sm" disabled={busy} onClick={() => void more()}>Mais eventos do incidente</Button>}{detail.targetHref && <Link className="inline-block underline" href={detail.targetHref}>Ver serviço</Link>}</>}
   </article>;
 }

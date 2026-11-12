@@ -71,6 +71,29 @@ test("durable notification transitions deduplicate concurrent samples and share 
   assert.equal(changes.changes.length, 1); assert.equal(changes.changes[0].kind, "read");
 });
 
+test("incident highlights survive shared reads and exclude silent baselines, disabled policy and closed incidents", async () => {
+  const selected = await target(), baselineOnly = await target(), at = start();
+  const initial = await listNotifications(query, "public");
+  await record(selected, 0, at);
+  await record(selected, 5, at + 60000);
+  await record(selected, 5, at + 120000);
+  await record(baselineOnly, 5, at);
+  const snapshot = () => listNotifications({ ...query, limit: 1, highlights: "1" }, "public");
+  const opened = await snapshot(), expected = [{ incidentId: opened.highlights[0].incidentId, targetRef: selected.ref }];
+  assert.deepEqual(opened.highlights, expected);
+  const delivered = await notificationChanges(initial.syncCursor, 100, "public");
+  assert.ok(delivered.changes.some(change => change.payload.incident?.id === expected[0].incidentId && change.payload.highlighted));
+  assert.ok(!delivered.changes.some(change => change.payload.incident?.targetRef === baselineOnly.ref && change.payload.highlighted));
+  await markNotificationsRead({ ids: [opened.events[0].id] }, "test@example.test");
+  assert.deepEqual((await snapshot()).highlights, expected);
+  await getDatabase().query("UPDATE external_service SET critical=false WHERE id=$1", [selected.id]);
+  assert.deepEqual((await snapshot()).highlights, []);
+  await getDatabase().query("UPDATE external_service SET critical=true WHERE id=$1", [selected.id]);
+  await record(selected, 0, at + 150000);
+  await record(selected, 0, at + 180000);
+  assert.deepEqual((await snapshot()).highlights, []);
+});
+
 test("history filters indexed creation times by Fortaleza dates and binds pagination to its range", async () => {
   const {selected}=await incident(), today=notificationDay(), midnight=Date.parse(`${today}T03:00:00Z`), yesterday=notificationDay(midnight-86400000);
   const incidentRow=(await getDatabase().query("SELECT id FROM notification_incident WHERE target_ref=$1",[selected.ref])).rows[0];

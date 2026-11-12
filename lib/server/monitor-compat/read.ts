@@ -23,6 +23,7 @@ export type CompatibleMonitor = {
   screens: PresentationDocument["screens"];
   screen: PresentationDocument["screens"][number];
   overview: ReadResult<Overview> | null;
+  highlightTargets?: ReadonlySet<string>;
   error: string | null;
   layout: "overview" | "wall";
   tv: boolean;
@@ -33,6 +34,21 @@ export type CompatibleMonitor = {
 
 function publicRequest(request: Request, path: string) {
   return new Request(new URL(path, request.url), { headers: { Host: request.headers.get("host") ?? "" } });
+}
+
+async function initialHighlights(request: Request, reader: typeof publicGet) {
+  // The dashboard remains available if the notification database is slow.
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const load = async () => {
+      const response = await reader(publicRequest(request, "/api/public/monitoring/notifications?limit=1&highlights=1"), ["monitoring", "notifications"]);
+      if (!response.ok) return undefined;
+      const { highlights } = await response.json();
+      return new Set<string>((highlights ?? []).map((item: { targetRef: string }) => item.targetRef));
+    };
+    return await Promise.race([load(), new Promise<undefined>(resolve => { timeout = setTimeout(() => resolve(undefined), 700); })]);
+  } catch { return undefined; }
+  finally { clearTimeout(timeout); }
 }
 
 export async function readCompatibleMonitor(request: Request, reader = publicGet): Promise<CompatibleMonitor | Response> {
@@ -47,6 +63,7 @@ export async function readCompatibleMonitor(request: Request, reader = publicGet
   const screens = document.screens.filter(screen => screen.enabled && screen.blocks.some(block => block.enabled && blockCatalog[block.type].available));
   const screen = screens.find(item => item.id === screenId) ?? screens[0];
   if (!screen) return authJson({ error: { code: "no_playable_screen" } }, 503);
+  const initial = parsed.data.fragment ? undefined : initialHighlights(request, reader);
   let overview: ReadResult<Overview> | null = null, error: string | null = null;
   try {
     const response = await reader(publicRequest(request, "/api/public/dashboard/overview?screenId=" + encodeURIComponent(screen.id)), ["dashboard", "overview"]);
@@ -57,5 +74,5 @@ export async function readCompatibleMonitor(request: Request, reader = publicGet
     if (validated.data.screenId !== screen.id || validated.data.presentationRevision !== document.revision) error = "A apresentação mudou. A atualização será tentada novamente.";
     else overview = validated;
   } catch { error = "Não foi possível atualizar os dados. Tente novamente."; }
-  return { document, screens, screen, overview, error, layout: layout === "overview" || layout === "wall" ? layout : screen.layout, tv: tv ? tv === "1" : true, theme: theme === "light" ? "light" : "dark", now: Date.now(), refreshAfterMs: Math.max(5000, Math.min(60000, overview?.refreshAfterMs ?? 20000)) };
+  return { document, screens, screen, overview, highlightTargets: await initial, error, layout: layout === "overview" || layout === "wall" ? layout : screen.layout, tv: tv ? tv === "1" : true, theme: theme === "light" ? "light" : "dark", now: Date.now(), refreshAfterMs: Math.max(5000, Math.min(60000, overview?.refreshAfterMs ?? 20000)) };
 }

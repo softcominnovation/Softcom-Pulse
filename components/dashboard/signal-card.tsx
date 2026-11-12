@@ -1,4 +1,5 @@
 "use client";
+import { useIncidentAttributes } from "@/components/notifications/incident-highlight";
 import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 
 import { PlaceLink } from "@/components/layout/place-link";
@@ -31,6 +32,7 @@ function uptimeLabel(strip: number[]) {
 }
 
 export function SignalAvailabilityCard({ item }: { item: SignalCardItem }) {
+  const incident = useIncidentAttributes();
   const paused = item.enabled === false;
   const label = paused ? "Pausado" : signalStateLabel(item.state);
   const tone = paused ? "unknown" : signalStateTone(item.state);
@@ -47,7 +49,7 @@ export function SignalAvailabilityCard({ item }: { item: SignalCardItem }) {
       </span>
     </span>
   </>;
-  return <SignalDetails item={item} trigger={<button type="button" className="availability-card probe-card signal-card-highlight" aria-label={`Detalhes de ${item.displayName}: ${label}`}>{content}</button>} />;
+  return <SignalDetails item={item} trigger={<button {...incident("signal_target", item.id)} type="button" className="availability-card probe-card signal-card-highlight" aria-label={`Detalhes de ${item.displayName}: ${label}`}>{content}</button>} />;
 }
 
 function SignalDetails({ item, trigger }: { item: SignalCardItem; trigger: ReactElement }) {

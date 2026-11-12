@@ -27,13 +27,15 @@ export type NotificationEventView = {
 };
 export type NotificationCounts = { unreadCount: number; activeCount: number };
 export type NotificationSourceHealth = { source: "zabbix" | "probe" | "vps" | "signal"; lastCheckedAt: string | null; status: "receiving" | "stale" | "awaiting" };
+export type HighlightedIncident = { incidentId: string; targetRef: string };
 export type NotificationSnapshot = {
+  highlights?: HighlightedIncident[];
   events: NotificationEventView[]; incidents: NotificationIncidentView[]; counts: NotificationCounts;
   syncCursor: string; nextPageCursor: string | null; streamRevision: string; serverTime: string;
   runtime: ReturnType<typeof notificationRuntime>;
   sources: NotificationSourceHealth[];
 };
-export type NotificationChangeView = { revision: string; kind: string; payload: { event?: NotificationEventView; incident?: NotificationIncidentView; ids?: string[] } };
+export type NotificationChangeView = { revision: string; kind: string; payload: { highlighted?: boolean; event?: NotificationEventView; incident?: NotificationIncidentView; ids?: string[] } };
 export type NotificationChanges = {
   changes: NotificationChangeView[]; nextCursor: string; hasMore: boolean; windowEnd: string; streamRevision: string;
   counts: NotificationCounts | null; runtime: ReturnType<typeof notificationRuntime>; serverTime: string;

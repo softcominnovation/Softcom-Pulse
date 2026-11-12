@@ -100,7 +100,7 @@ export function DashboardBlock({ block, failed, probes = [], vps = [], signalCar
 }) {
   const stale = failed || block.stale, now = useContext(EvidenceTimeContext);
   const publicSurface = isPublicPath(usePathname());
-  if (block.type === "storage_summary") return <StoragePanel item={(block.data as StorageBlockData | null)?.target ?? null} stale={stale} visibleRows={effectiveOptions({ ...block, type: "storage_summary" }).visibleRows} />;
+  if (block.type === "storage_summary") return <StoragePanel storageConfigId={effectiveOptions({ ...block, type: "storage_summary" }).storageConfigId} item={(block.data as StorageBlockData | null)?.target ?? null} stale={stale} visibleRows={effectiveOptions({ ...block, type: "storage_summary" }).visibleRows} />;
   if (block.type === "signal_flow") {
     if (block.availability === "unavailable") return <Panel title="Signal · fluxo de processamento" icon={<TriangleAlert aria-hidden="true" />}><p className="panel-empty">Este bloco não está disponível nesta superfície.</p></Panel>;
     return <SignalFlowPanel data={(block.data as SignalFlowBlockData | null) ?? { target: null }} options={effectiveOptions({ ...block, type: "signal_flow" })} />;

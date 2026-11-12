@@ -1,4 +1,5 @@
 "use client";
+import { useIncidentAttributes } from "@/components/notifications/incident-highlight";
 import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 import { CardReadings } from "@/components/dashboard/card-readings";
 import { currentMetric } from "@/lib/dashboard/service-availability";
@@ -15,6 +16,7 @@ import { StoragePanel } from "./storage-panel";
 import { useStorage } from "./data";
 
 export function StorageCard({ item, stale = false, preview = false }: { item: StorageView; stale?: boolean; preview?: boolean }) {
+  const incident = useIncidentAttributes();
   const now = useContext(EvidenceTimeContext), [open, setOpen] = useState(false);
   const publicSurface = isPublicPath(usePathname());
   const detail = useStorage(item.storageKey, open && !preview);
@@ -38,5 +40,5 @@ export function StorageCard({ item, stale = false, preview = false }: { item: St
     </span>)}</span>
   </>;
   if (preview) return <article className="availability-card storage-availability-card" data-metric-count={pair.length}>{content}</article>;
-  return <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><button type="button" className="availability-card storage-availability-card" data-metric-count={pair.length} aria-label={`Detalhes de ${item.displayName}: ${status.label}`}>{content}</button></DialogTrigger><DialogContent size="xl" className="storage-detail-dialog"><DialogHeader><DialogTitle>{item.displayName}</DialogTitle><DialogDescription>Capacidade e recursos do Storage monitorado.</DialogDescription></DialogHeader><DialogBody>{detail.failed && <p role="alert">A atualização falhou. A última leitura permanece identificada.</p>}<StoragePanel item={detail.data?.data ?? item} stale={detail.failed || detail.data?.stale || stale} /><PlaceLink className="panel-link" href={`${publicSurface ? "/monitor" : ""}/servicos?storage=${encodeURIComponent(item.storageKey)}#storages`}>Ver em Serviços</PlaceLink></DialogBody></DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={setOpen}><DialogTrigger asChild><button {...incident("storage", item.configId)} type="button" className="availability-card storage-availability-card" data-metric-count={pair.length} aria-label={`Detalhes de ${item.displayName}: ${status.label}`}>{content}</button></DialogTrigger><DialogContent size="xl" className="storage-detail-dialog"><DialogHeader><DialogTitle>{item.displayName}</DialogTitle><DialogDescription>Capacidade e recursos do Storage monitorado.</DialogDescription></DialogHeader><DialogBody>{detail.failed && <p role="alert">A atualização falhou. A última leitura permanece identificada.</p>}<StoragePanel item={detail.data?.data ?? item} stale={detail.failed || detail.data?.stale || stale} /><PlaceLink className="panel-link" href={`${publicSurface ? "/monitor" : ""}/servicos?storage=${encodeURIComponent(item.storageKey)}#storages`}>Ver em Serviços</PlaceLink></DialogBody></DialogContent></Dialog>;
 }

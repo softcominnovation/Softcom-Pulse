@@ -1,5 +1,6 @@
 import { withAgentCards } from "./agent-presentation.ts";
 import "server-only";
+import { readScopeSettings } from "../zabbix/scope.ts";
 import { z } from "zod";
 import { blockCatalog, effectiveOptions } from "../../config/presentation.ts";
 import type { ResourceConfig } from "../../config/resources.ts";
@@ -138,6 +139,11 @@ export async function readOverview(screenId?: string) {
     .map(config => [config.zabbixHostKey, hostMetricsPreference(config.presentation)]));
   const problems = operationalProblems(snapshotData(current.batch, snapshotKeys.problems, z.array(problemSchema), []), current.hosts).map(names.problem);
   base.asgardSummary = { host: base.asgardSummary.host ? names.host(operationalHost(base.asgardSummary.host)) : null, vms: base.asgardSummary.vms.filter(vm => !isVmTemplate(vm)).map(names.vm) };
+  if (visibleBlocks.some(block => block.type === "asgard_summary")) {
+    const hostKey = base.asgardSummary.host?.hostKey ?? (await readScopeSettings().catch(() => null))?.asgardHostKey;
+    const matches = allConfigs.filter(config => config.enabled && config.resourceType === "host" && config.zabbixHostKey === hostKey);
+    if (matches.length === 1) base.asgardSummary.resourceConfigId = matches[0].id;
+  }
   if (base.summary.vms !== null) base.summary.vms = current.batch.snapshots.get(snapshotKeys.hosts) ? current.hosts.reduce((n, host) => n + operationalHost(host).vms.length, 0) : null;
   if (base.summary.problems !== null) base.summary.problems = current.batch.snapshots.get(snapshotKeys.problems) ? problems.length : null;
   const probe = await readProbeOverview(visibleBlocks.some(block => block.type === "uptime_list")).catch(() => ({ externalServices: [], uptimeBoard: [] }));

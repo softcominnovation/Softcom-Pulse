@@ -195,6 +195,90 @@ function getWithHost(address, host, headers = {}) {
 }
 const oldUa = "Mozilla/5.0 (Linux; Android 11; TV) AppleWebKit/537.36 Version/4.0 Chrome/83.0.4103.120 Safari/537.36";
 
+test("incident neon follows individual targets in an opaque TV iframe across fragment refresh and recovery", { timeout: 60000 }, async () => {
+  const fixture = JSON.parse(execFileSync(process.execPath, ["--conditions=react-server", "--input-type=module", "-e", `
+    import { monitorFixture } from "./tests/fixtures/monitor-compat.mjs";
+    import { renderCompatibleContent, renderCompatiblePage, compatibleMonitorState } from "./lib/server/monitor-compat/render.ts";
+    const model = monitorFixture({ cardSize: "expanded" });
+    const data = type => model.overview.data.blocks.find(block => block.type === type).data;
+    const service = data("highlighted_resources").cards.find(card => card.kind === "signal_service").item;
+    const target = data("signal_flow").target;
+    target.flowKpis = [service, { ...service, id: "00000000-0000-4000-8000-000000000002" }];
+    const ref = "signal_service:" + service.id, storage = "storage:" + data("storage_summary").target.configId;
+    model.highlightTargets = new Set([ref, storage]);
+    const html = renderCompatiblePage(model, "Incident fixture");
+    delete model.highlightTargets;
+    process.stdout.write(JSON.stringify({ ref, storage, html, fragment: { html: renderCompatibleContent(model), state: compatibleMonitorState(model) } }));
+  `], { cwd: fileURLToPath(root), encoding: "utf8", windowsHide: true }));
+  await shipped(async base => {
+    const parent = createServer(async (request, response) => {
+      response.setHeader("Access-Control-Allow-Origin", "*");
+      if (request.url === "/" || request.url === "/monitor?compat=1") {
+        response.setHeader("Content-Type", "text/html");
+        response.end(request.url === "/" ? '<iframe sandbox="allow-scripts" style="width:100%;height:95vh;border:0" src="/monitor?compat=1"></iframe>' : fixture.html);
+      } else if (request.url.startsWith("/monitor/compat?fragment=1")) {
+        response.setHeader("Content-Type", "application/json");
+        response.end(JSON.stringify(fixture.fragment));
+      } else {
+        const upstream = await fetch(base + request.url);
+        response.writeHead(upstream.status, { "Content-Type": upstream.headers.get("content-type") ?? "application/octet-stream" });
+        response.end(Buffer.from(await upstream.arrayBuffer()));
+      }
+    });
+    const address = await listen(parent), browser = await chromium.launch();
+    const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+    let stage = 0;
+    try {
+      await page.clock.install();
+      await page.route("**/monitor/compat/notifications**", route => {
+        const url = new URL(route.request().url()), serverTime = new Date().toISOString();
+        const runtime = { deliveryRevision: "1", maxDeliveryAgeMs: 60000 };
+        const common = { runtime, counts: { unreadCount: 0, activeCount: 2 - stage }, serverTime, streamRevision: String(stage) };
+        const highlights = [{ incidentId: "db", targetRef: fixture.ref }, { incidentId: "storage", targetRef: fixture.storage }];
+        const changes = stage > Number(url.searchParams.get("after")) ? [{ revision: "1", kind: "incident", payload: { incident: { id: "db", targetRef: fixture.ref, status: "resolved", closedAt: serverTime } } }] : [];
+        return route.fulfill({ headers: { "Access-Control-Allow-Origin": "*" }, json: url.pathname.endsWith("/changes")
+          ? { ...common, changes, hasMore: false, nextCursor: String(stage) }
+          : { ...common, highlights, incidents: [], events: [], syncCursor: String(stage) } });
+      });
+      const noJs = await browser.newContext({ javaScriptEnabled: false });
+      try {
+        const initial = await noJs.newPage();
+        await initial.goto(address);
+        await expect(initial.frameLocator("iframe").locator('[data-incident-state="error"]')).toHaveCount(4);
+      } finally { await noJs.close(); }
+      const errors = [];
+      page.on("pageerror", error => errors.push(error.message));
+      page.on("requestfailed", request => errors.push(request.url() + " " + request.failure()?.errorText));
+      page.on("console", message => { if (message.type() === "error") errors.push(message.text()); });
+      await page.goto(address); await page.bringToFront();
+      const frame = page.frameLocator("iframe");
+      await expect.poll(() => frame.locator("html").evaluate(node => node.querySelector("#compat-content")?.getAttribute("data-monitor-controller")).then(ready => ready ?? errors.join("\n"))).toBe("ready");
+      const bank = frame.locator('.signal-jobs [data-incident-target="' + fixture.ref + '"]');
+      const redStorage = frame.locator('[data-incident-target="' + fixture.storage + '"][data-incident-state="error"]');
+      const bounds = () => frame.locator(".signal-jobs > div, .storage-panel, .availability-grid").evaluateAll(nodes =>
+        nodes.map(node => [node.offsetWidth, node.offsetHeight, node.scrollWidth, node.scrollHeight]));
+      await expect(bank).toHaveAttribute("data-incident-state", "error");
+      await expect(redStorage).toHaveCount(2);
+      await expect(frame.locator(".signal-jobs > div[data-incident-state]")).toHaveCount(1);
+      await expect(frame.locator('.block-signal_flow > [data-incident-state]')).toHaveCount(0);
+      expect(await bank.evaluate(el => getComputedStyle(el).animationName)).toContain("incident-error-halo");
+      const initialSize = await bounds();
+      const original = await bank.elementHandle();
+      await frame.locator("#compat-refresh").click();
+      await expect.poll(() => original.evaluate(el => el.isConnected)).toBe(false);
+      await expect(bank).toHaveAttribute("data-incident-state", "error");
+      stage = 1;
+      await page.clock.fastForward(10000);
+      await expect(bank).toHaveAttribute("data-incident-state", "recovered");
+      assert.deepEqual(await bounds(), initialSize);
+      await page.clock.fastForward(5000);
+      await expect(bank).not.toHaveAttribute("data-incident-state");
+      await expect(redStorage).toHaveCount(2);
+      assert.deepEqual(await bounds(), initialSize);
+    } finally { await browser.close(); parent.closeAllConnections(); await new Promise(resolve => parent.close(resolve)); }
+  });
+});
+
 test("custom slots share the plan in initial HTML, opaque frames and refreshed layouts without losing body scroll", { timeout: 90000 }, async () => {
   const fixture = JSON.parse(execFileSync(process.execPath, ['--conditions=react-server', '--input-type=module', '-e', `
     import { randomUUID } from 'node:crypto';

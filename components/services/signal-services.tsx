@@ -1,4 +1,5 @@
 "use client";
+import { useIncidentAttributes } from "@/components/notifications/incident-highlight";
 import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 import { AgentMonitoringDialog } from "@/components/admin/agent-monitoring";
 import { CardReadings } from "@/components/dashboard/card-readings";
@@ -83,6 +84,7 @@ function ageLabel(seconds: number | null | undefined) {
 }
 
 export function SignalServicesPanel() {
+  const incident = useIncidentAttributes();
   const editor = useCanEdit();
   const mutation = useMutation();
   const [target, setTarget] = useState<Target | null>(null);
@@ -186,7 +188,7 @@ export function SignalServicesPanel() {
   }
 
   return <div id="signal" className="signal-services">
-    <section className="dashboard-panel signal-service-panel" aria-label="Softcom Signal">
+    <section {...incident("signal_target", target?.id)} className="dashboard-panel signal-service-panel" aria-label="Softcom Signal">
       <div className="panel-heading signal-service-heading">
         <div className="signal-service-title">
           <ServiceTitle status={target

@@ -1,4 +1,5 @@
 "use client";
+import { useIncidentAttributes } from "@/components/notifications/incident-highlight";
 import { useContext, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { IconDatabase } from "@tabler/icons-react";
 import type { StorageView } from "@/lib/storage/contracts";
@@ -9,7 +10,8 @@ import { ServiceTitle } from "@/components/dashboard/service-title";
 import { storagePanelMinimum } from "@/lib/dashboard/storage-panel-size";
 import "./storage.css";
 
-export function StoragePanel({ item, stale = false, visibleRows = 3, actions }: { item: StorageView | null; stale?: boolean; visibleRows?: number; actions?: ReactNode }) {
+export function StoragePanel({ item, stale = false, visibleRows = 3, actions, storageConfigId }: { storageConfigId?: string | null; item: StorageView | null; stale?: boolean; visibleRows?: number; actions?: ReactNode }) {
+  const incident = useIncidentAttributes();
   const root = useRef<HTMLElement>(null);
   useEffect(() => {
     const panel = root.current;
@@ -39,7 +41,7 @@ export function StoragePanel({ item, stale = false, visibleRows = 3, actions }: 
   const old = stale || !!item?.stale;
   const volumes = item ? visibleStorageVolumes(item) : [];
   const status = item ? storageStatus({ ...item, stale: old }, now) : { label: "Sem dados", tone: "unknown" };
-  return <section ref={root} className="dashboard-panel storage-panel" style={{ "--storage-rows": visibleRows } as CSSProperties} aria-label={`Storage ${item?.displayName ?? "indisponível"}`}>
+  return <section {...incident("storage", item?.configId ?? storageConfigId)} ref={root} className="dashboard-panel storage-panel" style={{ "--storage-rows": visibleRows } as CSSProperties} aria-label={`Storage ${item?.displayName ?? "indisponível"}`}>
     <div className="panel-heading"><IconDatabase aria-hidden="true" /><ServiceTitle status={<span className={`status-pill tone-${status.tone}`}><i className="status-dot" />{status.label}</span>}><h2 title={item?.displayName}>{item?.displayName ?? "Storage indisponível"}</h2></ServiceTitle>{actions && <div className="storage-actions">{actions}</div>}</div>
     {item ? <div className="storage-body" role="region" aria-label="Dados do Storage">
       {item.presentationStatus === "unavailable" && <p role="status" className="storage-note">Personalização indisponível; identificação técnica preservada.</p>}

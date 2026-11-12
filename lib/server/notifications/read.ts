@@ -3,9 +3,9 @@ import { z } from "zod";
 import type { PoolClient } from "pg";
 import { BffError } from "../bff.ts";
 import { notificationTransaction, readPolicy, readStream, appendChange, type Stream } from "./database.ts";
-import { notificationTargets } from "./targets.ts";
+import { notificationTargets, type NotificationTarget } from "./targets.ts";
 import { notificationDecision, notificationRuntime } from "../../notifications/policy.ts";
-import { notificationListQuery, notificationReadSchema, type NotificationEventView, type NotificationSnapshot, type NotificationChangeView, type NotificationChanges, type NotificationSourceHealth } from "../../notifications/contracts.ts";
+import { notificationListQuery, notificationReadSchema, type HighlightedIncident, type NotificationEventView, type NotificationSnapshot, type NotificationChangeView, type NotificationChanges, type NotificationSourceHealth } from "../../notifications/contracts.ts";
 import { eventView, incidentView } from "./views.ts";
 import type { NotificationDateRange } from "../../notifications/history-range.ts";
 
@@ -28,8 +28,7 @@ async function counts(client: PoolClient) {
   const { rows } = await client.query("SELECT (SELECT count(*)::int FROM notification_event WHERE read_at IS NULL) AS unread,(SELECT count(*)::int FROM notification_incident WHERE status='active') AS active");
   return { unreadCount: rows[0].unread as number, activeCount: rows[0].active as number };
 }
-async function sourceHealth(client: PoolClient): Promise<NotificationSourceHealth[]> {
-  const targets = await notificationTargets(client);
+async function sourceHealth(client: PoolClient, targets: NotificationTarget[]): Promise<NotificationSourceHealth[]> {
   const rows = (await client.query("SELECT target_ref,checkpoint->>'lastCheckedAt' AS checked FROM notification_target_state WHERE condition_key='$lifecycle' AND target_ref=ANY($1::text[])", [targets.filter(target => target.enabled).map(target => target.ref)])).rows;
   const groups = new Map<NotificationSourceHealth["source"], number>();
   for (const row of rows) {
@@ -47,8 +46,11 @@ async function targetHref(client: PoolClient, ref: string, scope: Cursor["scope"
   if (target.kind === "signal_service" && target.identity.targetId) return `${prefix}/servicos?signalTarget=${target.identity.targetId}&signalService=${target.id}#signal`;
   return `${prefix}/servicos`;
 }
-async function delivery(client: PoolClient, events: NotificationEventView[], policy: Awaited<ReturnType<typeof readPolicy>>) {
-  const targets = new Map((await notificationTargets(client)).map(target => [target.ref, target]));
+type Policy = Awaited<ReturnType<typeof readPolicy>>;
+function indexTargets(targets: NotificationTarget[]) {
+  return new Map(targets.map(target => [target.ref, target]));
+}
+function delivery(targets: ReadonlyMap<string, NotificationTarget>, events: NotificationEventView[], policy: Policy) {
   return events.map(event => {
     const target = targets.get(event.targetRef);
     const decision = notificationDecision(policy, { targetRef: event.targetRef, critical: target?.critical ?? false, monitoringEnabled: target?.enabled ?? false,
@@ -58,7 +60,31 @@ async function delivery(client: PoolClient, events: NotificationEventView[], pol
   });
 }
 
-async function listWithClient(client: PoolClient, query: z.infer<typeof notificationListQuery>, scope: Cursor["scope"], incidents = false, incidentId?: string, range?: NotificationDateRange): Promise<NotificationSnapshot> {
+// Look up only announced errors for the active (or changed) incidents.
+async function highlightEvidence(client: PoolClient, ids?: string[]) {
+  return (await client.query<{ id: string; ref: string; event_type: NotificationEventView["eventType"]; first_revision: string; source_severity: number | null }>(`
+    SELECT i.id, i.target_ref AS ref, i.source_severity, e.event_type, e.created_revision AS first_revision
+    FROM notification_incident i
+    JOIN LATERAL (
+      SELECT event_type, created_revision FROM notification_event
+      WHERE incident_id=i.id AND announce AND severity='critical' AND transition IN ('opened','escalated')
+      ORDER BY created_revision LIMIT 1
+    ) e ON true
+    WHERE ${ids ? "i.id=ANY($1::uuid[])" : "i.status='active' AND i.severity='critical'"}`, ids ? [ids] : [])).rows;
+}
+
+function allowsHighlight(policy: Policy, target: NotificationTarget | undefined, eventType: NotificationEventView["eventType"], sourceSeverity: number | null) {
+  return !!target && notificationDecision(policy, { targetRef: target.ref, critical: target.critical, monitoringEnabled: target.enabled,
+    eventType, severity: "critical", sourceSeverity }).enabled;
+}
+async function highlightedIncidents(client: PoolClient, policy: Policy, targets: ReadonlyMap<string, NotificationTarget>): Promise<HighlightedIncident[]> {
+  if (!policy.enabled) return [];
+  const evidence = await highlightEvidence(client);
+  return evidence.filter(row => allowsHighlight(policy, targets.get(row.ref), row.event_type, row.source_severity))
+    .map(row => ({ incidentId: row.id, targetRef: row.ref }));
+}
+
+async function listWithClient(client: PoolClient, query: z.infer<typeof notificationListQuery> & { highlights?: "1" }, scope: Cursor["scope"], incidents = false, incidentId?: string, range?: NotificationDateRange): Promise<NotificationSnapshot> {
     const stream = await readStream(client), policy = await readPolicy(client);
     const paging = query.cursor ? parseCursor(query.cursor, stream, scope) : null;
     if (paging && (paging.list !== (incidents ? "incidents" : "events") || !paging.time || !paging.id)) throw new BffError(400, "invalid_notification_cursor");
@@ -82,12 +108,13 @@ async function listWithClient(client: PoolClient, query: z.infer<typeof notifica
     const rows = (await client.query(`${sql}${conditions.length ? " WHERE " + conditions.join(" AND ") : ""} ORDER BY ${time} DESC,${alias}.id DESC LIMIT ${limit}`, args)).rows;
     const hasMore = rows.length > query.limit, page = rows.slice(0, query.limit), last = page.at(-1);
     const cursor = { g: stream.generation, r: stream.revision, scope };
-    return { events: incidents ? [] : await delivery(client, page.map(eventView), policy), incidents: incidents ? page.map(incidentView) : [],
+    const inventory = await notificationTargets(client), targets = indexTargets(inventory);
+    return { ...(query.highlights ? { highlights: await highlightedIncidents(client, policy, targets) } : {}), events: incidents ? [] : delivery(targets, page.map(eventView), policy), incidents: incidents ? page.map(incidentView) : [],
       counts: await counts(client), syncCursor: encodeNotificationCursor(cursor), streamRevision: stream.revision,
       nextPageCursor: hasMore && last ? encodeNotificationCursor({ ...cursor, ...(range ? { from: range.from, to: range.to ?? range.from } : {}), list: incidents ? "incidents" : "events", time: (incidents ? last.opened_at : last.created_at).toISOString(), id: last.id }) : null,
-      serverTime: new Date().toISOString(), runtime: notificationRuntime(policy, stream.delivery_revision), sources: await sourceHealth(client) };
+      serverTime: new Date().toISOString(), runtime: notificationRuntime(policy, stream.delivery_revision), sources: await sourceHealth(client, inventory) };
 }
-export async function listNotifications(query: z.infer<typeof notificationListQuery>, scope: Cursor["scope"] = "private", incidents = false, incidentId?: string): Promise<NotificationSnapshot> {
+export async function listNotifications(query: z.infer<typeof notificationListQuery> & { highlights?: "1" }, scope: Cursor["scope"] = "private", incidents = false, incidentId?: string): Promise<NotificationSnapshot> {
   return notificationTransaction(client => listWithClient(client, query, scope, incidents, incidentId), true);
 }
 export async function notificationHistory(query: { from: string; to?: string } & Omit<z.infer<typeof notificationListQuery>, "read" | "state">, scope: Cursor["scope"]) {
@@ -106,7 +133,7 @@ export async function notificationDetail(id: string, scope: Cursor["scope"], inc
   return notificationTransaction(async client => {
     const row = (await client.query("SELECT e.*,i.status AS incident_status FROM notification_event e JOIN notification_incident i ON i.id=e.incident_id WHERE e.id=$1", [id])).rows[0];
     if (!row) throw new BffError(404, "notification_not_found");
-    const event = (await delivery(client, [eventView(row)], await readPolicy(client)))[0];
+    const event = delivery(indexTargets(await notificationTargets(client, row.target_ref)), [eventView(row)], await readPolicy(client))[0];
     const incidentRow = (await client.query("SELECT * FROM notification_incident WHERE id=$1", [row.incident_id])).rows[0];
     return { event, incident: incidentView(incidentRow), targetHref: await targetHref(client, row.target_ref, scope) };
   }, true);
@@ -121,9 +148,24 @@ export async function notificationChanges(after: string, limit: number, scope: C
     const hasMore = rows.length > limit;
     const changes = rows.slice(0, limit) as NotificationChangeView[];
     if (changes.some(change => ["policy_changed", "retention", "read_all"].includes(change.kind))) throw new BffError(409, "notification_resync_required");
-    const events = await delivery(client, changes.flatMap(change => change.payload.event ? [change.payload.event] : []), policy);
+    const targets = indexTargets(changes.some(change => change.payload.event || change.payload.incident?.severity === "critical") ? await notificationTargets(client) : []);
+    const events = delivery(targets, changes.flatMap(change => change.payload.event ? [change.payload.event] : []), policy);
     const eventMap = new Map(events.map(event => [event.id, event]));
     for (const change of changes) if (change.payload.event) change.payload.event = eventMap.get(change.payload.event.id)!;
+    const critical = changes.flatMap(change => {
+      const incident = change.payload.incident;
+      return incident?.status === "active" && incident.severity === "critical" ? [incident.id] : [];
+    });
+    if (critical.length) {
+      const evidence = new Map((await highlightEvidence(client, critical)).map(row => [row.id, row]));
+      for (const { payload, revision } of changes) {
+        const incident = payload.incident;
+        if (incident?.status !== "active" || incident.severity !== "critical") continue;
+        const row = evidence.get(incident.id), target = targets.get(incident.targetRef);
+        payload.highlighted = !!row && BigInt(row.first_revision) <= BigInt(revision)
+          && allowsHighlight(policy, target, row.event_type, incident.sourceSeverity);
+      }
+    }
     const next = hasMore ? changes.at(-1)!.revision : end;
     return { changes, nextCursor: encodeNotificationCursor({ g: stream.generation, scope, r: next, ...(hasMore ? { end, delivery: stream.delivery_revision } : {}) }),
       hasMore, windowEnd: end, streamRevision: end, counts: cursor.end ? null : await counts(client),

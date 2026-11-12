@@ -1,4 +1,5 @@
 import "server-only";
+import { z } from "zod";
 import { BffError, protectedResponse, queryParams, jsonBody } from "../bff.ts";
 import { requireSession } from "../auth/index.ts";
 import { notificationListQuery, notificationChangesQuery, notificationHistoryQuery } from "../../notifications/contracts.ts";
@@ -6,7 +7,7 @@ import { listNotifications, notificationHistory, notificationDetail, notificatio
 import { notificationSettings, saveNotificationSettings } from "./settings.ts";
 
 export async function readNotificationRoute(request: Request, segments: string[], scope: "public" | "private") {
-  if (!segments.length) return listNotifications(queryParams(request, notificationListQuery), scope);
+  if (!segments.length) return listNotifications(queryParams(request, notificationListQuery.extend({ highlights: z.literal("1").optional() })), scope);
   if (segments.length === 1 && segments[0] === "history") return notificationHistory(queryParams(request, notificationHistoryQuery), scope);
   if (segments.length === 1 && segments[0] === "changes") {
     const query = queryParams(request, notificationChangesQuery);

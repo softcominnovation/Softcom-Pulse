@@ -12,6 +12,10 @@ import { notificationText, type NotificationSnapshot, type NotificationChanges, 
 import { setOperationalToastPlace } from "@/lib/notifications/toast-place";
 import { setTabProblemIcon, tabProblemVisible } from "@/lib/notifications/tab-icon";
 
+import "@/public/incident-highlights.js";
+import { IncidentContext, type IncidentStates } from "./incident-highlight";
+
+const emptyStates: IncidentStates = {};
 type Center = { counts: NotificationCounts; revision: string; scopeKey: string; available: boolean; open: boolean; setOpen: (open: boolean) => void; refresh: () => void; register: () => () => void };
 const Context = createContext<Center | null>(null);
 export function useNotificationCenter() { const value = useContext(Context); if (!value) throw new Error("Notification provider missing"); return value; }
@@ -72,11 +76,13 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [dataKey, setDataKey] = useState("");
   const [open, setOpen] = useState(false), [available, setAvailable] = useState(false);
   const [counts, setCounts] = useState<NotificationCounts>({ unreadCount: 0, activeCount: 0 });
+  const [highlights, setHighlights] = useState<IncidentStates>(emptyStates);
   const [revision, setRevision] = useState("0");
   const refreshRef = useRef<() => void>(() => undefined);
   useEffect(() => {
     if (!scope) return;
     const abort = new AbortController(), delivery = new NotificationDelivery();
+    const visuals = window.PulseIncidentHighlights.create(setHighlights, window.PulseIncidentHighlights.wasVisible);
     let cursor: string | null = null, runtime: NotificationSnapshot["runtime"] | null = null;
     let stopped = false, busy = false, offset = 0, lastSuccess = 0, generation = 0;
     let visibleEvents: { id: string; incidentId: string; recovery: boolean }[] = [];
@@ -98,9 +104,10 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
       try {
         if (!document.hidden && lastSuccess && Date.now() - lastSuccess > 30000) { cursor = null; clear(); }
         if (!cursor) {
-          const { data } = await api.get<NotificationSnapshot>("/monitoring/notifications", { signal: abort.signal, params: { limit: 1 } });
+          const { data } = await api.get<NotificationSnapshot>("/monitoring/notifications", { signal: abort.signal, params: { limit: 1, highlights: "1" } });
           if (stopped || run !== generation) return;
           cursor = data.syncCursor; runtime = remember(data.runtime); offset = Date.parse(data.serverTime) - Date.now();
+          visuals.replace(data.highlights ?? []);
           publishCounts(data.counts); setRevision(data.streamRevision);
         } else {
           let after = cursor, count: NotificationCounts | null = null, more = true;
@@ -114,6 +121,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
           }
           if (!latest) return;
           runtime = remember(latest.runtime); offset = Date.parse(latest.serverTime) - Date.now(); cursor = after;
+          visuals.apply(changes, Date.parse(latest.serverTime), runtime.maxDeliveryAgeMs);
           const events = changes.flatMap(change => change.payload.event ? [change.payload.event] : []);
           const read = changes.flatMap(change => change.kind === "read" ? change.payload.ids ?? [] : []);
           const closed = changes.flatMap(change => change.payload.incident?.status !== "active" && change.payload.incident ? [change.payload.incident.id] : []);
@@ -156,11 +164,11 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     document.addEventListener("visibilitychange", visibility); window.addEventListener("online", visibility);
     void poll();
     return () => {
-      stopped = true; abort.abort(); clearInterval(interval); clearInterval(tick); clear(); setTabProblemIcon(false); refreshRef.current = () => undefined;
+      stopped = true; visuals.dispose(); abort.abort(); clearInterval(interval); clearInterval(tick); clear(); setTabProblemIcon(false); refreshRef.current = () => undefined;
       document.removeEventListener("visibilitychange", visibility); window.removeEventListener("online", visibility);
     };
   }, [scope, sessionKey, viewKey]);
   // Access gates are also applied to the visible value, so a logout never exposes cached private counts.
   const visible = !!scope && dataKey === viewKey && (scope === "public" || getAuthController().store.getState().status === "authenticated");
-  return <Context.Provider value={{ counts: visible ? counts : { unreadCount: 0, activeCount: 0 }, revision: visible ? revision : "0", scopeKey: viewKey, available: visible && available, open: active && open, setOpen, refresh: () => refreshRef.current(), register }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ counts: visible ? counts : { unreadCount: 0, activeCount: 0 }, revision: visible ? revision : "0", scopeKey: viewKey, available: visible && available, open: active && open, setOpen, refresh: () => refreshRef.current(), register }}><IncidentContext.Provider value={visible && ["/", "/monitor", "/servicos", "/monitor/servicos"].includes(pathname) ? highlights : emptyStates}>{children}</IncidentContext.Provider></Context.Provider>;
 }

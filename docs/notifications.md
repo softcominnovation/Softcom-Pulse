@@ -2,6 +2,14 @@
 
 A central do cabeçalho reúne histórico, não lidas e incidentes atuais. Avisos temporários usam o toast Kobra sobre a página, sem reservar espaço dos cards. O bloco legado comentado permanece preservado. Consulte também [Design system](design-system.md), [Sons](interface-sounds.md), [BFF](bff.md) e [Workers](workers.md).
 
+## Destaque no painel
+
+Na Visão geral, no `/monitor` (inclusive no WebView clássico) e nos cards correspondentes de Serviços, um erro crítico anunciado pela política do serviço acende o contorno do alvo. O efeito é automático. A borda vermelha de 3 px pulsa com um halo externo. Com movimento reduzido, o contorno fica estático. Ler a notificação ou silenciar o volume mantém o destaque.
+
+Se cair apenas o Redis ou o Postgres, acendem seu indicador no Signal e os minicards daquele serviço. Se cair o próprio Signal, o Storage ou o hipervisor ASGARD cadastrado, acende o painel correspondente. A identidade é o UUID do alvo monitorado, mesmo que dois cards tenham o mesmo nome.
+
+Ao abrir uma tela, os erros ativos elegíveis voltam a aparecer, inclusive os já lidos. Uma recuperação confirmada do último erro destacado troca a borda para verde por cinco segundos na tela que acompanhava o incidente. Um novo erro interrompe o verde imediatamente. Cancelamentos e releituras de histórico não disparam a recuperação visual. A borda usa o fluxo existente de notificações e respeita a rolagem interna dos painéis.
+
 ## Período do histórico
 
 Somente a aba **Histórico** oferece o componente **Período do histórico**. A data inicial é obrigatória e começa no dia atual; a final é opcional. Sem data final, consulta-se apenas o dia inicial. **Filtrar período** aplica a seleção, e **Hoje** restaura o padrão. Nenhuma das datas pode estar no futuro, e a final não pode ser anterior à inicial. Erros aparecem junto aos campos, sem disparar consulta inválida.
@@ -89,6 +97,8 @@ Consultas Zabbix adicionais são limitadas e compartilham o cancelamento do cicl
 A manutenção usa o Collector existente, com lotes limitados. Incidentes ativos e eventos não lidos são preservados; incidentes encerrados com leitura antiga podem expirar conforme retenção. O feed técnico possui janela de sete dias; cursor expirado exige sincronização completa silenciosa. Não são armazenadas séries de métricas nem inventário Zabbix nessas tabelas.
 
 ## Contrato BFF
+
+Para inicializar o telão, os leitores privado e público aceitam `?limit=1&highlights=1`. O campo adicional `highlights` contém pares `{incidentId, targetRef}` para todos os erros ativos elegíveis na revisão de `syncCursor`, independentemente da página de eventos. Em `/changes`, `payload.highlighted` identifica um incidente crítico ativo que deve acender o alvo. A resolução e o cancelamento vêm em `payload.incident.status`. Após um `409`, a tela refaz a consulta inicial antes de continuar.
 
 | Método e rota | Finalidade |
 |---|---|

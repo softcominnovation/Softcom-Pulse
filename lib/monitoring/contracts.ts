@@ -69,7 +69,7 @@ export const summarySchema = z.object({
   jobsWaiting: count.optional(),
   jobsWaitingOldestSeconds: z.number().int().nonnegative().nullable().optional(),
 });
-export const asgardSummarySchema = z.object({ host: hostSchema.nullable(), vms: z.array(vmSchema) });
+export const asgardSummarySchema = z.object({ host: hostSchema.nullable(), vms: z.array(vmSchema), resourceConfigId: z.uuid().optional() });
 export const overviewSnapshotSchema = z.object({ summary: summarySchema, asgardSummary: asgardSummarySchema });
 export const historySchema = z.object({
   resource: resourceReferenceSchema, window: historyRangeSchema, source: z.enum(["history", "trends"]),

@@ -1,5 +1,6 @@
 "use client";
 
+import { useIncidentAttributes } from "@/components/notifications/incident-highlight";
 import { PlaceLink } from "@/components/layout/place-link";
 import { ArrowRight, Activity } from "lucide-react";
 import type { CSSProperties } from "react";
@@ -85,6 +86,7 @@ function JobStat({ label, value }: { label: string; value: number | null }) {
 }
 
 export function SignalFlowPanel({ data, options }: { data: SignalFlowPayload; options: OptionsByType["signal_flow"] }) {
+  const incident = useIncidentAttributes();
   const target = data.target;
   if (!target) {
     return <section className="dashboard-panel signal-flow-panel" id="signal-flow">
@@ -100,7 +102,7 @@ export function SignalFlowPanel({ data, options }: { data: SignalFlowPayload; op
     target.latencyMs !== null ? `${target.latencyMs} ms` : null,
   ].filter(Boolean).join(" · ");
 
-  return <section className="dashboard-panel signal-flow-panel traffic-panel" id="signal-flow" style={{ "--visible-rows": options.visibleRows } as CSSProperties}>
+  return <section {...incident("signal_target", target.id)} className="dashboard-panel signal-flow-panel traffic-panel" id="signal-flow" style={{ "--visible-rows": options.visibleRows } as CSSProperties}>
     <div className="panel-heading">
       <Activity aria-hidden="true" />
       <ServiceTitle status={<span className={`status-pill tone-${tone}`}><i className="status-dot" />{signalStateLabel(target.state)}</span>}><h2>Signal · fluxo de processamento</h2></ServiceTitle>
@@ -115,7 +117,7 @@ export function SignalFlowPanel({ data, options }: { data: SignalFlowPayload; op
           {[...(target.flowKpis ?? [])].sort((a, b) => Number(a.flowKpi === "redis") - Number(b.flowKpi === "redis")).map(item => {
             const kind = item.flowKpi === "database" ? "Banco" : "Redis";
             const caption = `${item.displayName}, ${kind}: ${item.kpiLabel}. Leitura do container.${item.healthNote ? ` ${item.healthNote}` : ""}`;
-            return <div key={item.id} className="signal-flow-job" title={caption} aria-label={caption}>
+            return <div key={item.id} {...incident("signal_service", item.id)} className="signal-flow-job" title={caption} aria-label={caption}>
               <strong className={`tone-${item.tone}`}>{item.kpiLabel}</strong>
               <span className="signal-flow-job-caption"><span className="signal-flow-job-name">{item.displayName}</span><span>{kind}</span></span>
             </div>;

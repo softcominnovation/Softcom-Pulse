@@ -1,3 +1,4 @@
+import { useIncidentAttributes } from "@/components/notifications/incident-highlight";
 import { Box, Server } from "lucide-react";
 import { useContext } from "react";
 import type { ConfiguredResource, Metric } from "@/lib/monitoring/contracts";
@@ -9,6 +10,7 @@ import { affectedResource, resolutionLabel } from "@/lib/services/presentation";
 import { ServiceTitle } from "./service-title";
 
 export function ResourceCard({ item, stale, compact = false, details = true }: { item: ConfiguredResource; stale: boolean; compact?: boolean; details?: boolean }) {
+  const incident = useIncidentAttributes();
   const now = useContext(EvidenceTimeContext);
   const { config, resource, metrics } = item, p = config.presentation;
   const container = resource && "reference" in resource ? resource : null;
@@ -29,7 +31,7 @@ export function ResourceCard({ item, stale, compact = false, details = true }: {
   }
   if (p.showNetwork) rows.push({ label: "Rede recebida", metric: metrics.networkReceiveBitsPerSecond }, { label: "Rede transmitida", metric: metrics.networkTransmitBitsPerSecond });
   if (p.showUptime) rows.push({ label: "Tempo ativo", metric: metrics.uptimeSeconds });
-  return <article className={`resource-card${affectedResource(item) ? " resource-affected" : ""}`}>
+  return <article {...incident("resource", item.id)} className={`resource-card${affectedResource(item) ? " resource-affected" : ""}`}>
     <div className="resource-top">{config.resourceType === "host" ? <Server aria-hidden="true" /> : <Box aria-hidden="true" />}<span>{config.resourceType === "host" ? "Host" : "Container"}</span>{config.critical && <span className="critical-label">Crítico para a operação</span>}</div>
     <ServiceTitle status={p.showStatus && (container ? <ContainerStatus container={container} stale={stale} /> : <Status value={state} stale={evidenceOld} />)}><h3>{config.displayName ?? resource?.displayName ?? resource?.name ?? config.zabbixHostKey}</h3></ServiceTitle><p className="resource-host">{config.zabbixHostKey}</p>
     {!config.enabled && <p className="resource-host">Configuração desabilitada</p>}

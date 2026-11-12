@@ -1,4 +1,5 @@
 "use client";
+import { useIncidentAttributes } from "@/components/notifications/incident-highlight";
 import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 import { useContext } from "react";
 import type { ConfiguredResource, Metric } from "@/lib/monitoring/contracts";
@@ -18,6 +19,7 @@ function Reading({ label, metric, stale, now, title, currentOnly = false }: { la
   return <span className="availability-reading" data-usage-percent={currentOnly || metric?.unit === "percent" || undefined} title={title ? `${title}${valid ? "" : " · Sem leitura atual"}` : undefined}><span>{label}<strong>{currentOnly && !valid ? "—" : metricValue(metric)}</strong></span><span className={meterClass(label)} aria-hidden="true"><i style={{ width: valid && metric?.unit === "percent" ? Math.max(0, Math.min(100, metric.value!)) + "%" : "0%" }} /></span></span>;
 }
 export function ServiceAvailabilityCard({ item, stale, preview = false }: { item: ConfiguredResource; stale: boolean; preview?: boolean }) {
+  const incident = useIncidentAttributes();
   const now = useContext(EvidenceTimeContext), status = serviceAvailability(item, stale, now);
   const name = item.config.displayName ?? item.resource?.displayName ?? item.resource?.name ?? item.config.zabbixHostKey;
   const p = item.config.presentation;
@@ -31,5 +33,5 @@ export function ServiceAvailabilityCard({ item, stale, preview = false }: { item
 
     <span className="availability-footer"><span>{item.config.serviceType ?? (item.config.resourceType === "host" ? (item.resource && !("reference" in item.resource) && item.resource.role === "linux" ? "Host · Agent" : "Host") : "Container")}</span><strong>{footer}</strong></span>
   </>;
-  return preview ? <article className="availability-card" data-metric-count={slots.length}>{content}</article> : <ServiceDetailsTrigger item={item} trigger={<button type="button" className="availability-card" data-metric-count={slots.length} aria-label={`Detalhes de ${name}: ${status.label}`}>{content}</button>} />;
+  return preview ? <article className="availability-card" data-metric-count={slots.length}>{content}</article> : <ServiceDetailsTrigger item={item} trigger={<button {...incident("resource", item.id)} type="button" className="availability-card" data-metric-count={slots.length} aria-label={`Detalhes de ${name}: ${status.label}`}>{content}</button>} />;
 }

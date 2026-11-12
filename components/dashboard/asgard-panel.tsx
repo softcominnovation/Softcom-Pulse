@@ -1,3 +1,4 @@
+import { useIncidentAttributes } from "@/components/notifications/incident-highlight";
 import { PlaceLink } from "@/components/layout/place-link";
 import { ArrowRight, HardDrive, Server } from "lucide-react";
 import { useContext, type CSSProperties } from "react";
@@ -14,11 +15,12 @@ function evidenceOld(vm: { evidence: VirtualMachine["evidence"] }, stale: boolea
 }
 
 export function AsgardPanel({ data, stale, detailed = false, options }: { data: AsgardSummary; stale: boolean; detailed?: boolean; options?: OptionsByType["asgard_summary"] }) {
+  const incident = useIncidentAttributes();
   const { host, vms } = data, now = useContext(EvidenceTimeContext);
   const visible = options ? selectVms(vms, options, stale, now) : vms;
   const running = vms.filter(vm => vm.state === "running" && !evidenceOld(vm, stale, now)).length;
   const unknown = vms.filter(vm => vm.state === "unknown" || evidenceOld(vm, stale, now)).length;
-  return <section className={`dashboard-panel asgard-panel ${detailed ? "asgard-detailed" : "asgard-compact"}`} style={options ? { "--visible-rows": options.visibleRows } as CSSProperties : undefined}>
+  return <section {...incident("resource", data.resourceConfigId)} className={`dashboard-panel asgard-panel ${detailed ? "asgard-detailed" : "asgard-compact"}`} style={options ? { "--visible-rows": options.visibleRows } as CSSProperties : undefined}>
     <div className="panel-heading"><Server aria-hidden="true" /><ServiceTitle status={host && <Status value={host.availability} stale={evidenceOld(host, stale, now)} />}><h2>{host?.displayName ?? host?.name ?? "Asgard"} · armazenamento & VMs</h2></ServiceTitle>{!detailed && host && <PlaceLink className="panel-link" href={`/asgard?hostKey=${encodeURIComponent(host.hostKey)}`} hideWhenClosed>Ver ASGARD<ArrowRight aria-hidden="true" /></PlaceLink>}</div>
     {!host ? <p className="panel-empty">Sem dados do hipervisor na coleta atual.</p> : <>
       <div className="asgard-content">

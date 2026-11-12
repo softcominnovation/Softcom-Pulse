@@ -82,7 +82,8 @@ test("classic reader uses current public handlers without forwarding cookies or 
     const request = path => new Request("http://127.0.0.1/monitor" + path, { headers: { Host: "127.0.0.1", Cookie: "session=private", Authorization: "Bearer private" } });
     const result = await readCompatibleMonitor(request("?compat=1"), reader);
     assert.equal(result.tv, true);
-    assert.equal(calls.length, 2);
+    assert.equal(calls.length, 3);
+    assert.ok(calls.some(call => call.segments.join("/") === "monitoring/notifications" && new URL(call.request.url).searchParams.get("highlights") === "1"));
     for (const call of calls) {
       assert.equal(call.request.headers.get("Host"), "127.0.0.1");
       assert.equal(call.request.headers.has("Cookie"), false);
@@ -144,7 +145,7 @@ test("classic notification adapter formats current usage context and preserves c
 });
 
 test("classic browser scripts parse as ES5 and omit the rejected viewport calibration", async () => {
-  for (const file of ["monitor-compat.js", "monitor-compat-bootstrap.js", "monitor-compat-audio.js", "monitor-auto-scroll.js"]) {
+  for (const file of ["monitor-compat.js", "monitor-compat-bootstrap.js", "monitor-compat-audio.js", "monitor-auto-scroll.js", "incident-highlights.js"]) {
     const source = await readFile(new URL("../public/" + file, import.meta.url), "utf8");
     const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.ES5, true, ts.ScriptKind.JS);
     assert.deepEqual(parsed.parseDiagnostics, [], file);
@@ -161,13 +162,13 @@ test("classic browser scripts parse as ES5 and omit the rejected viewport calibr
 });
 
 test("classic asset URLs identify the actual content so a cached controller cannot cross versions", async () => {
-  for (const file of ["monitor-compat.js", "monitor-compat.css", "monitor-compat-notifications.css", "monitor-compat-audio.js", "monitor-compat-bootstrap.js", "monitor-auto-scroll.js"]) {
+  for (const file of ["monitor-compat.js", "monitor-compat.css", "monitor-compat-notifications.css", "monitor-compat-audio.js", "monitor-compat-bootstrap.js", "monitor-auto-scroll.js", "incident-highlights.js", "incident-highlights.css"]) {
     const content = await readFile(new URL("../public/" + file, import.meta.url));
     const digest = createHash("sha256").update(content).digest("hex").slice(0, 20);
     assert.equal(compatibleAssetUrl(file), '/' + file + '?v=' + digest);
   }
   const model = monitorFixture(), html = renderCompatiblePage(model, "Pulse");
-  for (const file of ["monitor-compat.css", "monitor-compat-notifications.css", "monitor-compat.js", "monitor-auto-scroll.js"]) assert.ok(html.includes(compatibleAssetUrl(file)));
+  for (const file of ["monitor-compat.css", "monitor-compat-notifications.css", "monitor-compat.js", "monitor-auto-scroll.js", "incident-highlights.js", "incident-highlights.css"]) assert.ok(html.includes(compatibleAssetUrl(file)));
   assert.ok(html.indexOf(compatibleAssetUrl("monitor-auto-scroll.js")) < html.indexOf(compatibleAssetUrl("monitor-compat.js")));
   assert.equal(compatibleMonitorState(model).audioAdapterUrl, compatibleAssetUrl("monitor-compat-audio.js"));
 });

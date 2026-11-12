@@ -120,6 +120,7 @@
       if (key && element.offsetHeight) scroll[key] = { top: element.scrollTop, left: element.scrollLeft, focus: document.activeElement === element };
     });
     content.innerHTML = result.html;
+    paintIncidentStates();
     content.setAttribute('data-connection', content.querySelector('.is-stale') ? 'stale' : 'ready');
     if (focusDetail) each(content.querySelectorAll('[data-open-detail]'), function (element) { if (element.getAttribute('data-open-detail') === focusDetail) element.focus(); });
     var previousZoom = state.zoomPercent;
@@ -554,15 +555,33 @@
     }
     flushVisuals();
   }
+  var incidentStates = null;
+  function paintIncidentStates() {
+    if (!incidentStates) return;
+    each(document.querySelectorAll('[data-incident-target]'), function (node) {
+      var state = incidentStates[node.getAttribute('data-incident-target')];
+      if (state) {
+        node.setAttribute('data-incident-state', state);
+        node.setAttribute('aria-description', state === 'error' ? 'Erro de monitoramento ativo' : 'Recuperação confirmada');
+      } else if (node.hasAttribute('data-incident-state')) {
+        node.removeAttribute('data-incident-state');
+        node.removeAttribute('aria-description');
+      }
+    });
+  }
+  var highlights = window.PulseIncidentHighlights && window.PulseIncidentHighlights.create(function (states) {
+    incidentStates = states;
+    paintIncidentStates();
+  }, window.PulseIncidentHighlights.wasVisible);
   function pollNotifications() {
     if (stopped || notificationBusy) return;
     notificationBusy = true;
     var epoch = notificationGeneration;
     function done() { if (epoch !== notificationGeneration) return; notificationBusy = false; if (!stopped) notificationTimer = setTimeout(pollNotifications, 10000); }
     if (!cursor) {
-      request('/monitor/compat/notifications?limit=1', function (error, data) {
+      request('/monitor/compat/notifications?limit=1&highlights=1', function (error, data) {
         if (epoch !== notificationGeneration || stopped) return;
-        if (!error && !stopped) { cursor = data.syncCursor; deliveryRevision = data.runtime.deliveryRevision; syncClock(data.serverTime); notificationsLabel(data); }
+        if (!error && !stopped) { if (highlights) highlights.replace(data.highlights || []); cursor = data.syncCursor; deliveryRevision = data.runtime.deliveryRevision; syncClock(data.serverTime); notificationsLabel(data); }
         done();
       });
       return;
@@ -586,8 +605,10 @@
           if (change.payload.incident && change.payload.incident.status !== 'active') closed.push(change.payload.incident.id);
         });
         each(visibleEvents, function (event) { if (read.indexOf(event.id) >= 0 || event.eventType !== 'recovery' && closed.indexOf(event.incidentId) >= 0) hideToast(); });
-        if (latest.runtime.deliveryRevision === deliveryRevision) deliver(events, latest.runtime, closed, read);
-        else resetVisuals();
+        if (latest.runtime.deliveryRevision === deliveryRevision) {
+          if (highlights) highlights.apply(changes, Date.parse(latest.serverTime), latest.runtime.maxDeliveryAgeMs);
+          deliver(events, latest.runtime, closed, read);
+        } else { cursor = null; resetVisuals(); }
         deliveryRevision = latest.runtime.deliveryRevision;
         done();
       });

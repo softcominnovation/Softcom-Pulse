@@ -1,4 +1,5 @@
 "use client";
+import { useIncidentAttributes } from "@/components/notifications/incident-highlight";
 import { CardMetricOptions } from "@/components/admin/card-metric-options";
 import { AvailabilityCardHeader } from "@/components/dashboard/availability-card-header";
 import { AgentMonitoringDialog } from "@/components/admin/agent-monitoring";
@@ -37,6 +38,7 @@ function registeredCopy(prefix: string, services: ClusterService[]) {
 export function SignalClusterServices({ targetId, revision, services, editor, onSaved }: {
   targetId: string; revision: number; services: ClusterService[]; editor: boolean; onSaved: () => void;
 }) {
+  const incident = useIncidentAttributes();
   const params = useSearchParams();
   const focus = params.get("signalService");
   const mutation = useMutation();
@@ -114,7 +116,7 @@ export function SignalClusterServices({ targetId, revision, services, editor, on
     <div className="panel-heading signal-linked-heading"><h3 ref={createHeading} tabIndex={-1}>Serviços do cluster</h3>{editor && <Button ref={createTrigger} type="button" size="sm" variant="outline" data-sound="open" aria-haspopup="dialog" aria-expanded={creating} disabled={mutation.busy || services.length >= 20} onClick={() => setCreating(true)}><Plus aria-hidden="true" />Adicionar serviço</Button>}</div>
     <p className="admin-muted">Postgres, Redis e outros containers das VMs vinculadas. O vínculo é o nome do serviço, não o id da task. Sem enumeração completa do Docker, um container que some fica como Sem leitura, não como Fora.</p>
     {visible.length ? <ul className="signal-linked-grid availability-group" data-card-size={visible.some(service => service.cardMetrics?.length === 3) ? "expanded" : "compact"}>{visible.map(service => <li key={service.id} id={`signal-service-${service.id}`} className="signal-linked-card-wrap">
-      <article className="availability-card signal-cluster-card" data-metric-count={service.cardMetrics?.length} aria-current={focus === service.id ? "true" : undefined}>
+      <article {...incident("signal_service", service.id)} className="availability-card signal-cluster-card" data-metric-count={service.cardMetrics?.length} aria-current={focus === service.id ? "true" : undefined}>
         <AvailabilityCardHeader name={service.displayName} label={service.kpiLabel} tone={service.tone} />
         <span className="availability-description">{service.servicePrefix}</span>
         <CardReadings pair={service.cardMetrics ?? ["cpu", "memory"]} values={{ cpu: service.cpu ?? null, memory: service.memory ?? null, disk: service.disk ?? null }} diskLabel="Disco da VM" />

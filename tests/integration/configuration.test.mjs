@@ -1058,6 +1058,16 @@ test("external history keeps one point per check and purge drops samples older t
   await handlers.externalServiceDelete(request("/", "DELETE"), params({ id }));
 });
 
+test("service and stack IDs retain their PostgreSQL UUID defaults after migrations", async () => {
+  const tables = ["external_service", "signal_service", "standalone_vps", "vps_stack"];
+  const { rows } = await getDatabase().query(`
+    SELECT table_name, column_default FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = ANY($1::text[]) AND column_name = 'id'
+    ORDER BY table_name`, [tables]);
+  assert.deepEqual(rows.map(row => row.table_name), tables);
+  for (const row of rows) assert.equal(row.column_default, "gen_random_uuid()", row.table_name);
+});
+
 test("external registration rejects unsafe URLs and stops at 100 services", async () => {
   for (const url of ["https://127.0.0.1/health", "https://localhost/health", "https://169.254.169.254/latest", "https://1.1.1.1/health?x=1"]) assert.equal((await handlers.externalServicePost(request("/", "POST", externalInput("", { url })))).status, 400);
   await getDatabase().query("INSERT INTO external_service (display_name, method, url, success_mode, auth_mode) SELECT 'Limite ' || g, 'GET', 'https://1.1.1.1/limit/' || g, 'http_status', 'none' FROM generate_series(1, 100) AS g");

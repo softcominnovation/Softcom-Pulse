@@ -56,7 +56,7 @@ model VmDisplayConfig {
 }
 
 model ExternalService {
-  id                 String   @id @default(uuid()) @db.Uuid
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   displayName        String   @map("display_name") @db.VarChar(120)
   description        String?  @db.VarChar(240)
   serviceType        String?  @map("service_type") @db.VarChar(40)
@@ -100,7 +100,7 @@ model ExternalServiceSample {
 
 model StandaloneVps {
   cardMetrics Json? @map("card_metrics")
-  id                String    @id @default(uuid()) @db.Uuid
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   name              String    @db.VarChar(120)
   provider          String?   @db.VarChar(120)
   ip                String    @db.VarChar(45)
@@ -228,7 +228,7 @@ model NotificationChange {
 }
 
 model VpsStack {
-  id        String        @id @default(uuid()) @db.Uuid
+  id        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   vpsId     String        @map("vps_id") @db.Uuid
   vps       StandaloneVps @relation(fields: [vpsId], references: [id], onDelete: Cascade)
   name      String        @db.VarChar(120)
@@ -334,7 +334,7 @@ model SignalInfraLink {
 }
 
 model SignalService {
-  id               String       @id @default(uuid()) @db.Uuid
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   targetId         String       @map("target_id") @db.Uuid
   target           SignalTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
   displayName      String       @map("display_name") @db.VarChar(120)

@@ -1,6 +1,6 @@
 import { AxiosError, CanceledError, type AxiosInstance, type InternalAxiosRequestConfig } from "axios";
 import { isPublicPath } from "../public/paths.ts";
-import type { AuthController } from "./auth-session.ts";
+import { messageOf, type AuthController } from "./auth-session.ts";
 
 type SessionRequest = InternalAxiosRequestConfig & { sessionEpoch?: string; retried?: boolean };
 
@@ -40,8 +40,13 @@ export function installAuthInterceptors(api: AxiosInstance, auth: () => AuthCont
     if (!config?.sessionEpoch) throw error;
     const controller = auth();
     if (config.sessionEpoch !== controller.generation) throw new CanceledError();
-    if (error.response?.status !== 401) throw error;
-    if (config.retried) { await controller.invalidate(); throw error; }
+    const status = error.response?.status;
+    if (status !== 401 && status !== 431) throw error;
+    if (config.retried) {
+      if (status === 401) await controller.invalidate();
+      else controller.store.setState({ status: "unavailable", issue: messageOf(error) });
+      throw error;
+    }
     config.retried = true;
     const previous = String(config.headers.get("Authorization") ?? "").replace(/^Bearer /, "");
     await controller.refresh(previous);

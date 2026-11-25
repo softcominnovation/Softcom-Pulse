@@ -71,7 +71,7 @@ test("proactive refresh runs within thirty seconds of expiry", async () => {
   assert.equal(await a.getAccessToken(), "v1.access.1");
   assert.equal(f.rotations(), 1);
 });
-for (const status of [401, 403, 503, undefined]) test("refresh failure " + status + " preserves the correct session state", async () => {
+for (const status of [401, 403, 431, 503, undefined]) test("refresh failure " + status + " preserves the correct session state", async () => {
   const f = fixture({ transport: { refresh: async () => { throw rejected(status); } } }), a = f.create();
   await a.login(credentials);
   await assert.rejects(a.refresh(a.store.getState().session.accessToken));
@@ -133,7 +133,7 @@ test("restoration validates trusted identity rather than trusting local user or 
   assert.equal(b.store.getState().session.user.id, 42);
   assert.ok(b.store.getState().session.expiresAt < value.session.expiresAt);
 });
-for (const codes of [[401,200],[401,401],[403],[503],[0]]) test("axios retries only one 401: " + codes.join(","), async () => {
+for (const codes of [[401,200],[401,401],[431,200],[431,431],[403],[503],[0]]) test("axios retries authentication or header rejection only once: " + codes.join(","), async () => {
   const f = fixture(), auth = f.create(); await auth.login(credentials);
   let calls = 0;
   const api = axios.create({ adapter: async config => {
@@ -147,8 +147,45 @@ for (const codes of [[401,200],[401,401],[403],[503],[0]]) test("axios retries o
   if (codes.at(-1) === 200) await api.get("/protected");
   else await assert.rejects(api.get("/protected"));
   assert.equal(calls, codes.length);
-  assert.equal(f.rotations(), codes[0] === 401 ? 1 : 0);
-  assert.equal(auth.store.getState().status, codes[1] === 401 ? "anonymous" : "authenticated");
+  assert.equal(f.rotations(), [401, 431].includes(codes[0]) ? 1 : 0);
+  assert.equal(auth.store.getState().status, codes[1] === 401 ? "anonymous" : codes[1] === 431 ? "unavailable" : "authenticated");
+  if (codes[1] === 431) {
+    assert.ok(JSON.parse(f.raw()).session);
+    assert.match(auth.store.getState().issue, /tamanho/);
+  }
+});
+
+test("two tabs replace oversized saved access tokens before sending an authenticated header", async () => {
+  const f = fixture(), a = f.create(); await a.login(credentials);
+  const saved = JSON.parse(f.raw()); saved.session.accessToken = "v1." + "a".repeat(24000); f.write(JSON.stringify(saved));
+  const headers = [];
+  f.transport.session = async token => { headers.push(token); return { user, expiresAt: Date.now() + 3600000 }; };
+  const b = f.create(), c = f.create();
+  await Promise.all([b.initialize(), c.initialize()]);
+  assert.equal(f.rotations(), 1);
+  assert.equal(headers.length, 2);
+  assert.ok(headers.every(token => token === "v1.access.1"));
+  assert.equal(b.store.getState().status, "authenticated");
+  assert.equal(c.store.getState().status, "authenticated");
+});
+
+test("session validation retries a 431 once and retains the session if headers are still refused", async () => {
+  const f = fixture(), a = f.create(); await a.login(credentials);
+  let calls = 0;
+  f.transport.session = async () => {
+    if (++calls === 1) throw rejected(431);
+    return { user, expiresAt: Date.now() + 3600000 };
+  };
+  await a.validate();
+  assert.equal(calls, 2); assert.equal(f.rotations(), 1);
+  assert.equal(a.store.getState().status, "authenticated");
+  calls = 0;
+  f.transport.session = async () => { calls++; throw rejected(431); };
+  await a.validate();
+  assert.equal(calls, 2); assert.equal(f.rotations(), 2);
+  assert.equal(a.store.getState().status, "unavailable");
+  assert.ok(JSON.parse(f.raw()).session);
+  assert.match(a.store.getState().issue, /tamanho/);
 });
 test("business requests are canceled and stale responses rejected after logout", async () => {
   const f = fixture(), auth = f.create(); await auth.login(credentials);

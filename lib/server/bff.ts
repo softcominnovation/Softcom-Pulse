@@ -4,11 +4,21 @@ import { requireSession } from "./auth/index.ts";
 import { isEditor } from "./auth/editors.ts";
 import { isPublicHost } from "./auth/public-hosts.ts";
 import { AuthError, authJson } from "./auth/errors.ts";
+import { logRequestFailure } from "./diagnostics.ts";
 
 export class BffError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string) { super(code); this.status = status; this.code = code; }
+  constructor(status: number, code: string, cause?: unknown) { super(code, { cause }); this.status = status; this.code = code; }
+}
+function failedResponse(request: Request, error: unknown) {
+  const status = error instanceof AuthError || error instanceof BffError ? error.status : error instanceof ZodError ? 400 : 500;
+  const code = error instanceof AuthError || error instanceof BffError ? error.code : error instanceof ZodError ? "invalid_request" : "internal_error";
+  const requestId = logRequestFailure({ request, error, status, code });
+  const body = error instanceof ZodError ? { code, fields: error.issues.map(issue => ({ path: issue.path.map(String).join("."), message: "Valor inválido." })) } : { code };
+  const response = authJson({ error: body }, status);
+  response.headers.set("X-Request-ID", requestId);
+  return response;
 }
 export async function protectedResponse(request: Request, action: (editor: boolean) => Promise<unknown>, status = 200) {
   try {
@@ -18,9 +28,7 @@ export async function protectedResponse(request: Request, action: (editor: boole
     const body = await action(editor);
     return status === 204 ? new Response(null, { status, headers: { "Cache-Control": "no-store" } }) : authJson(body, status);
   } catch (error) {
-    if (error instanceof AuthError || error instanceof BffError) return authJson({ error: { code: error.code } }, error.status);
-    if (error instanceof ZodError) return authJson({ error: { code: "invalid_request", fields: error.issues.map(issue => ({ path: issue.path.map(String).join("."), message: "Valor inválido." })) } }, 400);
-    return authJson({ error: { code: "internal_error" } }, 500);
+    return failedResponse(request, error);
   }
 }
 export async function publicResponse(request: Request, action: () => Promise<unknown>, status = 200) {
@@ -31,9 +39,7 @@ export async function publicResponse(request: Request, action: () => Promise<unk
     const body = await action();
     response = status === 204 ? new Response(null, { status, headers: { "Cache-Control": "no-store" } }) : authJson(body, status);
   } catch (error) {
-    if (error instanceof AuthError || error instanceof BffError) response = authJson({ error: { code: error.code } }, error.status);
-    else if (error instanceof ZodError) response = authJson({ error: { code: "invalid_request", fields: error.issues.map(issue => ({ path: issue.path.map(String).join("."), message: "Valor inválido." })) } }, 400);
-    else response = authJson({ error: { code: "internal_error" } }, 500);
+    response = failedResponse(request, error);
   }
   if (request.method === "GET" && isPublicHost(request) && !request.headers.has("Authorization")) response.headers.set("Access-Control-Allow-Origin", "*");
   return response;

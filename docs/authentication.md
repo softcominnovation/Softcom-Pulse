@@ -33,7 +33,7 @@ O usuário é recebido no login/refresh. Não há consulta a `/me`, JWKS ou intr
 | `POST /api/auth/login` | JSON `{email, senha}` | `{accessToken, refreshToken, tokenType: "Bearer", expiresIn, expiresAt, user}` |
 | `POST /api/auth/refresh` | JSON `{refreshToken}`, cifrado | Mesmo contrato de sessão, com novo par |
 | `POST /api/auth/logout` | JSON `{refreshToken}`, cifrado | `{revoked: true}` quando o upstream confirma |
-| `GET /api/auth/session` | `Authorization: Bearer <access cifrado>` | `{user, expiresAt, editor}` |
+| `GET /api/auth/session` | `Authorization: Bearer <access cifrado>` | `{user, expiresAt, editor}`, com identidade compacta, sem listas corporativas de acessos/permissões |
 
 Todos os tokens expostos pelo Pulse são envelopes; nenhum JWT ou refresh corporativo original é devolvido ao browser. `expiresAt` é epoch em milissegundos calculado no BFF; `expiresIn` usa segundos. Todas as respostas de autenticação, inclusive erros, usam `Cache-Control: no-store`.
 
@@ -52,7 +52,9 @@ Não há repasse do corpo bruto de erro, senha, token ou detalhes de conexão. E
 
 ## Cifra e validação
 
-Formato: `v1.<nonce base64url>.<ciphertext base64url>.<tag base64url>`. AES-256-GCM usa nonce aleatório de 12 bytes, tag de 16 bytes e dados autenticados adicionais `pulse.auth.v1`. O payload autenticado contém tipo `access` ou `refresh`, token corporativo, ID da sessão e usuário; access também contém a expiração.
+Formato: `v1.<nonce base64url>.<ciphertext base64url>.<tag base64url>`. AES-256-GCM usa nonce aleatório de 12 bytes, tag de 16 bytes e dados autenticados adicionais `pulse.auth.v1`. O access contém tipo, ID da sessão, expiração e identidade autenticada, sem o access token corporativo original nem as listas `acessos`/`permissoes`. O envelope de access emitido é limitado a 4096 caracteres ASCII para caber no cabeçalho HTTP. O refresh mantém o token corporativo de renovação e o usuário completo e trafega somente no corpo JSON.
+
+Login e refresh continuam devolvendo o usuário corporativo completo no corpo. A validação da sessão restaura no cliente somente a identidade comprovada pelo access; não recupera listas do storage não validado. Essas listas não autorizam operações no Pulse: edição continua determinada no servidor por `PULSE_EDITOR_EMAILS`. Envelopes `v1` antigos com token corporativo continuam aceitos até sua expiração, e o refresh emite o formato compacto mantendo ID de sessão e contexto corporativo completo.
 
 A validade usa `expiresIn` positivo e finito; fallback 7200 segundos. Quando o access recebido diretamente da API contém `exp`, ele limita a validade do envelope. Decodificar esse JWT não substitui verificação de assinatura: a fonte confiável aqui é a resposta corporativa obtida pelo servidor, e a autenticidade dos pedidos posteriores é verificada pelo GCM.
 
@@ -65,16 +67,26 @@ A sessão é stateless no BFF. Sem introspecção corporativa, não há garantia
 A store Zustand usa `lib/client/auth-session.ts`. Persistência manual em `localStorage["pulse.auth.v1"]`, com registro `{version: 1, epoch, session}`. `session` contém par cifrado, usuário, tipo e validade. Logout persiste `session: null`: a geração vazia permite identificar respostas de uma sessão encerrada.
 
 - Reidratar e validar no BFF antes de exibir conteúdo protegido; não confiar no usuário recuperado do storage.
-- Renovar trinta segundos antes de vencer, com uma promessa compartilhada na aba.
+- Renovar trinta segundos antes de vencer, com uma promessa compartilhada na aba. Access antigo salvo com mais de 4096 caracteres é renovado pelo corpo do refresh antes de ser enviado em um cabeçalho, usando a mesma coordenação entre abas.
 - Web Lock `pulse.auth.refresh.v1` coordena a rotação entre abas. Reler o registro dentro da trava; quem encontra um par já atualizado o reutiliza.
 - Web Lock `pulse.auth.storage.v1` serializa gravações breves de login, renovação, validação e logout. A validação não sobrescreve um par atualizado enquanto sua resposta estava em trânsito.
 - Eventos `storage` propagam alterações; não substituem a trava. Retorno à aba ou reconexão revalida a sessão.
-- 401 de API protegida provoca refresh e apenas uma repetição; auth e health não entram nesse interceptor. 403 de negócio e falha de rede/5xx não provocam logout.
+- 401 ou 431 de API protegida provoca refresh e apenas uma repetição; auth e health não entram nesse interceptor. A validação da sessão também permite apenas uma renovação diante de 401/431. Se o 431 persistir, apresenta indisponibilidade e preserva a sessão, sem pedir login como se a senha estivesse errada. 403 de negócio e falha de rede/5xx não provocam logout.
 - 401/403 do refresh encerra a sessão. Falha transitória mantém o registro cifrado e apresenta estado de indisponibilidade com nova tentativa; não libera conteúdo sem validação.
 - Logout/novo login muda a geração, aborta requests e limpa estado de apresentação. Resposta antiga não restaura nem apaga uma sessão posterior.
 - Sem Web Locks, o login continua possível, mas a renovação é recusada e a interface solicita novo login. Em storage bloqueado ou inválido, há mensagem explícita; não há rotação insegura baseada apenas em evento ou temporizador.
 
 Logout limpa a interface imediatamente e tenta a revogação remota. Se a API falhar, a interface informa que a saída local ocorreu, mas não foi possível confirmar o encerramento remoto. Uma rotação que já tenha sido processada pela API durante cancelamento pode não ter sua resposta recebida; não se promete revogação de um novo token desconhecido.
+
+## Diagnóstico de 431 — 25/11/2026
+
+O formato anterior duplicava o access token corporativo e todo o usuário dentro do envelope enviado em cada `Authorization`. Um token corporativo grande ou muitas permissões podiam exceder o limite do parser HTTP antes de chegar ao BFF. O `/monitor` anônimo não envia essa credencial, por isso pode continuar funcionando enquanto as rotas privadas falham. O erro não demonstra indisponibilidade do PostgreSQL/Redis nem credenciais inválidas.
+
+Na investigação, requisições fictícias sem cookies retornaram 401 com cerca de 8 KB e 431 com cerca de 16 KB de Bearer tanto no localhost:3000 quanto na produção. Portanto, não se confirmou um limite maior no desenvolvimento; a diferença da sessão/headers realmente enviados precisa ser considerada. O responsável também reproduziu o erro em janela anônima. O token real de produção não foi coletado ou registrado. A reprodução automatizada usa dados artificiais grandes e comprova 431 no formato anterior e 200 no compacto, com os mesmos limites HTTP.
+
+A correção não aumenta limites de Node/proxy, não altera layouts e não exige env, chave nova ou migration. Publicar o app atualizado e recarregar as páginas entrega o cliente e emissor compactos. Sessões antigas grandes são renovadas automaticamente se o refresh ainda for válido. Se um 431 persistir após a atualização, medir apenas os tamanhos de `Authorization`, `Cookie` e demais headers na requisição afetada e localizar a camada que responde; não copiar credenciais para logs ou chamados. Durante atualização gradual, concluir a substituição das réplicas antigas antes de validar novas sessões compactas.
+
+Os eventos `auth_session_issued`, `application_request_failed` e `http_request_rejected` permitem acompanhar tamanhos e falhas no container sem expor credenciais. Ver [diagnóstico e auditoria de crescimento no uso contínuo](diagnostics.md).
 
 ## Interface e validação
 

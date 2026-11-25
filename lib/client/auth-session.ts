@@ -1,6 +1,6 @@
 import { createStore } from "zustand/vanilla";
 import { z } from "zod";
-import { sessionSchema, userSchema, REFRESH_SKEW_MS, type AuthSession, type LoginInput, type SessionView } from "../auth/contracts.ts";
+import { sessionSchema, userSchema, REFRESH_SKEW_MS, MAX_ACCESS_TOKEN_LENGTH, type AuthSession, type LoginInput, type SessionView } from "../auth/contracts.ts";
 
 export type AuthStatus = "loading" | "anonymous" | "authenticated" | "unavailable";
 export type AuthState = { status: AuthStatus; session: AuthSession | null; editor: boolean; issue: string | null };
@@ -30,6 +30,7 @@ export function messageOf(error: unknown) {
   const status = statusOf(error);
   if (status === 401 || status === 403) return "E-mail ou senha inválidos.";
   if (status === 429) return "Muitas tentativas. Aguarde um momento e tente novamente.";
+  if (status === 431) return "O servidor recusou o tamanho dos dados da requisição. Tente novamente.";
   return "Não foi possível acessar o serviço de autenticação. Tente novamente.";
 }
 
@@ -173,6 +174,8 @@ export class AuthController {
     this.assertCurrent(epoch);
     const record = this.read();
     if (!record?.session) throw new SessionError("Entre para continuar.");
+    // Upgrade saved oversized envelopes through the refresh body before sending a header.
+    if (record.session.accessToken.length > MAX_ACCESS_TOKEN_LENGTH) return (await this.refresh(record.session.accessToken)).accessToken;
     if (record.session.expiresAt - Date.now() <= REFRESH_SKEW_MS) return (await this.refresh()).accessToken;
     return record.session.accessToken;
   }
@@ -209,7 +212,7 @@ export class AuthController {
           let view: SessionView;
           try { view = await this.deps.transport.session(token, this.signal); }
           catch (error) {
-            if (statusOf(error) !== 401) throw error;
+            if (![401, 431].includes(statusOf(error) ?? 0)) throw error;
             token = (await this.refresh(token)).accessToken;
             view = await this.deps.transport.session(token, this.signal);
           }

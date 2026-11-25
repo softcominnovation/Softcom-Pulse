@@ -1,6 +1,7 @@
 import test, { afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import { login, refresh, logout, session, requireSession } from "../lib/server/auth/index.ts";
 import { issueSession } from "../lib/server/auth/corporate.ts";
 import { openEnvelope, sealEnvelope } from "../lib/server/auth/envelope.ts";
@@ -8,11 +9,42 @@ import { openEnvelope, sealEnvelope } from "../lib/server/auth/envelope.ts";
 process.env.TOKEN_ENCRYPTION_KEY = randomBytes(32).toString("base64");
 process.env.API_BASE_URL = "https://auth.example.test";
 const originalFetch = globalThis.fetch;
-afterEach(() => { globalThis.fetch = originalFetch; });
+const originalInfo = console.info;
+afterEach(() => { globalThis.fetch = originalFetch; console.info = originalInfo; });
 const user = { id: 42, nome: "Colaborador", email: "test@example.test", administrador: false, empresa: "JP", solicitante: 0, permissoes: ["existing"], acessos: [] };
+const identity = { id: 42, nome: "Colaborador", email: "test@example.test", administrador: false, empresa: "JP", solicitante: 0 };
 const tokens = patch => ({ accessToken: "private-access", refreshToken: "private-refresh", tokenType: "Bearer", expiresIn: 7200, user, ...patch });
 const post = (path, body) => new Request("http://localhost/api/auth/" + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 const bearer = token => new Request("http://localhost/api/auth/session", { headers: { Authorization: "Bearer " + token } });
+
+test("large corporate tokens and permissions fit authenticated requests within the HTTP header limit", async context => {
+  const largeUser = { ...user, permissoes: Array.from({ length: 400 }, (_, i) => "permission-" + i) };
+  const largeTokens = tokens({ accessToken: "corporate-" + "a".repeat(24000), user: largeUser });
+  const data = issueSession(largeTokens);
+  const server = createServer(async (request, response) => {
+    const result = await session(bearer(request.headers.authorization?.replace(/^Bearer /, "") ?? ""));
+    response.writeHead(result.status, { "Content-Type": "application/json" });
+    response.end(await result.text());
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const url = "http://127.0.0.1:" + server.address().port;
+    const legacy = sealEnvelope({ type: "access", token: largeTokens.accessToken, user: largeUser, sessionId: randomUUID(), expiresAt: data.expiresAt });
+    const rejected = await fetch(url, { headers: { Authorization: "Bearer " + legacy } });
+    assert.equal(rejected.status, 431, "The old format exceeds the real HTTP parser limit");
+    await rejected.arrayBuffer();
+    const result = await fetch(url, { headers: { Authorization: "Bearer " + data.accessToken } });
+    assert.equal(result.status, 200);
+    assert.ok(data.accessToken.length <= 4096);
+    assert.deepEqual((await result.json()).user, identity);
+    assert.deepEqual(data.user, largeUser);
+    assert.deepEqual(openEnvelope(data.refreshToken, "refresh").user, largeUser);
+    context.diagnostic(`Synthetic access envelope: ${legacy.length} bytes before, ${data.accessToken.length} bytes after`);
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
 
 test("login trims email, forwards only credentials, and seals both tokens", async () => {
   globalThis.fetch = async (url, options) => {
@@ -28,7 +60,7 @@ test("login trims email, forwards only credentials, and seals both tokens", asyn
   const data = await response.json();
   assert.equal(JSON.stringify(data).includes("private-access"), false);
   assert.equal(JSON.stringify(data).includes("private-refresh"), false);
-  assert.equal(openEnvelope(data.accessToken, "access").token, "private-access");
+  assert.equal(openEnvelope(data.accessToken, "access").token, undefined);
   assert.equal(openEnvelope(data.refreshToken, "refresh").token, "private-refresh");
   assert.deepEqual(data.user, user);
   const previousEditors = process.env.PULSE_EDITOR_EMAILS;
@@ -36,7 +68,7 @@ test("login trims email, forwards only credentials, and seals both tokens", asyn
   const validation = await session(bearer(data.accessToken));
   process.env.PULSE_EDITOR_EMAILS = previousEditors;
   assert.equal(validation.status, 200);
-  assert.deepEqual(await validation.json(), { user, expiresAt: data.expiresAt, editor: false });
+  assert.deepEqual(await validation.json(), { user: identity, expiresAt: data.expiresAt, editor: false });
 });
 test("invalid form never calls upstream and errors never echo upstream secrets", async () => {
   globalThis.fetch = () => { throw new Error("must not call"); };
@@ -100,6 +132,52 @@ test("upstream cannot accidentally switch identity during refresh or omit initia
   const previous = openEnvelope(issueSession(tokens()).refreshToken, "refresh");
   assert.throws(() => issueSession(tokens({ user: { id: 99 } }), previous));
   assert.throws(() => issueSession(tokens({ user: undefined })));
+});
+
+test("legacy sessions remain valid and refresh into compact access without losing corporate context", async () => {
+  const context = { sessionId: randomUUID(), user };
+  const access = sealEnvelope({ ...context, type: "access", token: "old-access", expiresAt: Date.now() + 60000 });
+  const legacyRefresh = sealEnvelope({ ...context, type: "refresh", token: "old-refresh" });
+  assert.equal((await session(bearer(access))).status, 200);
+  globalThis.fetch = async (_url, options) => {
+    assert.deepEqual(JSON.parse(options.body), { refreshToken: "old-refresh" });
+    return Response.json(tokens({ accessToken: "a".repeat(24000), user: undefined }));
+  };
+  const response = await refresh(post("refresh", { refreshToken: legacyRefresh }));
+  assert.equal(response.status, 200);
+  const next = await response.json();
+  assert.ok(next.accessToken.length <= 4096);
+  assert.equal(openEnvelope(next.accessToken, "access").sessionId, context.sessionId);
+  assert.deepEqual(next.user, user);
+  assert.deepEqual(openEnvelope(next.refreshToken, "refresh").user, user);
+});
+
+test("an oversized identity cannot issue an unusable access header", () => {
+  assert.throws(() => issueSession(tokens({ user: { ...user, nome: "x".repeat(10000) } })), { status: 502, code: "auth_unavailable" });
+});
+
+test("continuous refresh replaces credentials and keeps headers bounded even when upstream permissions grow", () => {
+  const lines = []; console.info = line => lines.push(JSON.parse(line));
+  const now = Date.now(), baseline = issueSession(tokens(), undefined, now);
+  let previous = openEnvelope(baseline.refreshToken, "refresh");
+  for (let index = 1; index <= 200; index++) {
+    const permissoes = Array.from({ length: index * 2 }, (_, i) => "permission-" + i);
+    const rawRefresh = "corporate-refresh-" + String(index).padStart(4, "0");
+    const next = issueSession(tokens({ accessToken: "raw-" + "a".repeat(index * 100), refreshToken: rawRefresh, user: { permissoes } }), previous, now + index * 7200000);
+    assert.equal(next.accessToken.length, baseline.accessToken.length);
+    assert.deepEqual(next.user.permissoes, permissoes, "Replace arrays instead of accumulating old permissions");
+    previous = openEnvelope(next.refreshToken, "refresh");
+    assert.equal(previous.token, rawRefresh, "The refresh holds only the current upstream token, never a nested Pulse envelope");
+  }
+  const thin = issueSession(tokens({ user: undefined }), previous, now + 201 * 7200000);
+  assert.equal(thin.user.permissoes.length, 400);
+  assert.equal(thin.accessToken.length, baseline.accessToken.length);
+  assert.equal(lines.length, 202);
+  assert.equal(lines.at(-2).permissionCount, 400);
+  assert.equal(lines.at(-2).corporateAccessBytes, 20004);
+  assert.ok(!JSON.stringify(lines).includes("corporate-refresh-"));
+  assert.ok(!JSON.stringify(lines).includes("permission-"));
+  assert.ok(!JSON.stringify(lines).includes(user.email));
 });
 test("logout confirms revocation only on upstream success", async () => {
   const value = issueSession(tokens()).refreshToken;

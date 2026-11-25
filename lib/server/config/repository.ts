@@ -38,8 +38,7 @@ async function database<T>(action: () => Promise<T>): Promise<T> {
     if (code === "P2002") throw new BffError(409, "resource_conflict");
     if (code === "P2025") throw new BffError(404, "resource_not_found");
     if (code === "P2039" && message.includes("resource_presentation_check")) throw new BffError(400, "invalid_request");
-    console.error("database_unavailable", code ?? "", message || error);
-    throw new BffError(503, "database_unavailable");
+    throw new BffError(503, "database_unavailable", error);
   }
 }
 async function transaction<T>(action: (tx: Transaction) => Promise<T>) {

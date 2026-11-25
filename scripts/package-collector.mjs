@@ -1,10 +1,19 @@
-import { cp, mkdir, readFile, access, readdir, unlink, chmod } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile, access, readdir, unlink, chmod } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { makeRuntimeLinksPortable } from "./runtime-links.mjs";
 
 const root = new URL("../", import.meta.url), target = new URL(".next/standalone/", root);
+// Start parser diagnostics before Next creates its HTTP server. Keep the generated
+// standalone entrypoint and Docker command; repeated packaging must be idempotent.
+await cp(new URL("scripts/http-diagnostics.cjs", root), new URL("http-diagnostics.cjs", target));
+const entry = new URL("server.js", target);
+const manifest = JSON.parse(await readFile(new URL("package.json", target), "utf8"));
+const diagnosticBootstrap = manifest.type === "module" ? 'import "./http-diagnostics.cjs";\n' : 'require("./http-diagnostics.cjs");\n';
+const serverSource = await readFile(entry, "utf8");
+const uninstrumented = serverSource.replace(/^(?:import "\.\/http-diagnostics\.cjs";|require\("\.\/http-diagnostics\.cjs"\);)\r?\n/, "");
+if (serverSource !== diagnosticBootstrap + uninstrumented) await writeFile(entry, diagnosticBootstrap + uninstrumented);
 // Complete standalone payload: web, workers and the locked migration entrypoint.
 for (const path of ["collector/", "lib/", "generated/prisma/", "prisma/", "public/"]) {
   await mkdir(new URL(path, target), { recursive: true });

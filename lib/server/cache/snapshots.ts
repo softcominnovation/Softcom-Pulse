@@ -51,7 +51,7 @@ export async function readSnapshotBatch(keys: string[]): Promise<SnapshotBatch> 
     return { snapshots, sync, generation: syncEnvelope?.generation ?? null };
   } catch (error) {
     if (error instanceof BffError) throw error;
-    throw new BffError(503, "cache_unavailable");
+    throw new BffError(503, "cache_unavailable", error);
   }
 }
 
@@ -73,7 +73,7 @@ export async function publishSnapshots(entries: Record<string, unknown>, updated
       tx.set(snapshotKeys.sync, wrap({ status: "ok", lastSuccessfulAt: updatedAt, lastAttemptAt: isoSchema.parse(lastAttemptAt), error: null, keys: keys.filter(key => !extension(key)), extensionKeys: keys.filter(extension) }), { EX: ttl });
       return tx.exec();
     });
-  } catch { throw new BffError(503, "cache_unavailable"); }
+  } catch (error) { throw new BffError(503, "cache_unavailable", error); }
   return generation;
 }
 
@@ -95,7 +95,7 @@ export async function markSyncFailure(errorCode = "collection_failed", lastAttem
       "local raw=redis.call('GET',KEYS[1]); if raw then local v=cjson.decode(raw); v.data.status='failed'; v.data.lastAttemptAt=ARGV[3]; v.data.error=ARGV[4]; redis.call('SET',KEYS[1],cjson.encode(v),'KEEPTTL'); else redis.call('SET',KEYS[1],ARGV[1],'EX',ARGV[2]); end; return 1",
       { keys: [snapshotKeys.sync], arguments: [fallback, String(ttl), lastAttemptAt, error] },
     ));
-  } catch { throw new BffError(503, "cache_unavailable"); }
+  } catch (error) { throw new BffError(503, "cache_unavailable", error); }
 }
 
 export function snapshotData<T>(batch: SnapshotBatch, key: string, schema: z.ZodType<T>, fallback: T): T {

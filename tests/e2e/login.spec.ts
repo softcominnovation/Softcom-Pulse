@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 
 const key = "pulse.auth.v1";
+const identity = (user: Record<string, unknown>) => Object.fromEntries(Object.entries(user).filter(([key]) => key !== "acessos" && key !== "permissoes"));
 async function enter(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("E-mail", { exact: true }).fill(email);
@@ -130,7 +131,10 @@ test("BFF login, reload, protected shell and logout work without direct corporat
   expect(JSON.stringify(saved)).not.toContain("test-raw-refresh");
   expect(JSON.stringify(saved)).not.toContain("test-signature");
   expect(saved.session.user.administrador).toBe(false);
-  expect(saved.session.user.permissoes).toEqual([]);
+  // Validation restores the trusted identity; corporate permission lists stay in the refresh body.
+  const validated = await page.request.get("/api/auth/session", { headers: { Authorization: "Bearer " + saved.session.accessToken } });
+  expect(validated.ok()).toBe(true);
+  expect((await validated.json()).user).not.toHaveProperty("permissoes");
   await page.reload();
   await expect(page.getByRole("button", { name: "Sair", exact: true })).toBeVisible();
   await page.goto("/login");
@@ -146,26 +150,37 @@ test("BFF login, reload, protected shell and logout work without direct corporat
   expect(JSON.parse((await page.evaluate(key => localStorage.getItem(key), key))!).session).toBeNull();
   expect(corporate).toHaveLength(0);
 });
-test("two real browser tabs rotate once, preserve thin user and synchronize logout", async ({ page, context, browser }) => {
-  await enter(page, "tabs@example.test");
+for (const oversized of [false, true]) test(`two real browser tabs rotate once, preserve thin user and synchronize logout: ${oversized ? "oversized access" : "expired access"}`, async ({ page, context, browser }) => {
+  const email = oversized ? "tabs-oversized@example.test" : "tabs@example.test";
+  await enter(page, email);
   const origin = new URL(page.url()).origin, state = await context.storageState();
   const saved = state.origins.find(item => item.origin === origin)?.localStorage.find(item => item.name === key);
   if (!saved) throw new Error("Authenticated session missing from browser storage");
-  const expired = JSON.parse(saved.value); expired.session.expiresAt = Date.now() - 1; saved.value = JSON.stringify(expired);
+  const expired = JSON.parse(saved.value);
+  if (oversized) expired.session.accessToken = "v1." + "a".repeat(24000);
+  else expired.session.expiresAt = Date.now() - 1;
+  saved.value = JSON.stringify(expired);
   // Seed the expired session before opening polling documents. Reloading during
   // a refresh can discard the response after its one-use token was consumed.
   await page.close();
   const tabs = await browser.newContext({ baseURL: origin, storageState: state });
   try {
     const first = await tabs.newPage(), other = await tabs.newPage();
+    const headerSizes: number[] = [];
+    for (const tab of [first, other]) tab.on("request", request => {
+      const header = request.headers().authorization;
+      if (header) headerSizes.push(header.length);
+    });
     await Promise.all([first.goto("/"), other.goto("/")]);
     for (const tab of [first, other]) { await expect(tab).toHaveURL(/\/$/); await expect(tab.getByRole("button", { name: "Sair", exact: true })).toBeVisible(); }
-    const counters = await (await first.request.get("http://127.0.0.1:3102/test-state?email=tabs@example.test")).json();
+    const counters = await (await first.request.get("http://127.0.0.1:3102/test-state?email=" + email)).json();
     expect(counters.refreshes).toBe(1);
+    expect(headerSizes.length).toBeGreaterThan(0);
+    expect(Math.max(...headerSizes)).toBeLessThanOrEqual(4103);
     const a = JSON.parse((await first.evaluate(key => localStorage.getItem(key), key))!).session;
     const b = JSON.parse((await other.evaluate(key => localStorage.getItem(key), key))!).session;
     expect(a.refreshToken).not.toBe(expired.session.refreshToken); expect(a.refreshToken).toBe(b.refreshToken);
-    expect(a.expiresAt).toBeGreaterThan(Date.now()); expect(a.user).toEqual(expired.session.user); expect(b.user).toEqual(a.user); expect(a.user.empresa).toBe("JP");
+    expect(a.expiresAt).toBeGreaterThan(Date.now()); expect(identity(a.user)).toEqual(identity(expired.session.user)); expect(identity(b.user)).toEqual(identity(a.user)); expect(a.user.empresa).toBe("JP");
     await other.getByRole("button", { name: "Sair", exact: true }).click();
     await expect(first).toHaveURL(/\/login$/); await expect(other).toHaveURL(/\/login$/);
   } finally { await tabs.close(); }
@@ -180,6 +195,27 @@ test("direct HTTP BFF requests reject wrong purpose and tampered ciphertext", as
     expect(validation.headers()["cache-control"]).toBe("no-store");
   }
   expect((await request.post("/api/auth/refresh", { data: { refreshToken: data.accessToken } })).status()).toBe(401);
+});
+
+test("persistent header rejection preserves the session and allows retry without a new login", async ({ page }) => {
+  await enter(page, "headers@example.test");
+  let calls = 0;
+  await page.route("**/api/auth/session", route => {
+    calls++;
+    return route.fulfill({ status: 431, body: "", contentType: "text/plain" });
+  });
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Não foi possível validar sua sessão" })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("tamanho");
+  await expect(page).toHaveURL(/\/$/);
+  expect(calls).toBe(2);
+  expect(JSON.parse((await page.evaluate(key => localStorage.getItem(key), key))!).session).not.toBeNull();
+  const counters = await (await page.request.get("http://127.0.0.1:3102/test-state?email=headers@example.test")).json();
+  expect(counters.logins).toBe(1);
+  expect(counters.refreshes).toBe(1);
+  await page.unroute("**/api/auth/session");
+  await page.getByRole("button", { name: "Tentar novamente", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Sair", exact: true })).toBeVisible();
 });
 test("health remains available with safe dependency status", async ({ request }) => {
   const response = await request.get("/api/health");

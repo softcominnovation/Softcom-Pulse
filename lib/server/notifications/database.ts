@@ -12,9 +12,9 @@ export async function notificationTransaction<T>(action: (client: PoolClient) =>
     abortAcquire = () => reject(new BffError(503, "notifications_unavailable"));
     signal?.addEventListener("abort", abortAcquire, { once: true });
   });
-  const client = await Promise.race([pending, cancelled]).catch(() => {
+  const client = await Promise.race([pending, cancelled]).catch(error => {
     void pending.then(client => client.release(true)).catch(() => undefined);
-    throw new BffError(503, "notifications_unavailable");
+    throw new BffError(503, "notifications_unavailable", error);
   }).finally(() => { if (abortAcquire) signal?.removeEventListener("abort", abortAcquire); });
   let released = false;
   const cancel = () => { if (!released) { released = true; client.release(true); } };

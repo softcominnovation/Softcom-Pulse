@@ -1,9 +1,10 @@
 import "server-only";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { userSchema, type AuthUser } from "../../auth/contracts.ts";
+import { MAX_ACCESS_TOKEN_LENGTH, userSchema, type AuthUser } from "../../auth/contracts.ts";
 import { AuthError } from "./errors.ts";
 import { sealEnvelope, type Envelope } from "./envelope.ts";
+import { logSessionSizes } from "../diagnostics.ts";
 
 export async function corporateRequest(action: "login" | "refresh" | "logout", body: unknown) {
   if (process.env.PULSE_DEMO_MODE === "1" && process.env.PULSE_E2E !== "1") {
@@ -29,20 +30,20 @@ export async function corporateRequest(action: "login" | "refresh" | "logout", b
     base = new URL(process.env.API_BASE_URL || process.env.CORPORATE_API_URL || "https://api.softcom.cloud");
     if (!["https:", "http:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) throw new Error();
     if (base.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(base.hostname)) throw new Error();
-  } catch { throw new AuthError(503, "auth_unavailable"); }
+  } catch { throw new AuthError(503, "auth_unavailable", { reason: "upstream_configuration_invalid" }); }
   try {
     const response = await fetch(base.href.replace(/\/+$/, "") + "/v1/auth/" + action, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000),
     });
-    if (response.status === 401 || response.status === 403) throw new AuthError(401, action === "login" ? "credentials_invalid" : "session_invalid");
-    if (response.status === 429) throw new AuthError(429, "rate_limited");
-    if (!response.ok) throw new AuthError(502, "auth_unavailable");
+    if (response.status === 401 || response.status === 403) throw new AuthError(401, action === "login" ? "credentials_invalid" : "session_invalid", { reason: `upstream_${action}_rejected`, upstreamStatus: response.status });
+    if (response.status === 429) throw new AuthError(429, "rate_limited", { reason: "upstream_rate_limited", upstreamStatus: response.status });
+    if (!response.ok) throw new AuthError(502, "auth_unavailable", { reason: "upstream_http_error", upstreamStatus: response.status });
     if (action === "logout") return null;
     return await response.json() as unknown;
   } catch (error) {
     if (error instanceof AuthError) throw error;
-    throw new AuthError(503, "auth_unavailable");
+    throw new AuthError(503, "auth_unavailable", { reason: "upstream_request_failed", cause: error });
   }
 }
 
@@ -52,10 +53,11 @@ const tokensSchema = z.object({
   expiresIn: z.unknown().optional(),
   user: userSchema.partial().optional(),
 });
+const accessUserSchema = userSchema.omit({ acessos: true, permissoes: true });
 
 export function issueSession(value: unknown, previous?: Envelope, now = Date.now()) {
   const parsed = tokensSchema.safeParse(value);
-  if (!parsed.success) throw new AuthError(502, "auth_unavailable");
+  if (!parsed.success) throw new AuthError(502, "auth_unavailable", { reason: "upstream_contract_invalid" });
   const tokens = parsed.data;
   const user = userSchema.safeParse({ ...previous?.user, ...tokens.user });
   if (!user.success || (previous && user.data.id !== previous.user.id)) throw new AuthError(502, "auth_unavailable");
@@ -68,9 +70,18 @@ export function issueSession(value: unknown, previous?: Envelope, now = Date.now
   } catch { /* Opaque access tokens rely on the upstream TTL. */ }
   if (!Number.isFinite(expiresAt) || expiresAt <= now) throw new AuthError(502, "auth_unavailable");
   const context: { sessionId: string; user: AuthUser } = { sessionId: previous?.sessionId ?? randomUUID(), user: user.data };
+  // Private routes only need the authenticated identity. Corporate tokens and
+  // permission lists belong in the response/refresh body, outside HTTP headers.
+  const accessToken = sealEnvelope({ ...context, user: accessUserSchema.parse(user.data), type: "access", expiresAt });
+  if (accessToken.length > MAX_ACCESS_TOKEN_LENGTH) throw new AuthError(502, "auth_unavailable", { reason: "identity_header_oversized" });
+  const refreshToken = sealEnvelope({ ...context, type: "refresh", token: tokens.refreshToken });
+  logSessionSizes({ sessionId: context.sessionId, operation: previous ? "refresh" : "login",
+    corporateAccessBytes: Buffer.byteLength(tokens.accessToken), userBytes: Buffer.byteLength(JSON.stringify(user.data)),
+    accessCount: user.data.acessos?.length ?? 0, permissionCount: user.data.permissoes?.length ?? 0,
+    accessEnvelopeBytes: accessToken.length, refreshEnvelopeBytes: refreshToken.length });
   return {
-    accessToken: sealEnvelope({ ...context, type: "access", token: tokens.accessToken, expiresAt }),
-    refreshToken: sealEnvelope({ ...context, type: "refresh", token: tokens.refreshToken }),
+    accessToken,
+    refreshToken,
     tokenType: "Bearer" as const, expiresIn: (expiresAt - now) / 1000, expiresAt, user: user.data,
   };
 }

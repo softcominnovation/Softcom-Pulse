@@ -18,7 +18,7 @@ async function readBody(request: Request) {
 
 export function requireSession(request: Request) {
   const match = /^Bearer (\S+)$/i.exec(request.headers.get("Authorization") ?? "");
-  if (!match) throw new AuthError();
+  if (!match) throw new AuthError(401, "session_invalid", { reason: "missing_bearer" });
   return openEnvelope(match[1], "access");
 }
 
@@ -27,7 +27,7 @@ export async function login(request: Request) {
     const body = loginSchema.safeParse(await readBody(request));
     if (!body.success) throw new AuthError(400, "invalid_request");
     return authJson(issueSession(await corporateRequest("login", body.data)));
-  } catch (error) { return authFailure(error); }
+  } catch (error) { return authFailure(error, request); }
 }
 export async function refresh(request: Request) {
   try {
@@ -35,7 +35,7 @@ export async function refresh(request: Request) {
     if (!body.success) throw new AuthError();
     const previous = openEnvelope(body.data.refreshToken, "refresh");
     return authJson(issueSession(await corporateRequest("refresh", { refreshToken: previous.token }), previous));
-  } catch (error) { return authFailure(error); }
+  } catch (error) { return authFailure(error, request); }
 }
 export async function logout(request: Request) {
   try {
@@ -44,11 +44,11 @@ export async function logout(request: Request) {
     const previous = openEnvelope(body.data.refreshToken, "refresh");
     await corporateRequest("logout", { refreshToken: previous.token });
     return authJson({ revoked: true });
-  } catch (error) { return authFailure(error); }
+  } catch (error) { return authFailure(error, request); }
 }
 export async function session(request: Request) {
   try {
     const envelope = requireSession(request);
     return authJson({ user: envelope.user, expiresAt: envelope.expiresAt, editor: isEditor(envelope.user.email) });
-  } catch (error) { return authFailure(error); }
+  } catch (error) { return authFailure(error, request); }
 }

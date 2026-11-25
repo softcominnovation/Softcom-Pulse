@@ -67,6 +67,9 @@ test('shared monitor controller reverses real overflow, preserves refresh state 
   const browser = await chromium.launch(), page = await browser.newPage();
   try {
     await page.clock.install();
+    // Hold wall-clock time before attaching the controller. Otherwise browser
+    // scheduling between evaluate/runFor can consume part of the 2s reading pause.
+    await page.clock.pauseAt(new Date(Date.now() + 1000));
     await page.setContent(`<style>.region{height:100px;width:200px;overflow:auto}.rows{height:148px;width:230px}</style>
       <div id="monitor"><div data-block-id="one"><div class="region" tabindex="0"><div class="rows">Rows</div></div><div class="no-overflow">Fits</div></div></div>
       <div role="dialog" data-state="closed">Details</div>`);

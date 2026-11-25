@@ -34,9 +34,12 @@ async function freePort() {
 async function withServer(environment, run) {
   const port = await freePort();
   const child = spawn(process.execPath, [fileURLToPath(new URL("server.js", standalone))], {
-    cwd: fileURLToPath(standalone), windowsHide: true, stdio: "ignore",
+    cwd: fileURLToPath(standalone), windowsHide: true, stdio: ["ignore", "ignore", "pipe"],
     env: { ...process.env, NODE_ENV: "production", PORT: String(port), HOSTNAME: "127.0.0.1", TOKEN_ENCRYPTION_KEY: authKey, ZABBIX_API_TOKEN: privateCanary, ...environment },
   });
+  let diagnostics = "";
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", chunk => { diagnostics = (diagnostics + chunk).slice(-200000); });
   const exited = new Promise(resolve => child.once("exit", resolve));
   let spawnError;
   child.once("error", error => { spawnError = error; });
@@ -49,12 +52,35 @@ async function withServer(environment, run) {
       await delay(100);
     }
     assert.ok(ready, "Production server did not become ready.");
-    await run(base);
+    await run(base, () => diagnostics);
   } finally {
     child.kill();
     await Promise.race([exited, delay(500).then(() => { child.kill("SIGKILL"); return exited; })]);
   }
 }
+
+test("packaged HTTP diagnostics log parser and API failures without exposing credentials or changing status", { timeout: 30000 }, async () => {
+  await withServer({}, async (base, logs) => {
+    const canary = "private-header-diagnostic-canary";
+    const rejected = await fetch(base + "/api/auth/session?secret=" + canary, { headers: { Authorization: "Bearer " + canary + "a".repeat(24000) } });
+    assert.equal(rejected.status, 431);
+    await rejected.arrayBuffer();
+    const invalid = await fetch(base + "/api/auth/session?secret=" + canary, { headers: { Authorization: "Bearer " + canary } });
+    assert.equal(invalid.status, 401);
+    assert.deepEqual(await invalid.json(), { error: { code: "session_invalid" } });
+    await expect.poll(() => logs()).toContain('"event":"application_request_failed"');
+    const events = logs().split("\n").flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
+    const parseFailure = events.find(event => event.event === "http_request_rejected");
+    assert.equal(parseFailure.code, "HPE_HEADER_OVERFLOW");
+    assert.ok(parseFailure.receivedChunkBytes > parseFailure.maxHeaderBytes);
+    const appFailure = events.find(event => event.event === "application_request_failed");
+    assert.equal(appFailure.status, 401);
+    assert.equal(appFailure.requestId, invalid.headers.get("x-request-id"));
+    assert.equal(appFailure.error.reason, "invalid_envelope");
+    assert.equal(appFailure.authorizationBytes, Buffer.byteLength("Bearer " + canary));
+    assert.ok(!logs().includes(canary));
+  });
+});
 test("packaged collector publishes real Redis contracts, serves history and excludes concurrent workers", { timeout: 90000 }, async context => {
   const f = zabbixFixture(), databaseName = "pulse_runtime04_test_" + process.pid + "_" + Date.now();
   const scopeFile = new URL(".cache/" + databaseName + "-scope.json", root);
@@ -321,7 +347,7 @@ test("standalone serves packaged login assets and authenticates through the BFF"
       const rotated = await fetch(base + "/api/auth/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refreshToken: original }) });
       assert.equal(rotated.status, 200);
       const next = await rotated.json();
-      assert.deepEqual(next.user, saved.session.user);
+      assert.deepEqual(next.user, { ...saved.session.user, permissoes: [], acessos: [] });
       assert.notEqual(next.refreshToken, original);
       assert.equal((await fetch(base + "/api/auth/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refreshToken: original }) })).status, 401);
       const closed = await fetch(base + "/api/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refreshToken: next.refreshToken }) });
@@ -339,7 +365,7 @@ test("standalone persists configuration across restarts and serves every protect
   for (const url of [db, redisUrl]) assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(url.hostname));
   db.pathname = "/postgres";
   const admin = new pg.Client({ connectionString: db.href });
-  const upstream = await startAuthUpstream();
+  const upstream = await startAuthUpstream(0, { largeIdentity: true });
   let created = false, saved, auth, resourceId;
   try {
     await admin.connect(); await admin.query('CREATE DATABASE "' + dbName + '"'); created = true;
@@ -359,7 +385,22 @@ test("standalone persists configuration across restarts and serves every protect
     const environment = { DATABASE_URL: db.href, REDIS_URL: redisUrl.href, API_BASE_URL: upstream.url, PULSE_EDITOR_EMAILS: "bff-runtime@example.test" };
     await withServer(environment, async base => {
       const login = await fetch(base + "/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: "bff-runtime@example.test", senha: "test-password" }) });
-      assert.equal(login.status, 200); auth = { Authorization: "Bearer " + (await login.json()).accessToken, "Content-Type": "application/json" };
+      assert.equal(login.status, 200);
+      const pair = await login.json();
+      assert.equal(pair.user.permissoes.length, 400);
+      assert.ok(pair.accessToken.length <= 4096, "Corporate permissions and raw tokens must not inflate the private request header");
+      auth = { Authorization: "Bearer " + pair.accessToken, "Content-Type": "application/json" };
+      const identity = await fetch(base + "/api/auth/session", { headers: auth });
+      assert.equal(identity.status, 200);
+      assert.equal((await identity.json()).editor, true);
+      const notifications = await fetch(base + "/api/monitoring/notifications?limit=1&highlights=1", { headers: auth });
+      assert.equal(notifications.status, 200);
+      const rotated = await fetch(base + "/api/auth/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refreshToken: pair.refreshToken }) });
+      assert.equal(rotated.status, 200);
+      const next = await rotated.json();
+      assert.deepEqual(next.user, pair.user);
+      assert.ok(next.accessToken.length <= 4096);
+      auth.Authorization = "Bearer " + next.accessToken;
       const uuid = randomUUID();
       const templateKey = "vm-" + "0".repeat(32);
       for (const path of ["/settings/templates", "/monitoring/templates", "/monitoring/templates/" + templateKey, "/settings/presentation", "/dashboard/overview", "/monitoring/hosts", "/monitoring/hosts/asgard", "/monitoring/hosts/asgard/history", "/monitoring/hosts/asgard/containers", "/monitoring/hosts/asgard/vms/101/history", "/monitoring/containers", "/monitoring/problems", "/monitoring/services", "/monitoring/services/" + uuid, "/monitoring/services/" + uuid + "/history"]) {

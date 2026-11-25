@@ -33,3 +33,4 @@ export const STORAGE_KEY = "pulse.auth.v1";
 export const REFRESH_LOCK = "pulse.auth.refresh.v1";
 export const STORAGE_LOCK = "pulse.auth.storage.v1";
 export const REFRESH_SKEW_MS = 30_000;
+export const MAX_ACCESS_TOKEN_LENGTH = 4096;

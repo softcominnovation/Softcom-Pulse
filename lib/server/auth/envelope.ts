@@ -4,19 +4,21 @@ import { z } from "zod";
 import { userSchema } from "../../auth/contracts.ts";
 import { AuthError } from "./errors.ts";
 
-const envelopeSchema = z.object({
-  type: z.enum(["access", "refresh"]),
-  token: z.string().min(1),
+const envelopeContext = z.object({
   sessionId: z.string().uuid(),
   user: userSchema,
   expiresAt: z.number().finite().positive().optional(),
 });
+const envelopeSchema = z.discriminatedUnion("type", [
+  envelopeContext.extend({ type: z.literal("access"), token: z.string().min(1).optional() }),
+  envelopeContext.extend({ type: z.literal("refresh"), token: z.string().min(1) }),
+]);
 export type Envelope = z.infer<typeof envelopeSchema>;
 
 function encryptionKey() {
   const value = process.env.TOKEN_ENCRYPTION_KEY ?? "";
   const key = Buffer.from(value, "base64");
-  if (key.length !== 32 || key.toString("base64") !== value) throw new AuthError(503, "auth_unavailable");
+  if (key.length !== 32 || key.toString("base64") !== value) throw new AuthError(503, "auth_unavailable", { reason: "encryption_key_invalid" });
   return key;
 }
 
@@ -29,6 +31,8 @@ export function sealEnvelope(payload: Envelope) {
   return ["v1", nonce.toString("base64url"), encrypted.toString("base64url"), cipher.getAuthTag().toString("base64url")].join(".");
 }
 
+export function openEnvelope(value: string, type: "access", now?: number): Extract<Envelope, { type: "access" }>;
+export function openEnvelope(value: string, type: "refresh", now?: number): Extract<Envelope, { type: "refresh" }>;
 export function openEnvelope(value: string, type: Envelope["type"], now = Date.now()): Envelope {
   const key = encryptionKey();
   try {
@@ -42,10 +46,11 @@ export function openEnvelope(value: string, type: Envelope["type"], now = Date.n
     decipher.setAAD(Buffer.from("pulse.auth.v1"));
     decipher.setAuthTag(tag);
     const payload = envelopeSchema.parse(JSON.parse(Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8")));
-    if (payload.type !== type) throw new Error();
-    if (type === "access" && (!payload.expiresAt || payload.expiresAt <= now)) throw new Error();
+    if (payload.type !== type) throw new AuthError(401, "session_invalid", { reason: "wrong_token_purpose" });
+    if (type === "access" && (!payload.expiresAt || payload.expiresAt <= now)) throw new AuthError(401, "session_invalid", { reason: "access_expired" });
     return payload;
-  } catch {
-    throw new AuthError();
+  } catch (error) {
+    if (error instanceof AuthError) throw error;
+    throw new AuthError(401, "session_invalid", { reason: "invalid_envelope" });
   }
 }
